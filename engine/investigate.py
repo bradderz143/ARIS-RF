@@ -399,7 +399,7 @@ KEPT_BY_CLEAR_LOGS = ("signals.db", "locate.db", "fm_stations.json", "devices.js
                       "gui_secrets.json", "node_secrets.json", "label_secret", "nodes.json", "floorplans/",
                       "setup_report.json",
                       "backups/", "last_investigation.json", "watchdogs.json", "watchdogs_resume.json",
-                      "patrol_state.json", "patrol_seen.json")
+                      "patrol_state.json", "patrol_seen.json", "update_check.json")
 
 
 def _log_files() -> list:
@@ -1187,7 +1187,7 @@ def check_and_investigate_band(frequency_range=None, start_mhz=None, stop_mhz=No
     asked = dwell_seconds not in (None, "", 0, "0")
     dwell = _int(dwell_seconds, "dwell_seconds", int(cfg.get("dwell_seconds", 12)), 5, MAX_LISTEN_S)
     max_peaks = _int(max_peaks_to_investigate, "max_peaks_to_investigate", 4, 1, 12)
-    serials = _pick_serials(dongle, cfg)
+    serials = _pick_serials(dongle, cfg, band=(s_mhz, e_mhz))
     sw = _multi_sweep(s_mhz, e_mhz, serials, secs, thresh, cfg)
     peaks = sw["peaks"]
     # Investigate the unusual first: FM-band signals off the channel plan, then everything outside the FM band,
@@ -1261,7 +1261,7 @@ def investigate_single_frequency(frequency_mhz=None, listen_seconds=None, dongle
                       f"('capture {freq:g} for {max(1, round(asked / 60))} minutes'), or 'keep logging {freq:g}' to "
                       f"log every packet.")
     listen = asked
-    serials = _pick_serials(dongle, cfg)
+    serials = _pick_serials(dongle, cfg, band=freq)
     _say(f"\n[HW DEEP DIVE] {freq} MHz with {', '.join(_short(s) for s in serials)}...")
     peak = {"peak_id": 1, "frequency_mhz": freq, "center_mhz": freq, "occupied_bw_khz": 25.0,
             "probable_allocation": _classify_frequency_allocation(freq, 25.0)}

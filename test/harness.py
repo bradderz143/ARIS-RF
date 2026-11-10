@@ -36,6 +36,7 @@ REAL_BIN = next((d for d in (os.environ.get("REAL_BIN"), os.path.expanduser("~/r
 if REAL_BIN:
     os.environ["REAL_BIN"] = REAL_BIN
 os.environ["PYTHONPATH"] = os.pathsep.join([os.path.join(TEST_DIR, "fake", "mods"), CODE_DIR])
+os.environ.setdefault("ARIS_UPDATE_CHECK", "0")      # tests never ask GitHub; test_engine.UpdateCheck turns it on
 for p in (CODE_DIR, os.path.join(TEST_DIR, "fake", "mods")):
     if p not in sys.path:
         sys.path.insert(0, p)

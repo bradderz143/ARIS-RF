@@ -41,6 +41,13 @@ SPECTRUM_PRESETS = [
     {"id": "adsb", "name": "ADS-B", "start": 1085.0, "stop": 1095.0},
     {"id": "live433", "name": "Live 433.92", "start": 433.52, "stop": 434.32},
     {"id": "live915", "name": "Live 915.0", "start": 914.6, "stop": 915.4},
+    {"id": "phones", "name": "Phones 700-900", "start": 698.0, "stop": 894.0},
+    {"id": "gnss", "name": "GPS 1575", "start": 1565.0, "stop": 1585.0},
+    # above an RTL-SDR's reach: offered only when a receiver here tunes them (api_meta)
+    {"id": "phones2", "name": "Phones 1.7-1.9 GHz", "start": 1710.0, "stop": 1910.0},
+    {"id": "ism24", "name": "2.4 GHz", "start": 2400.0, "stop": 2483.5},
+    {"id": "wifi5", "name": "5 GHz Wi-Fi", "start": 5150.0, "stop": 5350.0},
+    {"id": "ism58", "name": "5.8 GHz", "start": 5725.0, "stop": 5875.0},
 ]
 LIVE_MAX_SPAN_MHZ = 0.8          # one IQ capture: the window sits 0.05-0.85 MHz below the tuning point, so the
 LIVE_TUNE_ABOVE_MHZ = 0.05       # receiver's own centre spike is always just outside it
@@ -282,7 +289,11 @@ def api_meta():
             dongles.append({"serial": ser, "name": eng._short(ser), "best_for": best,
                             "antenna_note": eng._dongle_cfg(ser, cfg).get("antenna_note")})
         extra = [p for p in getattr(eng, "PLUGIN_PRESETS", []) if p["id"] not in {q["id"] for q in SPECTRUM_PRESETS}]
-        return jsonify({"dongles": dongles, "default": "all", "presets": SPECTRUM_PRESETS + extra,
+        here = [s for s in eng.DONGLE_NAMES if eng._dongle_cfg(s, cfg).get("present") is not False] or \
+            list(eng.DONGLE_NAMES)
+        presets = [p for p in SPECTRUM_PRESETS + extra       # only bands some receiver here tunes
+                   if not here or eng._covering(here, p["start"], p["stop"])]
+        return jsonify({"dongles": dongles, "default": "all", "presets": presets,
                         "live_max_span_mhz": LIVE_MAX_SPAN_MHZ, "version": version()})
     except Exception as e:
         return jsonify({"error": f"ARIS engine not available: {type(e).__name__}: {e}"}), 500
@@ -303,6 +314,8 @@ def api_spectrum():
                    else [eng._resolve_dongle_serial(want, cfg.get("sweeper_serial"))])
         s_mhz, e_mhz = eng._resolve_band(request.args.get("start"), request.args.get("stop"))
         eng._validate_band(s_mhz, e_mhz, 2.5)
+        if want == "all":                    # only the receivers that tune this range (kinds differ)
+            serials = eng._covering(serials, s_mhz, e_mhz) or serials
         out = frames(eng, serials, s_mhz, e_mhz, request.args.get("gain", "auto"), cfg)
     except eng.RFError as e:
         msg = str(e)

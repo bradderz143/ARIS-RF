@@ -151,6 +151,7 @@ DEFAULT_CONFIG = {
     "investigator_serials": list(DEFAULT_DONGLES),
     "dongle_order": list(DEFAULT_DONGLES),  # dongle numbers: Dongle 1 = first serial (check_system adds new ones)
     "band_dongles": {},                  # band -> dongle that hears it best (set by /setup)
+    "update_check": True,                # ask the code's git remote every few hours whether a newer ARIS is there
     "sweeper_gain_db": 19.7,
     "step_khz": 10.0,
     "crop_percent": "20%",
@@ -184,7 +185,9 @@ SYSTEM_PROMPT = (
     "- 380-400 public-safety trunked radio; 420-450 70 cm amateur; 433.05-434.79 ISM: weather stations, remotes, "
     "door/window sensors.\n"
     "- 450-470 business radios and walkie-talkies; 698-806 and 869-894 mobile phone towers (LTE/GSM downlink).\n"
-    "- 902-928 ISM: smart meters, LoRa, industrial sensors, some remotes; 929-932 pagers; 1090 aircraft ADS-B.\n\n"
+    "- 902-928 ISM: smart meters, LoRa, industrial sensors, some remotes; 929-932 pagers; 1090 aircraft ADS-B.\n"
+    "- Above 1766 MHz only with a receiver that tunes there: phone bands, 2.4 / 5 GHz Wi-Fi and Bluetooth; 1559-1610 "
+    "satellite navigation (a steady signal there may be a GPS jammer).\n\n"
     "RULES:\n"
     "1. Every frequency, level, SNR, packet or decoded value you report MUST come from a tool result in this "
     "conversation. Never invent, estimate or simulate measurements or tool output. To use a tool, call it; never "
@@ -368,6 +371,14 @@ _NAMED_BANDS = [
     (re.compile(r"\b433\s*(?:mhz)?\s*(?:ism\s*)?band\b", re.I), (433.0, 435.0), "the 433 MHz band (433-435 MHz)"),
     (re.compile(r"\b(?:915|900)\s*(?:mhz)?\s*(?:ism\s*)?band\b", re.I), (902.0, 928.0),
      "the 915 MHz band (902-928 MHz)"),
+    # above an RTL-SDR's reach: only with a receiver that tunes there (else the scan says no receiver here does)
+    (re.compile(r"\b2\.4\s*(?:ghz)?\s*(?:ism\s*)?band\b", re.I), (2400.0, 2483.5),
+     "the 2.4 GHz band (2400-2483.5 MHz)"),
+    (re.compile(r"\b5\.8\s*(?:ghz)?\s*(?:ism\s*)?band\b", re.I), (5725.0, 5875.0),
+     "the 5.8 GHz band (5725-5875 MHz)"),
+    (re.compile(r"\b5\s*ghz\s*band\b", re.I), (5150.0, 5875.0), "the 5 GHz band (5150-5875 MHz)"),
+    (re.compile(r"\b(?:gps|gnss|sat(?:ellite)?\s*nav(?:igation)?)\s*band\b", re.I), (1559.0, 1610.0),
+     "the satellite-navigation band (1559-1610 MHz)"),
 ]
 _EXPLICIT_RANGE = re.compile(r"\d+(?:\.\d+)?\s*(?:mhz)?\s*(?:-|to|\u2013)\s*\d+(?:\.\d+)?", re.I)
 
@@ -427,8 +438,8 @@ def _resolve_band(start_mhz=None, stop_mhz=None, frequency_range=None, default=(
 
 def _validate_band(start: float, stop: float, step_khz: float) -> None:
     if not (MIN_MHZ <= start < stop <= MAX_MHZ):
-        raise RFError(f"Band {start:g}-{stop:g} MHz is invalid or outside the tuner range "
-                      f"{MIN_MHZ:g}-{MAX_MHZ:g} MHz.")
+        raise RFError(f"Band {start:g}-{stop:g} MHz is invalid or outside what the receivers here tune "
+                      f"({MIN_MHZ:g}-{MAX_MHZ:g} MHz).")
     if stop - start > MAX_SPAN_MHZ:
         raise RFError(f"Span {stop - start:g} MHz exceeds the {MAX_SPAN_MHZ:g} MHz limit; split the sweep.")
     if not 1.0 <= step_khz <= 1000.0:
@@ -587,6 +598,15 @@ def _classify_frequency_allocation(freq_mhz, occupied_bw_khz):
         return "Aircraft transponder interrogations from radar (Mode S / SSR, 1030 MHz)"
     if 960.0 <= freq_mhz <= 1215.0:
         return "Aeronautical radionavigation band (DME / TACAN beacons, transponders)"
+    if 698.0 <= freq_mhz <= 806.0:
+        return "700 MHz mobile-phone band (LTE / 5G: phones and towers)"
+    if 824.0 <= freq_mhz <= 849.0:
+        return "850 MHz mobile-phone uplink (phones transmit here)"
+    if 869.0 <= freq_mhz <= 894.0:
+        return "850 MHz mobile-phone downlink (towers)"
+    for lo, hi, label in HIGH_BANDS:
+        if lo <= freq_mhz <= hi:
+            return label
     if occupied_bw_khz > 120.0:
         return "Wideband Digital or Broadcast Multiplex Signal"
     return "Narrowband Utility / Telemetry Carrier"
@@ -594,6 +614,29 @@ def _classify_frequency_allocation(freq_mhz, occupied_bw_khz):
 
 FM_BROADCAST = (87.5, 108.0)
 SENSOR_BANDS = [(314.0, 316.0), (433.05, 434.79), (863.0, 870.0), (902.0, 928.0)]
+# Bands above the RTL-SDR's reach (and GNSS within it), for receivers that tune them: allocation labels; first match
+# wins. Labels follow the Americas' plan where regions differ.
+HIGH_BANDS = [
+    (1559.0, 1610.0, "Satellite navigation (GPS L1, Galileo, GLONASS): its signals sit below the noise, so a strong "
+                     "signal here may be a GPS jammer"),
+    (1710.0, 1780.0, "AWS mobile-phone uplink (phones transmit here)"),
+    (1850.0, 1915.0, "PCS mobile-phone uplink (phones transmit here)"),
+    (1930.0, 1995.0, "PCS mobile-phone downlink (towers)"),
+    (2110.0, 2200.0, "AWS mobile-phone downlink (towers)"),
+    (2400.0, 2483.5, "2.4 GHz ISM band (Wi-Fi, Bluetooth, microwave ovens, video senders, drones)"),
+    (2496.0, 2690.0, "2.5 GHz mobile-phone band (LTE / 5G)"),
+    (3300.0, 4200.0, "3.3-4.2 GHz 5G mid-band (and CBRS)"),
+    (5725.0, 5875.0, "5.8 GHz ISM band (Wi-Fi channels 149-165, FPV video, cordless phones, drones)"),
+    (5150.0, 5725.0, "5 GHz Wi-Fi (U-NII)"),
+    (5925.0, 7125.0, "6 GHz Wi-Fi (Wi-Fi 6E / 7)"),
+    (10500.0, 10550.0, "10.5 GHz motion sensors and speed radar"),
+    (8500.0, 10500.0, "X-band radar (marine and weather radar)"),
+    (10700.0, 12750.0, "Satellite TV downlink (Ku band)"),
+]
+GNSS_BAND = (1559.0, 1610.0)
+# Where short bursts are the normal traffic (Wi-Fi, Bluetooth, phones), like the sensor bands for the threat score.
+BUSY_BANDS = [(698.0, 806.0), (824.0, 849.0), (1710.0, 1780.0), (1850.0, 1915.0), (2400.0, 2483.5),
+              (5150.0, 5875.0), (5925.0, 7125.0)]
 
 
 def _between_channels(mhz) -> str:
@@ -612,6 +655,10 @@ def _in_fm_band(f_mhz) -> bool:
 
 def _in_sensor_band(f_mhz) -> bool:
     return any(lo <= float(f_mhz) <= hi for lo, hi in SENSOR_BANDS)
+
+
+def _in_busy_band(f_mhz) -> bool:
+    return any(lo <= float(f_mhz) <= hi for lo, hi in BUSY_BANDS)
 
 
 def _dongle_cfg(serial, cfg=None) -> dict:
@@ -683,12 +730,29 @@ def _working_serials(cfg=None) -> list:
     return out or [s for s in DONGLE_NAMES if s not in held][:1] or [_default_serial(cfg)]
 
 
-def _pick_serials(dongle, cfg=None) -> list:
-    """The dongle(s) the user named, or every working dongle."""
+def _covering(serials, lo_mhz, hi_mhz=None) -> list:
+    """Those of these receivers that tune lo-hi MHz (receivers of different kinds cover different ranges)."""
+    return [s for s in serials if radios.covers(s, lo_mhz, hi_mhz)]
+
+
+def _pick_serials(dongle, cfg=None, band=None) -> list:
+    """The dongle(s) the user named, or every working dongle (with band=(lo, hi) MHz: every working one that tunes
+    it; none that does -> RFError in plain words). A dongle the user named is kept, and refused at launch if it
+    cannot tune the band."""
     cfg = cfg or _load_config()
     if dongle not in (None, "", []):
         return _resolve_dongle_list(dongle, _working_serials(cfg))
-    return _working_serials(cfg)
+    work = _working_serials(cfg)
+    if band:
+        lo, hi = (band, band) if isinstance(band, (int, float)) else band
+        ok = _covering(work, lo, hi)
+        if not ok:
+            have = ", ".join(f"{_short(s)} ({radios.label_for(s)}, {radios.backend_for(s).freq_range_mhz[0]:g}-"
+                             f"{radios.backend_for(s).freq_range_mhz[1]:g} MHz)" for s in work)
+            span = f"{float(lo):g}-{float(hi):g} MHz" if float(hi) > float(lo) else f"{float(lo):g} MHz"
+            raise RFError(f"No receiver here tunes {span}: {have}.")
+        return ok
+    return work
 
 
 def _band_key(s_mhz, e_mhz):

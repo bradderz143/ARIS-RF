@@ -59,8 +59,30 @@ function heatColor(t){
     return [0, 1, 2].map(k => Math.round(a[1][k] + (b[1][k] - a[1][k]) * u)); } }
   return st[st.length - 1][1];
 }
+// The update badge: the web server checks the code's git remote every few hours (read-only); the badge says how to
+// update on the computer (the page never runs it: it needs root).
+let UPD = null;
+async function checkUpdate(){
+  try {
+    const j = await apiGet('/api/update'); UPD = j;
+    const b = document.getElementById('upd'); if (!b) return;
+    b.style.display = j.available ? '' : 'none';
+    if (j.available) b.title = 'A newer ARIS is available: tap for how to update';
+    else { const n = document.getElementById('upd-note'); if (n) n.style.display = 'none'; }
+  } catch (e) {}
+}
+function showUpdate(){
+  const n = document.getElementById('upd-note'); if (!n || !UPD || !UPD.available) return;
+  if (n.style.display !== 'none'){ n.style.display = 'none'; return; }
+  n.innerHTML = '';
+  n.appendChild(el('div', '', 'A newer ARIS is available (' + (UPD.local || '?') + ' here, ' + (UPD.remote || '?') +
+                   ' on its git remote). To update, run this on the computer:'));
+  n.appendChild(el('code', '', UPD.command || ''));
+  n.style.display = '';
+}
 function appStart(){
   pollChat(); loadSignals();
+  checkUpdate(); setInterval(() => { if (!document.hidden) checkUpdate(); }, 3600000);
   setInterval(() => { if (!document.hidden) loadActivity(activeTab() === 'activity'); }, 15000); loadActivity(false);
   document.addEventListener('visibilitychange', () => { if (!document.hidden){ pollChat(); loadActivity(activeTab() === 'activity'); } });
   let t = null; try { t = localStorage.getItem('aris_tab'); } catch (e) {}

@@ -83,6 +83,7 @@ def setup(aris):
         freq_range_mhz = (1.0, 3000.0)
         gains = [0.0, 10.0, 20.0, 30.0, 40.0]
         sweep_unit = "dBm"          # its sweep rows' scale: "dBm" if calibrated, else "dB" (the default)
+        max_iq_rate = None          # fastest IQ in samples/s, if limited: wider steps are refused, rtl_433 slows down
 
         def helper_argv(self):
             return [sys.executable, os.path.abspath(__file__)]          # this file is also the helper

@@ -50,6 +50,11 @@ replies, the AI loop) and `plugins`. Every top-level name is defined in one part
   keyed label (HMAC with a random per-station secret).
 - FM: RDS is decoded by ARIS (subcarrier found and followed, block CRC checked, limited error correction, scrolling
   text recognised). What an IQ look finds on a channel is remembered (`fm_stations.json`).
+- Receivers of different kinds tune different ranges (an RTL-SDR 24-1766 MHz, a Signal Hound SA124B to 12.4 GHz):
+  every radio command is checked against its receiver's range (`arislib.radios.covers`), multi-receiver work picks
+  only receivers that tune the band (`_pick_serials(band=)`), and the Spectrum presets and band names above 1.7 GHz
+  appear only when one does. Allocation labels, busy bands (Wi-Fi, Bluetooth, phones: bursts score lower) and the
+  GPS band (a steady new signal scores higher: a jammer looks like that) cover up to 12.75 GHz.
 - The FM channel-plan check assumes the Americas' plan (stations on odd tenths, 88.1-107.9 MHz) and the threat rules
   know the Americas' bands (902-928 MHz ISM). Elsewhere these hints are wrong: treat off-plan flags accordingly.
 - ADS-B: only checksum-verified squitters count as aircraft.
@@ -90,6 +95,14 @@ spread. Results are always described as a rough area.
 - The AI's state-changing tools run only when the user's own words asked for that action (never on a negated message
   or a question); data heard over the air is never an instruction to the model.
 - Device ids from receivers are checked before they become file names, lock names or arguments.
+
+## Update badge
+
+The web server asks the code's own git remote every few hours whether its branch has moved (`git ls-remote` and
+`merge-base` only: the service's code folder is read-only, so nothing is fetched or written; logins are never
+prompted for and never appear in errors). The page then shows an "update" badge with the command to run on the
+computer; the update itself needs root and is never run from the page. `"update_check": false` in `config.json`
+or `ARIS_UPDATE_CHECK=0` switches it off.
 
 ## Performance
 

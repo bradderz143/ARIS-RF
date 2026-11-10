@@ -1,0 +1,29 @@
+name: Bug report
+description: Something in ARIS does not work as it should.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen
+      description: What you typed in the chat or pressed on the page. Does it happen in the simulator too (`python3 test/serve.py`)?
+  - type: input
+    id: versions
+    attributes:
+      label: ARIS version, OS, receivers
+      placeholder: "ARIS 4.15.0, Debian 12, two RTL-SDR dongles"
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log lines
+      description: From aris.log in the data folder. Look through them first and leave out anything private (logins, addresses, device IDs you would rather keep).
+      render: text

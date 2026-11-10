@@ -1,5 +1,5 @@
-"""Receivers of every kind (arislib.radios), the IQ pipe, the Signal Hound BB60 plug-in (simulated) and the plug-in
-loader, on simulated radios.  python3 -m unittest test_radios"""
+"""Receivers of every kind (arislib.radios), the IQ pipe, the Signal Hound BB60 and SA44B / SA124B plug-ins
+(simulated) and the plug-in loader, on simulated radios.  python3 -m unittest test_radios"""
 import json
 import os
 import subprocess
@@ -18,6 +18,7 @@ from arislib import radios, iqpipe   # noqa: E402
 
 ROOT = harness.CODE_DIR
 BB60 = os.path.join(ROOT, "plugins", "signalhound_bb60.py")
+SA = os.path.join(ROOT, "plugins", "signalhound_sa.py")
 needs_rtl433 = unittest.skipUnless(harness.REAL_BIN, "needs the real rtl_433 (REAL_BIN or /usr/local/bin)")
 
 
@@ -161,12 +162,67 @@ class BB60Sim(unittest.TestCase):
         self.assertAlmostEqual(best / 1e6, 96.9, delta=0.03)
 
 
+class SASim(unittest.TestCase):
+    """The SA44B / SA124B plug-in's helper against its simulated device (ARIS_SA_SIM=1)."""
+    env = dict(os.environ, ARIS_SA_SIM="1", ARIS_SA_SIM_CARRIERS="96.9:-40,2437:-55")
+
+    def run_helper(self, *args, text=True):
+        return subprocess.run([sys.executable, SA] + list(args), capture_output=True, text=text, env=self.env,
+                              timeout=60)
+
+    def test_lists_its_serial(self):
+        self.assertEqual(self.run_helper("list").stdout.split("\t")[0], "19184001")
+
+    def test_iq_at_its_own_rates_with_the_carrier_where_it_belongs(self):
+        n = 121500
+        p = self.run_helper("sdr", "-d", "19184001", "-f", "96850000", "-s", "243000", "-g", "20", "-n", str(n), "-",
+                            text=False)
+        self.assertEqual(len(p.stdout), 2 * n)
+        a = np.frombuffer(p.stdout, dtype=np.uint8).astype(float) - 127.5
+        z = a[0::2] + 1j * a[1::2]
+        f = np.fft.fftshift(np.fft.fftfreq(len(z), 1 / 243000.0))
+        self.assertAlmostEqual(f[np.argmax(np.abs(np.fft.fftshift(np.fft.fft(z))))], 50000, delta=2000)
+
+    def test_a_wider_stream_is_refused_in_plain_words_never_faked(self):
+        p = self.run_helper("sdr", "-d", "19184001", "-f", "96850000", "-s", "2048000", "-n", "1000", "-")
+        self.assertEqual((p.returncode, p.stdout), (1, ""))
+        self.assertIn("486 kS/s", p.stderr)
+        A._load_plugins()
+        b = radios.backend_for("sa-19184001")
+        with self.assertRaises(radios.Unsupported) as e:
+            b.translate(["rtl_sdr", "-d", "sa-19184001", "-f", "96850000", "-s", "2048000", "-"], "sa-19184001")
+        self.assertIn("RTL-SDR", str(e.exception))
+        r433 = b.translate(["rtl_433", "-d", ":sa-19184001", "-f", "433920000", "-s", "1024k", "-F", "json"],
+                           "sa-19184001")                      # rtl_433 runs at the SA's own rate instead
+        self.assertEqual(r433[r433.index("---") + 1:][-4:], ["-s", "486111", "-r", "cu8:-"])
+        fm = b.translate(["rtl_fm", "-d", "sa-19184001", "-f", "152000000", "-M", "fm", "-s", "22050", "-"],
+                         "sa-19184001")                        # the audio decoders' 220 kS/s fits
+        self.assertEqual(fm[2], "fm")
+
+    def test_sweeps_reach_2_4_ghz_in_dbm(self):
+        p = self.run_helper("power", "-d", "19184001", "-f", "2400M:2480M:100k", "-i", "0.1", "-1", "-")
+        bins, _ = A._parse_rtl_power_lines(p.stdout.splitlines())
+        best = max(bins, key=lambda f: max(bins[f]))
+        self.assertAlmostEqual(best / 1e6, 2437.0, delta=0.2)
+        self.assertLess(max(max(v) for v in bins.values()), -40)            # calibrated dBm, not a dBFS-like scale
+
+    def test_never_touches_the_tracking_generator(self):
+        # a tracking generator attached to an SA transmits: the plug-in never calls its functions or sweep mode
+        import re
+        src = open(SA).read()
+        self.assertIsNone(re.search(r"saAttachTg|saSetTg|saConfigTg|saStoreTg|saGetTg|SA_TG", src))
+        self.assertEqual(set(re.findall(r"saInitiate\(h, (\w+)", src)), {"SA_IQ", "SA_SWEEPING"})
+
+
 class Plugins(unittest.TestCase):
     def test_the_bundled_plugins_load(self):
         names = {p["name"]: p for p in A._load_plugins()}
         self.assertTrue(names["signalhound_bb60"]["ok"], names["signalhound_bb60"]["error"])
         self.assertTrue(names["ism_868"]["ok"], names["ism_868"]["error"])
+        self.assertTrue(names["signalhound_sa"]["ok"], names["signalhound_sa"]["error"])
         self.assertIn("bb60", [b.name for b in radios.backends()])
+        self.assertIn("sa", [b.name for b in radios.backends()])
+        self.assertEqual(radios.sweep_unit("sa-19184001"), "dBm")
 
     def test_a_plugin_band_works_for_scans_captures_and_the_spectrum(self):
         A._load_plugins()
@@ -240,6 +296,84 @@ class SoapyEndToEnd(unittest.TestCase):
         r = A._stage_adsb(self.dev, 2, 40) if hasattr(A, "_stage_adsb") else None
         if r is not None:
             self.assertIn("RTL-SDR", r.get("status", ""))
+
+
+class SAEndToEnd(unittest.TestCase):
+    """A simulated SA124B found by /check: sweeps to 12.4 GHz, and steps wider than its IQ refused in plain words."""
+
+    def setUp(self):
+        os.environ["ARIS_SA_SIM"] = "1"
+        os.environ["ARIS_SA_SIM_CARRIERS"] = "96.9:-40,2437:-55"
+        self.dev = "sa-19184001"
+        A._load_plugins()
+
+    def tearDown(self):
+        os.environ.pop("ARIS_SA_SIM", None)               # unplugged first: a plugged-in receiver is never forgotten
+        os.environ.pop("ARIS_SA_SIM_CARRIERS", None)
+        if self.dev in A.DONGLE_NAMES:
+            call("forget_dongle", dongle=self.dev)
+        self.assertNotIn(self.dev, A.DONGLE_NAMES)
+
+    def test_found_swept_at_2_4_ghz_and_wide_iq_refused(self):
+        found = A._list_devices()
+        self.assertIn(self.dev, [d["serial"] for d in found])
+        self.assertIn(self.dev, A._sync_found_dongles(found)["added"])
+        self.assertGreaterEqual(A.MAX_MHZ, 12000)
+        bins, _ = A._rtl_power(2400.0, 2480.0, 100.0, gain_db=20, serial=self.dev)
+        best = max(bins, key=lambda f: sum(bins[f]) / len(bins[f]))
+        self.assertAlmostEqual(best / 1e6, 2437.0, delta=0.2)
+        with self.assertRaises(A.RFError) as e:
+            A._capture_iq(self.dev, 96850000, 2048000, 65536, 20, timeout=10)
+        self.assertIn("486 kS/s", str(e.exception))
+
+
+class HighBands(unittest.TestCase):
+    """Bands above an RTL-SDR's reach: labelled, scored and offered only where a receiver here tunes them."""
+
+    def test_allocations_above_1_7_ghz_and_gnss(self):
+        self.assertIn("2.4 GHz ISM", A._classify_frequency_allocation(2437.0, 20))
+        self.assertIn("GPS jammer", A._classify_frequency_allocation(1575.42, 5))
+        self.assertIn("5.8 GHz", A._classify_frequency_allocation(5800.0, 20))
+        self.assertIn("uplink", A._classify_frequency_allocation(1880.0, 200))
+
+    def test_scores_bursts_in_busy_bands_down_and_a_steady_gnss_signal_up(self):
+        burst = {"surge_delta_db": 20.0, "peak_mhz": 2437.0, "pattern": "intermittent", "new_signal": True}
+        A._score_event(burst)
+        self.assertTrue(any("Wi-Fi, Bluetooth" in w for w in burst["why"]))
+        self.assertAlmostEqual(burst["risk_score"], (20.0 + 4) * 0.6, places=1)
+        jam = {"surge_delta_db": 10.0, "peak_mhz": 1575.42, "pattern": "steady", "new_signal": True}
+        A._score_event(jam)
+        self.assertTrue(any("GPS jammer" in w for w in jam["why"]))
+        self.assertEqual(jam["threat_level"], "HIGH")                      # 10 x 1.5 + 4 + 6 = 25
+        self.assertIn("Bluetooth", A._hopping_hint(2402.0, 2480.0))
+        self.assertIn("meters", A._hopping_hint(903.0, 927.0))
+
+    def test_band_names_and_receivers_that_tune_them(self):
+        self.assertEqual(A._named_band("scan the 2.4 GHz band")[0], (2400.0, 2483.5))
+        self.assertEqual(A._named_band("sweep the gps band")[0], (1559.0, 1610.0))
+        rtl = [s for s in A.DONGLE_NAMES if radios.is_rtl(s)]
+        self.assertEqual(A._covering(rtl, 2400.0, 2483.5), [])
+        self.assertEqual(A._covering(rtl, 1565.0, 1585.0), rtl)
+        with self.assertRaises(radios.Unsupported) as e:
+            radios.translate(["rtl_power", "-d", rtl[0], "-f", "2400M:2483M:100k", "-i", "1", "-1", "-"])
+        self.assertIn("24-1766 MHz", str(e.exception))
+        self.assertTrue(radios.translate(["rtl_power", "-d", rtl[0], "-f", "88M:108M:10k", "-1", "-"]))
+
+    def test_only_receivers_that_tune_a_band_are_picked(self):
+        os.environ["ARIS_SA_SIM"] = "1"
+        try:
+            A._load_plugins()
+            A._sync_found_dongles(A._list_devices())
+            self.assertEqual(A._pick_serials(None, band=(2400.0, 2483.5)), ["sa-19184001"])
+            self.assertIn("sa-19184001", A._pick_serials(None, band=(88.0, 108.0)))
+            self.assertGreater(len(A._pick_serials(None, band=(88.0, 108.0))), 1)
+        finally:
+            os.environ.pop("ARIS_SA_SIM", None)
+            call("forget_dongle", dongle="sa-19184001")
+        self.assertNotIn("sa-19184001", A.DONGLE_NAMES)
+        with self.assertRaises(A.RFError) as e:
+            A._pick_serials(None, band=(2400.0, 2483.5))
+        self.assertIn("No receiver here tunes 2400-2483.5 MHz", str(e.exception))
 
 
 if __name__ == "__main__":

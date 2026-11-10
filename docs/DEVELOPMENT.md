@@ -13,6 +13,8 @@ real tools' quirks; the simulated rtl_433 hands recordings to a real rtl_433 (se
 one; tests that need it are skipped without it). `python3 test/serve.py [port]` runs the web page on simulated radios
 (login `admin` / `test-password-123`).
 
+Tests never reach the network: the harness switches the update check off (`ARIS_UPDATE_CHECK=0`).
+
 Simulated results are not proof on real radios: say so when you report a change, and test on hardware before calling
 it done.
 

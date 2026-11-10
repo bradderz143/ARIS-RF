@@ -60,6 +60,23 @@ for Linux (`libbb_api.so`; set `ARIS_BB_LIB` to its path if it is not on the lib
 - The function signatures and constants follow the BB API 5 header; check them against the SDK you install.
 - Tested against the plug-in's simulated device only (`ARIS_BB60_SIM=1`); please report results on real hardware.
 
+## Signal Hound SA44B / SA124B
+
+The bundled plug-in `plugins/signalhound_sa.py` registers the receiver type `sa`. It needs Signal Hound's SA API for
+Linux (`libsa_api.so`; set `ARIS_SA_LIB` to its path if it is not on the library path) and numpy.
+
+- **Good for sweeps:** 100 kHz to 12.4 GHz (SA124B; 4.4 GHz on an SA44B) in calibrated dBm, so Spectrum, baselines,
+  patrol and the threat audit reach 2.4 and 5.8 GHz, mobile-phone bands and more (the bands above 1.7 GHz appear
+  when a receiver covers them).
+- **Narrow IQ:** its IQ stream is 486 kS/s at most and 250 kHz wide. rtl_433 runs at that rate, the pager / APRS
+  decoders and locate readings work, but steps that need 2.048 MS/s (Name all FM stations in slices, band captures,
+  an investigation's wide look) are refused in plain words and left to another receiver. `/setup` gives each band to
+  the receiver that hears it best, so a mixed set works.
+- **Receive-only:** a Signal Hound tracking generator attached to an SA transmits; the plug-in never uses it.
+- The gain ARIS asks for sets the reference level (`10 dBm - gain`, at most +20 dBm). IQ samples arrive "scaled to
+  mW" and are divided by the reference level; if real levels look tens of dB off, that is the first thing to check.
+- Tested against the plug-in's simulated device only (`ARIS_SA_SIM=1`); please report results on real hardware.
+
 ## Other receivers
 
 Write a device plug-in: see [PLUGINS.md](PLUGINS.md). The simplest way is a helper program that takes `rtl_sdr` and

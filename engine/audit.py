@@ -147,7 +147,7 @@ def record_baseline(frequency_range=None, start_mhz=None, stop_mhz=None, dongle=
     s, e = _resolve_band(start_mhz, stop_mhz, frequency_range)
     step = _num(step_khz, "step_khz", cfg["step_khz"])
     dur = _int(duration_s, "duration_s", int(cfg.get("baseline_seconds", 30)), 2, 600)
-    serials = _pick_serials(dongle, cfg)
+    serials = _pick_serials(dongle, cfg, band=(s, e))
     print(f"[HW] recording a {dur} s baseline of {s:g}-{e:g} MHz on {', '.join(_short(x) for x in serials)}"
           + (" at the same time..." if len(serials) > 1 else "..."))
     per, errors = {}, []
@@ -311,6 +311,13 @@ def _score_event(ev):
     if _in_sensor_band(f) and not steady:
         score *= 0.6
         why.append("in a sensor band, where short bursts are normal")
+    elif _in_busy_band(f) and not steady:
+        score *= 0.6
+        why.append("in a Wi-Fi, Bluetooth or mobile-phone band, where short bursts are normal")
+    if GNSS_BAND[0] <= f <= GNSS_BAND[1] and steady and ev.get("new_signal"):
+        score += 6
+        why.append("steady signal in the satellite-navigation band, where nothing should rise above the noise "
+                   "(a GPS jammer looks like this)")
     if _in_fm_band(f) and steady and ev.get("new_signal") and not _on_fm_plan(f, 30.0):
         score += 6
         why.append("FM-band transmitter off the station channel plan")
@@ -323,6 +330,15 @@ def _score_event(ev):
     elif n == 0:
         why.append("first time flagged at this frequency")
     ev["risk_score"], ev["threat_level"], ev["why"] = round(score, 1), _threat_level(score), why
+
+
+def _hopping_hint(lo_mhz, hi_mhz) -> str:
+    if lo_mhz >= 2400.0 and hi_mhz <= 2483.5:
+        return "short bursts hopping across many frequencies: typical of Bluetooth and other frequency-hopping devices"
+    if lo_mhz >= 5150.0:
+        return "short bursts across many frequencies: typical of Wi-Fi and other digital links"
+    return ("short bursts hopping across many frequencies: typical of smart electricity or water meters, LoRa and "
+            "other frequency-hopping devices")
 
 
 def _collapse_hopping(events, s, e):
@@ -340,8 +356,7 @@ def _collapse_hopping(events, s, e):
     summary = {"peak_mhz": top[0]["peak_mhz"], "pattern": "frequency hopping", "channels": len(hop),
                "span_mhz": [round(min(fs), 3), round(max(fs), 3)], "strongest_mhz": [t["peak_mhz"] for t in top],
                "surge_delta_db": top[0]["surge_delta_db"], "bandwidth_khz": top[0]["bandwidth_khz"], "flagged_by": by,
-               "hint": ("short bursts hopping across many frequencies: typical of smart electricity or water meters, "
-                        "LoRa and other frequency-hopping devices"),
+               "hint": _hopping_hint(min(fs), max(fs)),
                "risk_score": round(min(14.0, top[0]["surge_delta_db"] * 0.5), 1), "threat_level": "LOW",
                "why": [f"{len(hop)} short bursts on different frequencies across "
                        f"{round(max(fs) - min(fs), 1)} MHz", "frequency hopping is normal in this band"]}
@@ -380,7 +395,7 @@ def run_automated_threat_audit(frequency_range=None, start_mhz=None, stop_mhz=No
     cfg = _load_config()
     s, e = _resolve_band(start_mhz, stop_mhz, frequency_range)
     dur = _int(duration_s, "duration_s", int(cfg.get("audit_seconds", 10)), 2, 600)
-    serials = _pick_serials(dongle, cfg)
+    serials = _pick_serials(dongle, cfg, band=(s, e))
     print(f"[HW] watching {s:g}-{e:g} MHz for {dur}s on {', '.join(_short(x) for x in serials)} and comparing "
           f"each with its own baseline...")
     per, events, errors = _audit_all(s, e, serials, _num(trigger_delta_db, "trigger_delta_db", 10.0), dur, 60.0 + dur)

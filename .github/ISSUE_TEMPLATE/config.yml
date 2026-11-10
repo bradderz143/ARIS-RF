@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: How ARIS works
+    url: https://github.com/bradderz143/ARIS-RF/blob/main/docs/ARCHITECTURE.md
+    about: Read this before asking how a part works.
+  - name: Writing a plug-in
+    url: https://github.com/bradderz143/ARIS-RF/blob/main/docs/PLUGINS.md
+    about: Add your own receiver type, band or chat tool.

@@ -12,7 +12,7 @@ from datetime import timedelta
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
-from . import activity, auth, bluetooth, devices, jobs, mapapi, spectrum, wifi
+from . import activity, auth, bluetooth, devices, jobs, mapapi, spectrum, update, wifi
 from .engine import engine as _engine, version
 
 HOST = os.environ.get("ARIS_GUI_HOST", "0.0.0.0")
@@ -29,6 +29,7 @@ app.register_blueprint(jobs.bp)
 app.register_blueprint(devices.bp)
 app.register_blueprint(wifi.bp)
 app.register_blueprint(bluetooth.bp)
+app.register_blueprint(update.bp)
 SECRETS = {}
 BRIDGE = {"ai": None}
 

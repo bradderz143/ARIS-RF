@@ -210,6 +210,27 @@ class ExtraLogins(unittest.TestCase):
 
 
 class Spectrum(unittest.TestCase):
+    def test_presets_only_for_bands_a_receiver_here_tunes(self):
+        c = client()
+        ids = [p["id"] for p in c.get("/api/spectrum/meta").get_json()["presets"]]
+        self.assertIn("gnss", ids)                              # 1575 MHz: an RTL-SDR tunes it
+        self.assertNotIn("ism24", ids)                          # 2.4 GHz: none of the simulated dongles does
+        os.environ["ARIS_SA_SIM"] = "1"                          # a simulated SA124B plugged in
+        from arisweb.engine import engine as _eng
+        eng = _eng()
+        try:
+            eng._load_plugins()
+            eng._sync_found_dongles(eng._list_devices())
+            ids = [p["id"] for p in c.get("/api/spectrum/meta").get_json()["presets"]]
+            self.assertIn("ism24", ids)
+            j = c.get("/api/spectrum?dongle=all&start=2400&stop=2483.5").get_json()
+            self.assertEqual([t["dongle"] for t in j["traces"]], ["sa-19184001"])     # only the one that tunes it
+            self.assertEqual(j["unit"], "dBm")
+        finally:
+            os.environ.pop("ARIS_SA_SIM", None)                  # unplugged, then forgotten
+            eng.TOOLS["forget_dongle"](dongle="sa-19184001")
+        self.assertNotIn("sa-19184001", eng.DONGLE_NAMES)
+
     def test_wide_sweep_does_not_call_fm_off_plan(self):
         c = client()
         j = c.get("/api/spectrum?dongle=all&start=30&stop=200").get_json()
@@ -874,6 +895,34 @@ class Bluetooth(unittest.TestCase):
             os.environ.pop("ARIS_BT_SCAN_FILE", None)
 
 
+class UpdateBadge(unittest.TestCase):
+    def test_update_api(self):
+        self.assertEqual(APP.test_client().get("/api/update").status_code, 401)
+        j = client().get("/api/update").get_json()                      # the harness switches the check off
+        self.assertEqual((j["enabled"], j["available"]), (False, False))
+        from arisweb.engine import engine as _eng
+        eng, real = _eng(), _eng()._check_for_update
+        os.environ["ARIS_UPDATE_CHECK"] = "1"
+        try:
+            head = eng._git_ro(eng._HERE, "rev-parse", "HEAD")        # the check saw this very commit
+        except Exception:
+            head = "h"                                                  # (a copy without git: nothing to compare)
+        try:
+            eng._check_for_update = lambda root=None: {"checked_at": int(time.time()), "available": True,
+                                                        "version": eng.VERSION, "head": head, "local": "1111111",
+                                                        "remote": "2222222", "command": "sudo bash /x/update.sh"}
+            client().get("/api/update")                                 # starts the background check
+            eng._UPDATE_RUN["thread"].join(5)
+            j = client().get("/api/update").get_json()
+            self.assertEqual((j["available"], j["remote"], j["command"]), (True, "2222222", "sudo bash /x/update.sh"))
+            self.assertNotIn("head", j)
+        finally:
+            eng._check_for_update = real
+            os.environ["ARIS_UPDATE_CHECK"] = "0"
+            if eng.UPDATE_FILE.exists():
+                eng.UPDATE_FILE.unlink()
+
+
 class Devices(unittest.TestCase):
     """The Devices tab's API: the history grouped per vehicle, unchanged answers, Forget all devices."""
 
@@ -904,7 +953,9 @@ class Devices(unittest.TestCase):
         self.assertEqual(len(car["members"]), 4)
         self.assertEqual(sorted(car["ids"]), ["92cf949a", "92cf94a1", "92cf94b3", "92cf94c7"])
         self.assertTrue(car["seen_line"].startswith("Seen 3 times since "), car["seen_line"])    # 3 passes, not 12
-        self.assertIn("(today)", car["seen_line"])
+        # the car's last pass is 9 minutes before now: just after midnight that is yesterday (the CI runs in UTC)
+        same_day = time.strftime("%Y%m%d", time.localtime(car["last_t"])) == time.strftime("%Y%m%d")
+        self.assertIn("(today)" if same_day else "(yesterday)", car["seen_line"])
         # the car was heard on three different days, so it is known by the rule; the others are not
         self.assertEqual((car["known"], car["known_by"]), (True, "days"))
         self.assertEqual(r["known"], 1)                                   # the car: one row

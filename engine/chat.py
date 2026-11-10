@@ -477,7 +477,7 @@ def _scan_band(user_text, t):
     rng = _parse_range(t)
     if rng:
         lo, hi = rng
-        return (lo, hi) if 24.0 <= lo < hi <= 1766.0 and hi - lo <= SCAN_MAX_SPAN_MHZ else None
+        return (lo, hi) if MIN_MHZ <= lo < hi <= MAX_MHZ and hi - lo <= SCAN_MAX_SPAN_MHZ else None
     nb = _named_band(user_text)
     if nb:
         return nb[0]
@@ -1360,6 +1360,10 @@ def _status_reply(st: dict) -> str:
         bad = [p["name"] for p in pl if not p.get("ok")]
         lines.append("Plug-ins: " + (", ".join(ok) or "none loaded")
                      + (f"; not loaded: {', '.join(bad)} (/plugins says why)" if bad else "") + ".")
+    up = st.get("update") or {}
+    if up.get("available"):
+        lines.append(f"A newer ARIS is available ({up.get('local')} here, {up.get('remote')} on its git remote): on the "
+                     f"computer, run {up.get('command')}")
     return "\n".join(lines)
 
 

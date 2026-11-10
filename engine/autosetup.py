@@ -37,7 +37,7 @@ def sweep_spectrum(frequency_range=None, start_mhz=None, stop_mhz=None, dongle=N
     thresh = _sanitize_threshold(threshold_db, cfg["threshold_db"])
     if step_khz not in (None, ""):
         cfg["step_khz"] = _num(step_khz, "step_khz")
-    sw = _multi_sweep(s, e, _pick_serials(dongle, cfg), secs, thresh, cfg)
+    sw = _multi_sweep(s, e, _pick_serials(dongle, cfg, band=(s, e)), secs, thresh, cfg)
     return {"source": "rtl_power (real hardware)", "band_mhz": [s, e], **sw["info"], **_fm_summary(sw["peaks"]),
             "dongles_used": sw["per_dongle"], "signals_detected": len(sw["peaks"]),
             "top_signals": [_public(p) for p in sw["peaks"][:12]], "rejected_artifacts": sw["artifacts"],

@@ -6,8 +6,9 @@ itself (`http://localhost:5000`), or from a phone, tablet or laptop on your netw
 ARIS watches the radio spectrum with one or more software-defined radios, finds what is transmitting, identifies the
 devices a decoder can recognise (weather sensors, tyre-pressure sensors, remotes, FM stations, pagers, aircraft),
 records whole ISM bands burst by burst, flags transmitters that are new, and estimates where a transmitter is on a
-floorplan. Everything runs offline, including the AI chat (a local model through Ollama). It never transmits, and it
-keeps metadata only.
+floorplan. Everything runs offline, including the AI chat (a local model through Ollama); the one thing that reaches
+out is a read-only check of its own git repository every few hours, so the page can show an "update" badge (switch it
+off with `"update_check": false` in the data folder's `config.json`). It never transmits, and it keeps metadata only.
 
 <p align="center">
   <img src="docs/screenshots/phone-chat.png" width="200" alt="Chat: an investigation and the station's status in plain words">
@@ -25,7 +26,9 @@ keeps metadata only.
 ## What it does
 
 - **Spectrum**: live sweeps from every receiver at once (overlaid, each against its own noise floor), peak lists,
-  waterfall, presets for common bands, and true dBFS levels.
+  waterfall, presets for common bands, true dBFS levels for RTL-SDR dongles and calibrated dBm for Signal Hound
+  receivers. Bands above 1.7 GHz (phone bands, 2.4 and 5 GHz Wi-Fi and Bluetooth) appear when a receiver tunes them,
+  and the threat audit knows them too (a steady signal in the GPS band is flagged as a possible jammer).
 - **Investigate and decode**: listen on a frequency for up to 10 minutes on every receiver; rtl_433's 200+ device
   decoders, FM station names (RDS, decoded and checksummed by ARIS itself), pager and APRS metadata, ADS-B aircraft
   (checksum-verified only). Anything a decoder does not recognise is described by what was measured, never guessed.
@@ -49,6 +52,7 @@ keeps metadata only.
 | RTL-SDR dongles (RTL2832U with R820T / R828D / E4000 ...) | the rtl-sdr tools | used daily |
 | Any SoapySDR receiver: HackRF, Airspy, SDRplay, LimeSDR, PlutoSDR, USRP, SoapyRemote ... | SoapySDR + [rx_tools](https://github.com/rxseger/rx_tools) | tested in simulation |
 | Signal Hound BB60C / BB60D | the bundled plug-in `plugins/signalhound_bb60.py` with Signal Hound's BB API | tested in simulation |
+| Signal Hound SA44B / SA124B (sweeps to 12.4 GHz; narrow IQ) | the bundled plug-in `plugins/signalhound_sa.py` with Signal Hound's SA API | tested in simulation |
 | Anything else that can stream IQ | a device plug-in (one Python file) | see [docs/PLUGINS.md](docs/PLUGINS.md) |
 
 Receivers are found when ARIS starts and by `/check`; nothing is hard-coded. Mix and match: each receiver gets its own
@@ -78,7 +82,8 @@ Open `http://localhost:5000` on the computer itself, or `http://<the computer's 
 on your network, then in the chat: **/check** (finds and tests the receivers and decoders,
 changes nothing) and **/setup** (calibrates each receiver: gains, frequency correction, which one hears which band
 best; a few minutes). For the AI chat, install [Ollama](https://ollama.com) and `ollama pull qwen2.5:7b` (any model
-with tool calling works; set `ARIS_MODEL`). Updates: `sudo bash /opt/aris/deploy/update.sh`.
+with tool calling works; set `ARIS_MODEL`). Updates: `sudo bash /opt/aris/deploy/update.sh` (the page shows an
+"update" badge when a newer version is on GitHub).
 
 Keep the web page off your network if you do not need it there: set `ARIS_GUI_HOST=127.0.0.1`, and reach it through
 SSH or `deploy/tailscale-https.sh` (HTTPS inside your own tailnet).
@@ -86,8 +91,9 @@ SSH or `deploy/tailscale-https.sh` (HTTPS inside your own tailnet).
 ## Plug-ins
 
 A plug-in is one Python file in `plugins/` (or `$ARIS_DATA_DIR/plugins/`). It can add a receiver type, chat tools
-and decoders, and named bands (scans, band captures and Spectrum presets understand them). Two come with ARIS:
-`signalhound_bb60.py` (a receiver type) and `ism_868.py` (the 863-870 MHz band, as a short example). See
+and decoders, and named bands (scans, band captures and Spectrum presets understand them). Three come with ARIS:
+`signalhound_bb60.py` and `signalhound_sa.py` (receiver types) and `ism_868.py` (the 863-870 MHz band, as a short
+example). See
 [docs/PLUGINS.md](docs/PLUGINS.md).
 
 ## Rules it keeps

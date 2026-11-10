@@ -330,6 +330,112 @@ def list_saved_signals(max_items=None):
     return {"count_total": total, "shown": len(items), "signals": items}
 
 
+# ----------------------------------------------------------------------------
+# Update check: is the code behind its git remote? (the page's update badge, /status)
+# ----------------------------------------------------------------------------
+UPDATE_CHECK_S = 6 * 3600            # how often the web server asks the remote (and after every update)
+UPDATE_FILE = DATA_DIR / "update_check.json"
+_UPDATE_RUN = {"thread": None}
+
+
+def _update_enabled(cfg=None) -> bool:
+    """On unless config "update_check" is false or ARIS_UPDATE_CHECK=0 (it is one read-only request to the code's own
+    git remote every few hours; nothing else leaves the computer)."""
+    if str(os.environ.get("ARIS_UPDATE_CHECK", "")).strip().lower() in ("0", "off", "no", "false"):
+        return False
+    return bool((cfg or _load_config()).get("update_check", True))
+
+
+def _git_ro(root, *args, timeout=20.0) -> str:
+    """A read-only git command in the code folder: never prompts for a login, never writes (the service's code folder
+    is read-only and owned by root, hence safe.directory). Errors never carry a URL's login part."""
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="true", SSH_ASKPASS="true", LC_ALL="C",
+               GIT_SSH_COMMAND="ssh -o BatchMode=yes")
+    p = subprocess.run(["git", "-c", f"safe.directory={root}", "-C", str(root)] + list(args),
+                       capture_output=True, text=True, timeout=timeout, env=env)
+    if p.returncode != 0:
+        msg = (p.stderr or p.stdout or "").strip()
+        last = msg.splitlines()[-1] if msg else f"git {args[0]} exited with {p.returncode}"
+        raise RuntimeError(re.sub(r"//[^/@\s]+@", "//", last)[:160])
+    return p.stdout.strip()
+
+
+def _check_for_update(root=None) -> dict:
+    """Compare the checkout's commit with its branch on the remote: rev-parse, config, ls-remote and merge-base only
+    (no fetch: nothing is written). available = the remote has a commit this checkout does not contain."""
+    root = str(root or _HERE)
+    out = {"checked_at": int(time.time()), "available": False, "version": VERSION,
+           "command": f"sudo bash {os.path.join(root, 'deploy', 'update.sh')}"}
+    if not shutil.which("git"):
+        out["state"] = "git is not installed"
+        return out
+    if not os.path.exists(os.path.join(root, ".git")):
+        out["state"] = "not a git checkout (installed from a copy)"
+        return out
+    try:
+        local = _git_ro(root, "rev-parse", "HEAD")
+        out["head"] = local
+        branch = _git_ro(root, "rev-parse", "--abbrev-ref", "HEAD")
+        if branch == "HEAD":
+            out["state"] = "not on a branch"
+            return out
+        try:
+            remote = _git_ro(root, "config", "--get", f"branch.{branch}.remote")
+        except RuntimeError:
+            remote = "origin"
+        line = _git_ro(root, "ls-remote", remote, f"refs/heads/{branch}", timeout=30.0)
+        rsha = line.split()[0] if line.split() else ""
+        out.update(branch=branch, local=local[:7], remote=rsha[:7])
+        if not rsha:
+            out["state"] = f"the branch {branch} is not on the remote"
+        elif rsha == local:
+            out["state"] = "up to date"
+        else:
+            try:
+                _git_ro(root, "merge-base", "--is-ancestor", rsha, "HEAD")
+                out["state"] = "ahead of the remote (changes made here)"
+            except RuntimeError:
+                out.update(state="update available", available=True)
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+        out.update(state="could not check", error=str(e)[:160])
+    return out
+
+
+def update_state(refresh=False) -> dict:
+    """The last update check (DATA_DIR/update_check.json). refresh=True (the web server, about once an hour) starts a
+    new check in the background when the last is older than UPDATE_CHECK_S or the code changed since (an update
+    ran); the chat console only reads it."""
+    cfg = _load_config()
+    if not _update_enabled(cfg):
+        return {"enabled": False, "available": False, "state": "switched off"}
+    try:
+        st = json.loads(UPDATE_FILE.read_text())
+    except (OSError, ValueError):
+        st = {}
+    head = st.get("head")
+    if refresh and head:
+        try:
+            head = _git_ro(_HERE, "rev-parse", "HEAD", timeout=5.0)
+        except (RuntimeError, OSError, subprocess.TimeoutExpired):
+            pass
+    changed = st.get("version") != VERSION or head != st.get("head")
+    if changed:
+        st["available"] = False                  # the code moved since that check: never show an old badge
+    if refresh and (changed or time.time() - float(st.get("checked_at") or 0) > UPDATE_CHECK_S):
+        th = _UPDATE_RUN.get("thread")
+        if not (th and th.is_alive()):
+            def run():
+                try:
+                    _atomic_write_json(UPDATE_FILE, _check_for_update())
+                except Exception as e:           # never stops the page
+                    log.warning("update check: %s", e)
+            th = threading.Thread(target=run, name="update-check", daemon=True)
+            _UPDATE_RUN["thread"] = th
+            th.start()
+    st["enabled"] = True
+    return st
+
+
 @register("system_status", "Report dongles (gains, frequency correction, what each hears per band), the best "
           "dongle per band, decoders, patrol, watchdogs, AI model and logs.", {})
 def system_status():
@@ -372,6 +478,8 @@ def system_status():
         "content_capture": "metadata only (no message text, no voice recording or transcription)",
         "plugins": [{"name": p["name"], "ok": p["ok"], "about": p["about"], "error": p["error"]}
                     for p in globals().get("PLUGINS", [])],
+        "update": {k: v for k, v in update_state().items() if k in ("enabled", "available", "state", "local", "remote",
+                                                                       "command")},
     }
 
 

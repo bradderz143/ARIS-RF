@@ -1,0 +1,70 @@
+name: Receiver report
+description: Tell us how ARIS works (or fails) on your receiver. SoapySDR and Signal Hound support is tested in simulation only, so every real report helps.
+title: "[receiver] <make and model>: <works / partly / fails>"
+labels: ["hardware report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing ARIS on real hardware. Please leave out anything private: no addresses, no
+        login details, no serial numbers you would rather keep, and no decoded device IDs from your
+        neighbourhood. Log lines are fine once you have looked through them.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Receiver type
+      options:
+        - RTL-SDR dongle
+        - SoapySDR receiver (HackRF, Airspy, SDRplay, LimeSDR, PlutoSDR, USRP ...)
+        - Signal Hound BB60C / BB60D
+        - Signal Hound SA44B / SA124B
+        - Other (a plug-in)
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Make and model
+      placeholder: "e.g. HackRF One, Airspy R2, BB60C"
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: ARIS version, OS, and driver versions
+      description: The version is next to the ARIS name on the page. For SoapySDR, the output of `SoapySDRUtil --info` (first lines) helps.
+      placeholder: "ARIS 4.15.0, Ubuntu 24.04, SoapySDR 0.8.1, rx_tools from git"
+    validations:
+      required: true
+  - type: checkboxes
+    id: works
+    attributes:
+      label: What worked?
+      description: Tick what you tried and saw working.
+      options:
+        - label: /check found the receiver
+        - label: Spectrum sweep
+        - label: Live spectrum (IQ)
+        - label: Investigate a frequency (rtl_433 decodes)
+        - label: Name all FM stations (RDS)
+        - label: Band capture (433 / 915 MHz)
+        - label: Pager / APRS decoders
+        - label: Locate readings
+  - type: textarea
+    id: problems
+    attributes:
+      label: What failed, and what did ARIS say?
+      description: The chat's reply, the page's message, or lines from aris.log (in the data folder).
+      render: text
+  - type: textarea
+    id: levels
+    attributes:
+      label: Levels (optional)
+      description: The noise floor and a known strong signal from the Spectrum tab (e.g. a local FM station), with the receiver's gain. This checks the level scale.
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Receive-only
+      options:
+        - label: I used ARIS only to receive, where I am allowed to, and nothing in this report contains private communications.
+          required: true

@@ -5,9 +5,10 @@
 <title>ARIS</title>
 <link rel="stylesheet" href="/static/app.css?v={{ asset_v }}">
 </head><body>
-<div class="topbar"><div class="brand">ARIS <span class="ver">v{{ version }}</span></div>
+<div class="topbar"><div class="brand">ARIS <span class="ver">v{{ version }}</span><span class="upd" id="upd" style="display:none" onclick="showUpdate()" role="button" tabindex="0">update</span></div>
 <div style="display:flex;gap:8px"><button class="btn-stop" onclick="resetAI()">Reset Scanner</button>
 <a href="/logout" style="color:#94a3b8;text-decoration:none;font-size:.85rem;align-self:center">Logout</a></div></div>
+<div class="upd-note" id="upd-note" style="display:none"></div>
 <div class="tabs">
 <div class="tab active" id="tab-chat" onclick="switchTab('chat')">Chat<span id="chat-badge"></span></div>
 <div class="tab" id="tab-signals" onclick="switchTab('signals')">Signals</div>

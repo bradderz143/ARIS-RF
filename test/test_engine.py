@@ -3147,5 +3147,78 @@ class DeviceHistory(unittest.TestCase):
             self.assertEqual(A.devices_list()["rows"], [])              # (rebuilt from the now-empty log)
 
 
+class UpdateCheck(unittest.TestCase):
+    """The update badge: read-only git checks against throwaway repositories (no network)."""
+
+    def setUp(self):
+        import subprocess
+        self.d = tempfile.mkdtemp()
+        self.remote, self.here, self.other = (os.path.join(self.d, x) for x in ("remote.git", "here", "other"))
+
+        def g(*a, cwd=None):
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c",
+                            "init.defaultBranch=main"] + list(a), cwd=cwd, check=True, capture_output=True)
+        self.g = g
+        g("init", "--bare", self.remote)
+        g("clone", self.remote, self.here)
+        self.commit(self.here, "one")
+        g("push", "-u", "origin", "HEAD:main", cwd=self.here)
+        g("clone", self.remote, self.other)
+
+    def tearDown(self):
+        shutil.rmtree(self.d, ignore_errors=True)
+        os.environ["ARIS_UPDATE_CHECK"] = "0"            # back to the harness's setting: no network in tests
+
+    def commit(self, repo, text):
+        with open(os.path.join(repo, "f.txt"), "a") as f:
+            f.write(text + "\n")
+        self.g("add", "f.txt", cwd=repo)
+        self.g("commit", "-m", text, cwd=repo)
+
+    def test_up_to_date_behind_and_ahead(self):
+        r = A._check_for_update(self.here)
+        self.assertEqual((r["state"], r["available"]), ("up to date", False))
+        self.commit(self.other, "two")
+        self.g("push", "origin", "HEAD:main", cwd=self.other)
+        r = A._check_for_update(self.here)
+        self.assertEqual((r["state"], r["available"]), ("update available", True))
+        self.assertEqual(r["command"], f"sudo bash {os.path.join(self.here, 'deploy', 'update.sh')}")
+        self.assertNotEqual(r["local"], r["remote"])
+        self.g("pull", "-q", "origin", "main", cwd=self.here)
+        self.commit(self.here, "three, not pushed")
+        r = A._check_for_update(self.here)
+        self.assertEqual((r["available"], r["state"]), (False, "ahead of the remote (changes made here)"))
+
+    def test_not_a_checkout_and_no_login_in_errors(self):
+        self.assertEqual(A._check_for_update(self.d)["state"], "not a git checkout (installed from a copy)")
+        self.g("remote", "set-url", "origin", "https://someone:s3cret-token@127.0.0.1:9/x.git", cwd=self.here)
+        r = A._check_for_update(self.here)
+        self.assertEqual((r["state"], r["available"]), ("could not check", False))
+        self.assertNotIn("s3cret", json.dumps(r))
+
+    def test_switched_off_and_refreshed_in_the_background(self):
+        os.environ["ARIS_UPDATE_CHECK"] = "0"
+        self.assertEqual(A.update_state(refresh=True), {"enabled": False, "available": False, "state": "switched off"})
+        os.environ.pop("ARIS_UPDATE_CHECK")
+        real = A._check_for_update
+        try:
+            if A.UPDATE_FILE.exists():
+                A.UPDATE_FILE.unlink()
+            A._check_for_update = lambda root=None: {"checked_at": int(time.time()), "available": True,
+                                                      "version": A.VERSION, "head": "x", "local": "aaaaaaa",
+                                                      "remote": "bbbbbbb", "command": "sudo bash u.sh"}
+            self.assertFalse(A.update_state(refresh=True)["available"])        # nothing known yet: checks now
+            A._UPDATE_RUN["thread"].join(5)
+            st = A.update_state()
+            self.assertEqual((st["available"], st["remote"]), (True, "bbbbbbb"))
+            self.assertIn("A newer ARIS is available", A._status_reply(A.system_status()))
+            A._atomic_write_json(A.UPDATE_FILE, dict(st, version="0.0.1"))       # an update ran since that check
+            self.assertFalse(A.update_state()["available"])
+        finally:
+            A._check_for_update = real
+            if A.UPDATE_FILE.exists():
+                A.UPDATE_FILE.unlink()
+
+
 if __name__ == "__main__":
     unittest.main()

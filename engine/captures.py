@@ -659,6 +659,7 @@ def _claim_best_dongle(f, dongle=None):
         free = [s for s in _working_serials(cfg) if s not in busy]
         if not free:
             raise RFError("Every dongle is busy with a background capture. Stop one first ('stop the capture').")
+        free = _covering(free, f) or free     # receivers that tune it (an RTL-SDR stops at 1766 MHz)
         recent = _strongest_recently(f)
         if recent in free:
             best, why = recent, "it heard this frequency best in the last investigation"

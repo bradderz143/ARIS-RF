@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-ARIS v4.14.0 - passive (receive-only) multi-receiver RF monitoring station.
+ARIS v4.15.0 - passive (receive-only) multi-receiver RF monitoring station.
 
 Run:      python3 aris.py                     (first time: type /check, then /setup)
 Tidy up:  python3 aris.py --cleanup           (lists old files from earlier versions, asks before deleting)
 Needs:    pip install ollama numpy, and the tools for your receivers: the rtl-sdr tools for RTL-SDR dongles,
           SoapySDR and rx_tools for other SDRs, or a device plug-in (plugins/). rtl_433 decodes sensors; decoders
           are used automatically when installed: multimon-ng (pagers), direwolf's atest (APRS), rtl_adsb (aircraft).
-Offline:  everything runs on this computer. The AI is your local Ollama at http://127.0.0.1:11434.
-Env:      ARIS_MODEL, ARIS_NUM_CTX, ARIS_DATA_DIR, ARIS_DB, ARIS_OLLAMA_HOST, ARIS_PLUGIN_DIRS
+Offline:  everything runs on this computer. The AI is your local Ollama at http://127.0.0.1:11434. The one thing
+          that reaches out: a read-only check of this code's own git remote every few hours, for the page's
+          update badge (config "update_check": false or ARIS_UPDATE_CHECK=0 switches it off).
+Env:      ARIS_MODEL, ARIS_NUM_CTX, ARIS_DATA_DIR, ARIS_DB, ARIS_OLLAMA_HOST, ARIS_PLUGIN_DIRS, ARIS_UPDATE_CHECK
 """
 from __future__ import annotations
 
@@ -53,7 +55,7 @@ if _HERE not in sys.path:
 from arislib import radioproc      # noqa: E402  (stopping radio programs: see _end_radio)
 from arislib import radios         # noqa: E402  (receivers of every kind: see _radio_cmd)
 
-VERSION = "4.14.0"
+VERSION = "4.15.0"
 
 
 # ---------------------------------------------------------------------------------------------------------------

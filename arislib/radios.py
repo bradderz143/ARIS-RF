@@ -82,6 +82,7 @@ class Backend:
     freq_range_mhz = (24.0, 1766.0)
     gains = None                    # gain steps in dB, or None (the engine's RTL-SDR steps)
     tools = {}                      # rtl tool -> the program actually run (None: not available on this receiver)
+    max_iq_rate = None              # the fastest IQ it streams, samples a second (None: no limit known)
     sweep_unit = "dB"               # what its rtl_power-style rows are in: "dBFS" (rtl_power's own arithmetic, which
                                     # the Spectrum tab refers to an 8-bit full-scale sine), "dBm" (calibrated), or
                                     # "dB" (the receiver's own uncalibrated scale: shown as it is)
@@ -259,10 +260,19 @@ class HelperBackend(Backend):
             c += ["-n", str(int(n))]
         return c + ["-"]
 
+    def _rate_ok(self, rate, what: str) -> None:
+        """A step that needs more IQ bandwidth than this receiver streams is refused in plain words (an upsampled
+        stream would look like a quiet band, and a station or burst outside it would be reported as not heard)."""
+        cap = self.max_iq_rate
+        if cap and float(rate) > float(cap) * 1.001:
+            raise Unsupported(f"{what} needs {float(rate) / 1e6:.3g} MS/s of IQ, and a {self.label} streams at most "
+                              f"{float(cap) / 1e3:.0f} kS/s: use an RTL-SDR or another wideband receiver for it")
+
     def translate(self, cmd, dev):
         tool = os.path.basename(cmd[0])
         rest = _without(cmd[1:], flags_with_value=("-d",))
         if tool == "rtl_sdr":
+            self._rate_ok(_rate_hz(_opt(cmd, "-s") or "2048000"), "This step")
             return self.helper_argv() + ["sdr", "-d", self.hw(dev)] + rest
         if tool == "rtl_power":
             return self.helper_argv() + ["power", "-d", self.hw(dev)] + rest
@@ -271,11 +281,14 @@ class HelperBackend(Backend):
             sr = _opt(cmd, "-s") or "24000"
             out = cmd[-1] if not cmd[-1].startswith("-") or cmd[-1] == "-" else "-"
             fs = int(_rate_hz(sr)) * self.FM_OVERSAMPLE
+            self._rate_ok(fs, "The audio decoders")
             src = self._sdr(dev, _opt(cmd, "-f") or 0, fs, _opt(cmd, "-g"), ppm=_opt(cmd, "-p"))
             return [sys.executable, IQPIPE, "fm", "--rate", str(fs), "--mode", mode, "--sr", str(_rate_hz(sr)),
                     "--out", out, "--"] + src
         if tool == "rtl_433":
             rate = _rate_hz(_opt(cmd, "-s") or "250k")
+            if self.max_iq_rate and rate > self.max_iq_rate:
+                rate = int(self.max_iq_rate)      # rtl_433 decodes at the receiver's own rate (it takes any -s)
             src = self._sdr(dev, _opt(cmd, "-f") or 433920000, rate, _opt(cmd, "-g"), ppm=_opt(cmd, "-p"))
             sink = ["rtl_433"] + _without(cmd[1:], flags_with_value=("-d", "-g", "-p", "-s")) + \
                    ["-s", str(rate), "-r", "cu8:-"]
@@ -339,6 +352,42 @@ def _device_of(cmd):
     return dev[1:] if tool == "rtl_433" and dev.startswith(":") else dev
 
 
+RANGE_SLACK_MHZ = 1.0          # rtl_power pads its hops past the band asked for
+
+
+def _mhz_of(s):
+    """'433920000', '433.92M', '88M' -> MHz; None if it does not parse."""
+    try:
+        t = str(s).strip().lower()
+        m = {"k": 1e-3, "m": 1.0, "g": 1e3}.get(t[-1:])
+        return float(t[:-1]) * m if m else float(t) / 1e6
+    except (TypeError, ValueError):
+        return None
+
+
+def covers(dev, lo_mhz, hi_mhz=None) -> bool:
+    """Does this receiver tune from lo to hi MHz (one frequency when hi is None)?"""
+    a, b = backend_for(dev).freq_range_mhz
+    hi_mhz = lo_mhz if hi_mhz is None else hi_mhz
+    return a - RANGE_SLACK_MHZ <= float(lo_mhz) and float(hi_mhz) <= b + RANGE_SLACK_MHZ
+
+
+def _check_range(cmd, dev) -> None:
+    """A frequency outside the receiver's range is refused in plain words before anything opens it (with receivers
+    of different ranges in one station, a 2.4 GHz sweep must never be sent to an RTL-SDR dongle)."""
+    f = _opt(cmd, "-f")
+    if not f:
+        return
+    parts = [_mhz_of(x) for x in str(f).split(":")[:2]]
+    if any(p is None for p in parts):
+        return
+    lo, hi = min(parts), max(parts)
+    if not covers(dev, lo, hi):
+        a, b = backend_for(dev).freq_range_mhz
+        what = f"{lo:g}-{hi:g} MHz is" if hi - lo > 1e-6 else f"{lo:g} MHz is"
+        raise Unsupported(f"{what} outside what this {backend_for(dev).label} tunes ({a:g}-{b:g} MHz)")
+
+
 def translate(cmd: list):
     """The command to run for an rtl_* command line. Commands that name no device (rtl_433 -r on a file) and
     RTL-SDR dongles run unchanged. None: this step does not apply to that receiver. Raises Unsupported."""
@@ -348,6 +397,7 @@ def translate(cmd: list):
     if dev is None:
         return list(cmd)
     b = backend_for(dev)
+    _check_range(cmd, dev)
     return list(cmd) if b is _RTL else b.translate(list(cmd), dev)
 
 
