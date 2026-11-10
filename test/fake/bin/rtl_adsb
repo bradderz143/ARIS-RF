@@ -1,0 +1,24 @@
+#!/usr/bin/env python3
+import sys, os, time, signal
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..'))
+from _common import logargs, opt, atten, sigint_hang, resolve_dev
+logargs("rtl_adsb")
+dev = resolve_dev(opt(sys.argv[1:], "-d", "0"))[1] or opt(sys.argv[1:], "-d", "0")   # (index rule)
+n = int(os.environ.get("FAKE_ADSB", "0"))
+at = atten(dev, 1090e6)
+lines = []
+if n and at is not None and at > -25:
+    k = max(1, int(20 * (1 + at / 25)))
+    from arislib import adsb
+    for j in range(n):
+        lines += [f"*{adsb.make_frame(0xA1B200 + j)};" for _ in range(k)]
+if os.environ.get("FAKE_ADSB_NOISE"):       # what rtl_adsb also prints: short replies and damaged frames
+    lines += ["*5D4840D6E8D7E1;", "*8D4840D6202CC371C32CE0576099;"] * int(os.environ["FAKE_ADSB_NOISE"])
+def bye(*_):
+    sys.stdout.write("\n".join(lines) + ("\n" if lines else "")); sys.stdout.flush(); sys.exit(0)
+signal.signal(signal.SIGINT, bye); signal.signal(signal.SIGTERM, bye)
+# FAKE_SIGINT_HANG: the frames it heard are out (the real one flushes each), then its stop hangs
+sigint_hang(before=lambda: (sys.stdout.write("\n".join(lines) + ("\n" if lines else "")), sys.stdout.flush()))
+while True:
+    time.sleep(0.1)

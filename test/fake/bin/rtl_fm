@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+import sys, os, time
+import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _common import logargs, sigint_hang
+logargs("rtl_fm")
+sigint_hang()
+out = sys.argv[-1]
+sr = 22050
+n = sr * 4
+x = 0.12 * np.diff(np.random.default_rng(3).normal(0, 1, n + 1))
+(np.clip(x, -1, 1) * 32767).astype(np.int16).tofile(out)
+time.sleep(60)

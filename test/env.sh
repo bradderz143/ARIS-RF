@@ -1,0 +1,9 @@
+export ARIS_TEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+export ARIS_CODE_DIR=$(cd "$ARIS_TEST_DIR/.." && pwd)
+export ARIS_DATA_DIR=${ARIS_DATA_DIR:-$ARIS_TEST_DIR/data}
+export PATH=$ARIS_TEST_DIR/fake/bin:$PATH
+export PYTHONPATH=$ARIS_TEST_DIR/fake/mods:$ARIS_CODE_DIR
+export ARIS_DATA_DIR=$ARIS_TEST_DIR/data
+export ARIS_DB=$ARIS_TEST_DIR/data/sigint.db
+export ARIS_WATCHDOG_LOG=$ARIS_TEST_DIR/data/wd.jsonl
+export FAKE_ARGLOG=$ARIS_TEST_DIR/args.log

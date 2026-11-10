@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""FAKE_IQ = f_mhz:mode:snr_db[:station name],...  modes: cw ook fsk wbfm (stereo pilot + real RDS carrying the
+station name, locked to the pilot), wbfm_unlocked (stereo, RDS coder on its own clock 2.1 Hz low), wbfm_monords
+(mono, RDS on its own clock 3.3 Hz high), wbfm_nords (stereo, no RDS), wbfm_mono (mono, no RDS), fmbug (mono,
+drifting). A name with | scrolls: "LA|MEJOR|97.7".
+snr_db is per sample over the whole capture ("25"). With "bin" after it ("17bin") it is per FFT bin, the way the
+band capture's detector reads it (arislib.bandwatch: 512-point Hann frames; an on-off remote reads about 1 dB more
+in its snr_db): 25.3 dB more than the same signal per sample. Real remotes on a test station read 15-20 dB per bin, which
+per sample is about -8 dB: the per-sample levels of the older tests are far stronger than anything real.
+Streaming (no -n, the band capture) has its own kinds, see below; the fourth field is then the kind's option.
+FAKE_SDR_STALL=<rate>: at that sample rate and above, send a little and then stall.
+FAKE_SIGINT_HANG=<seconds|never>: Ctrl+C / SIGTERM stops the samples but rtl_sdr exits only that much later (never:
+only SIGKILL), as librtlsdr's cancel did on the real PC. FAKE_END_HANG=1: after sending its -n count it does not
+exit by itself (it ends its streaming with the same cancel as Ctrl+C), so it has to be stopped."""
+import sys, os
+import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
+from _common import logargs, opt, specs, atten, sigint_hang, resolve_dev
+from arislib import rds as _rds
+logargs("rtl_sdr")
+import signal as _sg
+_sg.signal(_sg.SIGINT, lambda *_a: (sys.stderr.write("Signal caught, exiting!\nUser cancel, exiting...\n"), sys.exit(0)))
+sigint_hang()
+_dev = resolve_dev(opt(sys.argv[1:], "-d", "0"))[1] or opt(sys.argv[1:], "-d", "0")   # (index rule)
+a = sys.argv[1:]
+tune = float(opt(a, "-f")); fs = float(opt(a, "-s")); out = a[-1]
+n = int(opt(a, "-n")) if "-n" in a else None
+applied = int(opt(a, "-p", "0"))
+if os.environ.get("FAKE_SDR_STALL") and fs >= float(os.environ["FAKE_SDR_STALL"]):
+    # a dongle that starts and then stops sending (seen on the real PC at 2.048 MS/s): a little data, then nothing
+    sys.stdout.buffer.write(bytes(65536)); sys.stdout.flush()
+    sys.stderr.write("Found 1 device(s):\nReading samples in async mode...\nLost at least 16384 bytes\n"); sys.stderr.flush()
+    import time as _t; _t.sleep(120); sys.exit(0)
+e = (float(os.environ.get("FAKE_PPM_TRUE", "0")) - applied) / 1e6
+lo_actual = tune * (1 + e)
+
+
+_BIN_GAIN = float(np.hanning(512).sum() ** 2 / (np.hanning(512) ** 2).sum() / 2.0)   # 170.3: tone / noise per bin
+
+
+def _amp(field, at, sigma=0.02):
+    """A device's amplitude from its snr field ('25' per sample, '17bin' per FFT bin) and its antenna's dB."""
+    v = str(field).strip().lower()
+    if v.endswith("bin"):
+        return sigma * np.sqrt(10 ** ((float(v[:-3]) + at) / 10) / _BIN_GAIN)
+    return sigma * np.sqrt(2) * 10 ** ((float(v) + at) / 20)
+
+
+def _pulses(kind, hold_s=1.5):
+    """On/off pulse list (microseconds) of a device the REAL rtl_433 knows (ev1527, its Generic-Remote; ev1527hold,
+    the same remote with its button held down for hold_s: the code over and over, like a real one) or one it only
+    demodulates (unk28)."""
+    if kind in ("ev1527", "ev1527hold"):
+        T, code, seq = 465, 0xA5C3B1, []
+        for _ in range(6 if kind == "ev1527" else max(1, int(round(hold_s * 1e6 / (128 * T))))):
+            seq += [(1, T), (0, 31 * T)]
+            for i in range(23, -1, -1):
+                seq += [(1, 3 * T), (0, T)] if (code >> i) & 1 else [(1, T), (0, 3 * T)]
+        return seq + [(1, T), (0, 31 * T)]
+    seq = []
+    for _ in range(4):
+        for b in "1011001110001111010100101100":
+            seq += [(1, 400), (0, 1200)] if b == "1" else [(1, 1200), (0, 400)]
+        seq.append((0, 10000))
+    return seq
+
+
+def _fsk_burst(f_khz, dev_hz):
+    """A 2-FSK burst like a tyre-pressure sensor's: 24 chips of 1010 preamble and 72 Manchester-coded bits at
+    19.2 kchip/s (8.75 ms), tones dev_hz either side of the frequency. Returns (on, phase) per sample."""
+    data = np.random.default_rng(int(f_khz)).integers(0, 2, 72)
+    chips = np.array([1, 0] * 12 + [c for b in data for c in ((1, 0) if b else (0, 1))], dtype=np.int8)
+    idx = (np.arange(int(len(chips) * fs / 19200.0)) * 19200.0 / fs).astype(int)
+    sign = 2.0 * chips[idx] - 1.0
+    return np.ones(len(idx), dtype=np.uint8), 2 * np.pi * np.cumsum(dev_hz * sign) / fs
+
+
+if n is None:
+    # Streaming (band capture): FAKE_IQ devices of kind ev1527 / unk28 / ook each burst every FAKE_BURST_EVERY seconds
+    # (default 1.5) at their own frequency, in real time, until rtl_sdr is stopped. Steady 'cw' carriers too.
+    # ev1527hold[:seconds]: the ev1527 remote held down (default 1.5 s), fsk2[:kHz]: a 2-FSK burst with its tones
+    # that far either side of the frequency (default 35: 70 kHz apart, like a tyre sensor on the real PC). A device
+    # whose burst is longer than FAKE_BURST_EVERY repeats 0.5 s after it ends.
+    import time as _t3
+    rng = np.random.default_rng(int(os.environ.get("FAKE_SEED", "7")))
+    every = float(os.environ.get("FAKE_BURST_EVERY", "1.5"))
+    P = int(every * fs)
+    devs = []
+    for s in specs("FAKE_IQ"):
+        f, mode = float(s[0]) * 1e6, s[1]
+        at = atten(_dev, f)
+        if at is None or abs(f - lo_actual) > fs / 2:
+            continue
+        A = _amp(s[2], at)
+        if mode in ("ev1527", "ev1527hold", "unk28", "ook", "fsk2"):
+            ph, new = None, mode in ("ev1527hold", "fsk2")
+            opt4 = float(s[3]) if new and len(s) > 3 and s[3].strip() else None
+            if mode == "ook":           # the harness's default devices: 25 ms of random 500 us OOK bits
+                bits = np.random.default_rng(int(float(s[0]) * 1000)).integers(0, 2, 50)
+                env = np.repeat(bits.astype(np.uint8), int(500e-6 * fs))
+            elif mode == "fsk2":
+                env, ph = _fsk_burst(float(s[0]) * 1000, 1e3 * (opt4 if opt4 is not None else 35.0))
+            else:
+                env = np.concatenate([np.full(int(us * fs / 1e6), on, dtype=np.uint8) for on, us in
+                                      _pulses(mode, opt4 if opt4 is not None else 1.5)])
+            Pd = max(P, len(env) + int(0.5 * fs)) if new else P
+            off = int((int(float(s[0]) * 1000) % 97) / 97.0 * (Pd - len(env) - 1))
+            devs.append((f - lo_actual, A, env, off, Pd, ph))
+        elif mode == "cw":
+            devs.append((f - lo_actual, A, None, 0, P, None))
+    blk, k, t_start = int(fs * 0.1), 0, _t3.time()
+    try:
+        while True:
+            s0 = k * blk
+            t = (s0 + np.arange(blk)) / fs
+            z = rng.normal(0, 0.02, blk) + 1j * rng.normal(0, 0.02, blk) + (0.03 + 0.02j)
+            for fb, A, env, off, Pd, ph in devs:
+                if env is None:
+                    z += A * np.exp(2j * np.pi * fb * t)
+                    continue
+                i = (s0 + np.arange(blk) - off) % Pd
+                m = i < len(env)
+                if not m.any():
+                    continue
+                on = np.zeros(blk)
+                on[m] = env[i[m]]
+                if ph is None:
+                    z += A * on * np.exp(2j * np.pi * fb * t)
+                else:                   # FSK: the burst's own phase on top of the carrier (continuous)
+                    p = np.zeros(blk)
+                    p[m] = ph[i[m]]
+                    z += A * on * np.exp(1j * (2 * np.pi * fb * t + p))
+            iq = np.empty(2 * blk, dtype=np.uint8)
+            iq[0::2] = np.clip(np.round(z.real * 128 + 127.4), 0, 255)
+            iq[1::2] = np.clip(np.round(z.imag * 128 + 127.4), 0, 255)
+            sys.stdout.buffer.write(iq.tobytes()); sys.stdout.flush()
+            k += 1
+            ahead = t_start + k * blk / fs - _t3.time()
+            if ahead > 0:
+                _t3.sleep(ahead)
+    except (BrokenPipeError, KeyboardInterrupt):
+        sys.exit(0)
+rng = np.random.default_rng(int(os.environ.get("FAKE_SEED", "7")))
+sigma = 0.02
+import time as _tm
+t = np.arange(n) / fs + (_tm.time() % 10.0)   # sensors burst at random moments relative to each capture
+z = rng.normal(0, sigma, n) + 1j * rng.normal(0, sigma, n) + (0.03 + 0.02j)
+for s in specs("FAKE_IQ"):
+    f, mode = float(s[0]) * 1e6, s[1]
+    if atten(_dev, f) is None:
+        continue
+    fb = f - lo_actual
+    if abs(fb) > fs / 2:
+        continue
+    A = _amp(s[2], atten(_dev, f), sigma)
+    if mode == "cw":
+        z += A * np.exp(2j * np.pi * fb * t)
+    elif mode in ("wbfm", "wbfm_unlocked", "wbfm_monords", "wbfm_nords", "wbfm_mono", "fmbug"):
+        audio = 0.45 * np.sin(2 * np.pi * 1000 * t) + 0.25 * np.sin(2 * np.pi * 3100 * t)
+        name = s[3] if len(s) > 3 else f"FM {s[0]}"
+        if "|" in name:                                   # scrolling text: a piece per full name
+            name = name.split("|")
+        pi = 0x5000 | (int(round(float(s[0]) * 10)) & 0x0FFF)
+        pilot = 0.1 * np.sin(2 * np.pi * 19000 * t)
+        if mode == "wbfm":
+            m = 0.8 * audio + pilot + 0.05 * _rds.rds_waveform(t, pi, name, -np.pi / 2, 0.4)
+            dev = 75e3
+        elif mode == "wbfm_unlocked":
+            m = 0.8 * audio + pilot + 0.05 * _rds.rds_waveform(t, pi, name, rds_phase=1.3, carrier_hz=57000 - 2.1)
+            dev = 75e3
+        elif mode == "wbfm_monords":
+            m, dev = 0.8 * audio + 0.05 * _rds.rds_waveform(t, pi, name, rds_phase=0.2, carrier_hz=57003.3), 75e3
+        elif mode == "wbfm_nords":
+            m, dev = 0.8 * audio + pilot, 75e3
+        elif mode == "wbfm_mono":
+            m, dev = audio, 75e3
+        else:
+            m, dev = audio, 60e3
+            fb = fb + 1500 * np.sin(2 * np.pi * 0.3 * t)        # cheap oscillator drift
+        ph = 2 * np.pi * np.cumsum(fb + dev * m) / fs
+        z += A * np.exp(1j * ph)
+    elif mode in ("ook", "fsk"):
+        period, dur = 0.5, 0.025
+        inb = (t % period) < dur
+        bitlen = 500e-6 if mode == "ook" else 1 / 4800
+        bits = rng.integers(0, 2, int(t[-1] / bitlen) + 2)
+        b = bits[(t / bitlen).astype(int)]
+        if mode == "ook":
+            z += A * np.exp(2j * np.pi * fb * t) * (inb & (b == 1))
+        else:
+            ph = 2 * np.pi * np.cumsum(fb + (2 * b - 1) * 15e3) / fs
+            z += A * np.exp(1j * ph) * inb
+# the dongle's own filter: flat to 70% of the band edge, gone by 90% (stations near the edge lose part of their
+# signal: v4.7.4's wide slices put some there on the real PC)
+if n >= 4096:
+    Z = np.fft.fft(z)
+    a = np.abs(np.fft.fftfreq(n)) / 0.5
+    Z *= np.where(a <= 0.7, 1.0, 0.5 * (1 + np.cos(np.pi * (np.minimum(a, 0.9) - 0.7) / 0.2)))
+    z = np.fft.ifft(Z)
+    del Z
+iq = np.empty(2 * n, dtype=np.uint8)
+iq[0::2] = np.clip(np.round(z.real * 128 + 127.4), 0, 255)
+iq[1::2] = np.clip(np.round(z.imag * 128 + 127.4), 0, 255)
+if out == "-":                      # real rtl_sdr writes samples to stdout for "-"
+    sys.stdout.buffer.write(iq.tobytes())
+    # real rtl_sdr: a byte count that is a whole number of its buffers never ends
+    if (2 * n) % (16 * 16384) == 0 or os.environ.get("FAKE_END_HANG"):
+        sys.stdout.flush()
+        import time as _t2; _t2.sleep(120)
+else:
+    iq.tofile(out)

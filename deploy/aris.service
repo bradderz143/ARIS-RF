@@ -1,0 +1,37 @@
+# ARIS web GUI as its own unprivileged user (not root). Installed by deploy/install.sh --apply, which
+# replaces @REPO@ with the code folder (default /opt/aris, owned by root and read-only for the service).
+# The dongles need no root: the rtl-sdr package's udev rule gives group plugdev read/write on them, and the
+# service user is in that group. Everything ARIS writes lives in /var/lib/aris (StateDirectory, mode 700).
+[Unit]
+Description=ARIS receive-only RF monitoring station (web GUI on port 5000, runs as user aris)
+After=network-online.target ollama.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aris
+Group=aris
+SupplementaryGroups=plugdev
+WorkingDirectory=@REPO@
+StateDirectory=aris
+StateDirectoryMode=0700
+UMask=0077
+Environment=HOME=/var/lib/aris
+Environment=ARIS_DATA_DIR=/var/lib/aris
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env python3 @REPO@/aris_gui.py
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=20
+# What a bug or a stolen session in the web layer could reach is limited to ARIS's own folder and the dongles.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+# ProtectSystem=strict makes /tmp read-only too: without a private one Python finds no temp directory
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

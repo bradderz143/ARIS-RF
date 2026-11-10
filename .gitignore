@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+*.pre*
+*.tar.gz
+*.png
+*.out
+*.log
+args.log
+test/data/
+test/data_x/
+test/fakeroot/
+gui_secrets.json
+*.db
+*.jsonl
+test/shots/
+
+# README screenshots are kept
+!docs/screenshots/*.png

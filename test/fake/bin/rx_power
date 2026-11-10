@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+"""Simulated rx_power (rx_tools): takes SoapySDR device args ("driver=hackrf,serial=...") and the rtl_power options, and
+runs the simulated rtl_power as the dongle FAKE_SOAPY_AS (default 00004004), so a SoapySDR receiver hears like it."""
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _common import logargs, soapy_as_rtl
+logargs(os.path.basename(sys.argv[0]))
+here = os.path.dirname(os.path.abspath(__file__))
+args = soapy_as_rtl(sys.argv[1:])
+os.execv(os.path.join(here, "rtl_power"), [os.path.join(here, "rtl_power")] + args)

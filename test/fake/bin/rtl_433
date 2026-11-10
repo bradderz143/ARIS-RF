@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""Fake rtl_433. -r FILE runs the real rtl_433. Device mode: FAKE_433='f_mhz:kind:snr,...' (kind ev1527 = a
+remote the real rtl_433 decodes, unk28 = a pattern no decoder knows, fsk = FSK packets). Each signal the dongle's
+antenna can hear is written to a .cu8 recording and the REAL rtl_433 decodes it with the same flags.
+FAKE_433=1 (legacy) prints one Acurite packet."""
+import sys, os, json, time, tempfile, subprocess
+import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _common import logargs, opt, specs, atten, REAL
+logargs("rtl_433")
+a = sys.argv[1:]
+if "-r" in a or "-R" in a and "help" in a:
+    os.execv(os.path.join(REAL, "rtl_433"), [os.path.join(REAL, "rtl_433")] + a)
+if "-h" in a:
+    print("[-Y autolevel] [-Y minmax]"); sys.exit(0)
+# Device selection exactly like the real rtl_433 (src/sdr.c): "-d :SERIAL" picks by serial, a bare number is a device
+# INDEX. Its own errors only show with "-F log" (to stderr); without it, a hint line instead. Exit code 2 when the
+# dongle cannot be opened. FAKE_433_BROKEN=1: it finds the dongle but cannot open it (busy / DVB driver).
+_devs = ["00001001", "00003003", "00004004"] + [x for x in os.environ.get("FAKE_EXTRA", "").split(",") if x]
+_devs = [d for d in _devs if d not in os.environ.get("FAKE_MISSING", "").split(",")]
+_log = "log" in [a[i + 1] for i, x in enumerate(a[:-1]) if x == "-F"]
+def _fail(*msgs):
+    for m in (msgs if _log else ['Use "-F log" if you want any messages, warnings, and errors in the console.']):
+        print(m, file=sys.stderr)
+    sys.exit(2)
+_q = opt(a, "-d", "0")
+if _q.startswith(":"):
+    if _q[1:] not in _devs:
+        _fail(f"SDR: Could not find device with serial '{_q[1:]}' (err -3)")
+    dev = _q[1:]
+elif _q.isdigit():
+    if not _devs:
+        _fail("SDR: No supported devices found.")
+    if int(_q) >= len(_devs):
+        _fail(f"sdr_open_rtl: Failed to open rtlsdr device #{int(_q)}.", "sdr_open_rtl: Unable to open a device")
+    dev = _devs[int(_q)]
+elif "driver=" in _q:          # a SoapySDR receiver (FAKE_SOAPY): it hears like the dongle FAKE_SOAPY_AS
+    from _common import soapy_as_rtl
+    dev = soapy_as_rtl(["-d", _q])[1]
+else:
+    _fail(f"SoapySDR: no match for device query '{_q}'")
+if os.environ.get("FAKE_433_BROKEN"):
+    _fail("usb_claim_interface error -6", f"sdr_open_rtl: Failed to open rtlsdr device #{_devs.index(dev)}.",
+          "sdr_open_rtl: Unable to open a device")
+if _log:
+    print(f"SDR: Using device {_devs.index(dev)}: Realtek, RTL2838UHIDIR, SN: {dev}, \"Generic RTL2832U OEM\"",
+          file=sys.stderr, flush=True)
+tune = float(opt(a, "-f", "433920000").rstrip("M")) * (1e6 if opt(a, "-f", "").endswith("M") else 1)
+if os.environ.get("FAKE_433") == "1":
+    print(json.dumps({"time": "2026-10-31 12:00:00", "model": "Acurite-Tower", "id": 42, "temperature_C": 21.5}))
+    sys.exit(0)
+fs = 250000
+rng = np.random.default_rng(int(time.time() * 1000) % 100000)
+def ook_seq(kind):
+    if kind == "ev1527":
+        T, code, seq = 465, 0xA5C3B1, [(0, 20000)]
+        for _ in range(6):
+            seq += [(1, T), (0, 31 * T)]
+            for i in range(23, -1, -1):
+                seq += [(1, 3 * T), (0, T)] if (code >> i) & 1 else [(1, T), (0, 3 * T)]
+        return seq + [(1, T), (0, 31 * T), (0, 20000)]
+    bits, seq = "1011001110001111010100101100", [(0, 20000)]
+    for _ in range(4):
+        for b in bits:
+            seq += [(1, 400), (0, 1200)] if b == "1" else [(1, 1200), (0, 400)]
+        seq.append((0, 10000))
+    return seq + [(0, 20000)]
+def capture():
+  parts = []
+  for s in specs("FAKE_433"):
+      f, kind, snr = float(s[0]) * 1e6, s[1], float(s[2])
+      at = atten(dev, f)
+      if at is None or abs(f - tune) > 110e3:
+          continue
+      amp = 2.8 * 10 ** ((snr + at) / 20)
+      off = f - tune
+      if kind == "fsk":
+          bits = rng.integers(0, 2, 120); spb = int(fs / 9600)
+          fr = np.repeat(np.where(bits == 1, 40e3, -40e3), spb) + off
+          z = np.concatenate([np.zeros(5000), amp * np.exp(2j * np.pi * np.cumsum(fr) / fs), np.zeros(5000)])
+      else:
+          env = np.concatenate([np.full(int(us * fs / 1e6), float(on)) for on, us in ook_seq(kind)])
+          z = amp * env * np.exp(2j * np.pi * off * np.arange(len(env)) / fs)
+      parts.append(z)
+  if not parts:
+      return
+  z = np.concatenate(parts)
+  z = z + 2.0 * (rng.standard_normal(len(z)) + 1j * rng.standard_normal(len(z)))
+  iq = np.empty(2 * len(z), dtype=np.float32); iq[0::2] = z.real; iq[1::2] = z.imag
+  d = tempfile.mkdtemp()
+  path = os.path.join(d, f"cap_{tune / 1e6:.3f}M_250k.cu8")
+  np.clip(np.round(iq + 127.5), 0, 255).astype(np.uint8).tofile(path)
+  keep, skip = [], {"-d", "-f", "-g", "-p", "-s", "-T"}
+  i = 0
+  while i < len(a):
+      if a[i] in skip:
+          i += 2; continue
+      keep.append(a[i]); i += 1
+  # stderr merged into stdout like the real thing writes them, so the order (packet JSON, then its analysis) is kept
+  p = subprocess.run([os.path.join(REAL, "rtl_433"), "-r", path] + keep, stdout=subprocess.PIPE,
+                     stderr=subprocess.STDOUT, text=True)
+  sys.stdout.write(p.stdout)
+  os.remove(path); os.rmdir(d)
+
+if "-T" in a:
+    capture()
+else:                                  # streaming like a real watchdog: a transmission every FAKE_WD_PERIOD s
+    import signal as _sg
+    _sg.signal(_sg.SIGTERM, lambda *_: sys.exit(0))
+    from _common import sigint_hang
+    sigint_hang()                      # FAKE_SIGINT_HANG: its stop hangs, like the rtl-sdr tools' on the real PC
+    while True:
+        capture(); sys.stdout.flush(); sys.stderr.flush()
+        time.sleep(float(os.environ.get("FAKE_WD_PERIOD", "2")))

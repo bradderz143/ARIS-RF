@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""Simulated SoapySDRUtil --find. FAKE_SOAPY="driver:serial,driver:serial" lists SoapySDR receivers (an RTL-SDR
+dongle shows up here too on a real system, as driver=rtlsdr: ARIS leaves those to its RTL-SDR backend)."""
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _common import logargs
+logargs("SoapySDRUtil")
+devs = [x.split(":", 1) for x in os.environ.get("FAKE_SOAPY", "").split(",") if ":" in x]
+if "--find" not in sys.argv[1:]:
+    print("Usage SoapySDRUtil --find"); sys.exit(0)
+print("######################################################\n##     Soap SDR -- the SDR abstraction library     ##\n"
+      "######################################################\n")
+print("Found Rafael Micro R820T tuner")
+if not devs:
+    print("No devices found!"); sys.exit(0)
+i = 0
+for drv, ser in [("rtlsdr", "00001001")] + devs:
+    print(f"Found device {i}")
+    print(f"  driver = {drv}")
+    print(f"  label = {drv.upper()} #{i} {ser}")
+    print(f"  serial = {ser}")
+    print()
+    i += 1

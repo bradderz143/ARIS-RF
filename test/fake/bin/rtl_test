@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+import sys, os, time, signal
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _common import sigint_hang, listing, resolve_dev
+a = sys.argv[1:]
+want = a[a.index("-d") + 1] if "-d" in a else "0"
+# FAKE_EXTRA: more dongles plugged in; FAKE_MISSING: unplugged; FAKE_DUP: a second dongle with the same serial
+devs = listing()
+print(f"Found {len(devs)} device(s):", file=sys.stderr)
+for i, d in enumerate(devs):
+    print(f"  {i}:  Realtek, RTL2838UHIDIR, SN: {d}", file=sys.stderr)
+idx, dev = resolve_dev(want, devs)          # (the real rule: a number below the count is an index, octal with a 0)
+if idx is None:
+    print("\nNo matching devices found.", file=sys.stderr); sys.exit(1)
+if dev in os.environ.get("FAKE_USB_BUSY", ""):
+    print(f"\nUsing device {idx}: Generic RTL2832U OEM\nusb_claim_interface error -6\nFailed to open rtlsdr device #{idx}.", file=sys.stderr); sys.exit(1)
+print(f"\nUsing device {idx}: Generic RTL2832U OEM\nFound Rafael Micro R820T tuner\n"
+      "Supported gain values (29): 0.0 0.9 1.4 2.7 3.7 7.7 8.7 12.5 14.4 15.7 16.6 19.7 20.7 22.9 25.4 28.0 29.7 32.8 "
+      "33.8 36.4 37.2 38.6 40.2 42.1 43.4 43.9 44.5 48.0 49.6 \n[R82XX] PLL not locked!\nSampling at 2048000 S/s.\n\n"
+      "Info: This tool will continuously read from the device, and report if\nsamples get lost. If you observe no "
+      "further output, everything is fine.\n\nReading samples in async mode...", file=sys.stderr, flush=True)
+if "-t" in a:                          # the tuner range test: opens the device, prints the range, exits (the
+    print("Benchmarking R82XX PLL...\n[R82XX] PLL not locked!\n[R82XX] PLL not locked!\n"   # node agent's listing)
+          "[E4K] PLL not locked!\nE4K range: 52 to 2210 MHz\nE4K L-band gap: 1109 to 1246 MHz", file=sys.stderr, flush=True)
+    sys.exit(0)
+lossy = dev in os.environ.get("FAKE_USB_LOSSY", "")
+def bye(*_):
+    print("\nSignal caught, exiting!\n\nUser cancel, exiting...\nSamples per million lost (minimum): %d"
+          % (4100 if lossy else 0), file=sys.stderr, flush=True)
+    sys.exit(0)
+signal.signal(signal.SIGINT, bye)
+sigint_hang()            # FAKE_SIGINT_HANG: the loss summary never comes (it is printed after the cancel returns)
+if lossy:
+    time.sleep(0.5); print("lost at least 524288 bytes", file=sys.stderr, flush=True)
+while True:
+    time.sleep(0.1)

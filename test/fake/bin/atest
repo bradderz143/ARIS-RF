@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _common import REAL
+a = sys.argv[1:]
+if any("aris_selftest" in x for x in a):
+    os.execv(os.path.join(REAL, "atest"), [os.path.join(REAL, "atest")] + a)
+if os.environ.get("FAKE_APRS"):
+    print("DECODED[1] 0:01.2 XE1ABC audio level = 50(20/19)")
+    print("\x1b[38;2;0;192;0m[0] XE1ABC-9>APRS,WIDE1-1:!1925.00N/09908.00W>test\x1b[38;2;0;0;0m")
+    print("1 packets decoded in 0.01 seconds.")
+else:
+    print("0 packets decoded in 0.1 seconds.")

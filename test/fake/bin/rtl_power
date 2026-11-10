@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+import sys, os, math, time, random
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _common import logargs, opt, specs, atten, sigint_hang, resolve_dev
+logargs("rtl_power")
+sigint_hang()
+_dev = resolve_dev(opt(sys.argv[1:], "-d", "0"))[1] or opt(sys.argv[1:], "-d", "0")   # (index rule)
+a = sys.argv[1:]
+lo, hi, step = opt(a, "-f").split(":")
+lo, hi = float(lo[:-1]) * 1e6, float(hi[:-1]) * 1e6
+step = float(step[:-1]) * 1e3
+crop = float(opt(a, "-c", "0%").rstrip("%")) / 100.0
+g = float(opt(a, "-g", "19.7"))
+interval = float(opt(a, "-i", "10"))
+passes = 1 if "-1" in a else max(1, int(float(opt(a, "-e", "1s").rstrip("s")) / interval))
+out = a[-1]
+span = hi - lo
+# the hop layout and bin frequencies exactly as the real rtl_power makes them (arislib/rtlpower.py follows its C code)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+from arislib import rtlpower as _rp
+_hops = _rp.plan(lo, hi, step, crop)
+# Levels on the real rtl_power's scale: a full-scale sine prints as _fs (its rate, FFT size and window, see
+# arislib.rtlpower.fullscale_db), so the GUI's dBFS conversion puts this fake's signals at or below 0 dB too.
+# The fake's own model (floor, gains, overload) is unchanged and only shifted: its "near full scale" is _fs - 15.
+_fs = _rp.fullscale_db(_hops[0], opt(a, "-w", "rectangle")) if _hops else 0.0
+sig = [(float(s[0]) * 1e6, float(s[1]), float(s[2]) * 1e3 if len(s) > 2 else 20e3) for s in specs("FAKE_PEAKS")]
+sig = [(f, snr + atten(_dev, f), w) for f, snr, w in sig if atten(_dev, f) is not None]
+bursts = [(float(s[0]) * 1e6, float(s[1]), float(s[2])) for s in specs("FAKE_BURST")]
+bursts = [(f, snr + atten(_dev, f), fr) for f, snr, fr in bursts if atten(_dev, f) is not None]
+brnd = random.Random(int(os.environ.get("FAKE_SEED", "1")) + int(lo))
+fe = -80.0 + g + _fs
+floor_lin = 10 ** ((-46 + _fs) / 10) + 10 ** (fe / 10)
+# Overload: once the strongest signal nears full scale, the floor rises faster than the signals and
+# intermodulation products appear (on the FM channel grid, like real broadcast intermod).
+_mx = max([fe + x[1] for x in sig if lo - 5e6 <= x[0] <= hi + 5e6] or [-99])   # only nearby signals overload
+over = _mx + 15.0 - _fs
+spurs_im = []
+if over > 0:
+    floor_lin *= 10 ** (1.6 * over / 10)
+    _r = random.Random(7)
+    spurs_im = [(round(lo / 1e5 + _r.random() * span / 1e5) * 1e5, 8.0 + 0.7 * min(over, 10.0)) for _ in range(int(over / 2))]
+rnd = random.Random(int(lo) ^ int(g * 10) ^ int(os.environ.get("FAKE_SEED", "1")))
+spurs = [lo + rnd.random() * span for _ in range(6)] if g >= 42 else []
+# FM broadcast programme wander. The real rtl_power reads about 3 ms per hop per round (a 16 kB buffer), one round
+# of all hops taking FAKE_HOP_S per hop; a single pass ends at the next whole second, so "-i 1 -1" can mean one round.
+# Within 3 ms a station's carrier sits where the programme's bass has pushed it (tens of kHz): each round sees every
+# wide FM signal shifted by a random FAKE_FM_WANDER_KHZ (sd), and a row averages its rounds.
+wander = float(os.environ.get("FAKE_FM_WANDER_KHZ", "20")) * 1e3
+round_s = float(os.environ.get("FAKE_HOP_S", "0.04")) * len(_hops)
+wrnd = random.Random(int(os.environ["FAKE_WANDER_SEED"]) + int(lo)) if os.environ.get("FAKE_WANDER_SEED") \
+    else random.Random()
+def _rounds(first):
+    secs = interval - (wrnd.random() if first else 0.0)        # the first row ends at the next whole second
+    return max(1, int(secs / round_s))
+rows = []
+for p in range(passes):
+    on = {bf: brnd.random() < frac for bf, _, frac in bursts}
+    nr = _rounds(p == 0)
+    shifts = {sf: [max(-60e3, min(60e3, wrnd.gauss(0, wander))) for _ in range(nr)] if (wander and w >= 100e3 and
+              87.5e6 <= sf <= 108e6) else [0.0] for sf, _snr, w in sig}
+    for hop in _hops:
+        c, hstep = hop["freq"], hop["step"]
+        vals = []
+        for f in _rp.hop_bins(hop):
+            lin = floor_lin
+            for sf, snr, w in sig:
+                sd = w / 2.355
+                sh = shifts[sf]
+                lin += 10 ** ((fe + snr) / 10) * sum(math.exp(-0.5 * ((f - sf - d) / sd) ** 2) for d in sh) / len(sh)
+            for bf, bsnr, _ in bursts:
+                if on[bf]:
+                    lin += 10 ** ((fe + bsnr) / 10) * math.exp(-0.5 * ((f - bf) / 8.5e3) ** 2)
+            for imf, imsnr in spurs_im:
+                lin += floor_lin * 10 ** (imsnr / 10) * math.exp(-0.5 * ((f - imf) / 40e3) ** 2)
+            for sp in spurs:
+                if abs(f - sp) < step:
+                    lin += floor_lin * 15
+            d = abs(f - c)
+            if d < hstep * 0.5:
+                lin += floor_lin * 9
+            elif d < hstep * 1.5:
+                lin += floor_lin * 2
+            vals.append(f"{10 * math.log10(lin) + rnd.gauss(0, 0.35):.2f}")
+        vals.append(vals[-1])                                  # rtl_power prints its last bin twice
+        rows.append(f"2026-10-31, 12:00:{p:02d}, {c - hop['bw2']}, {c + hop['bw2']}, {hstep:.2f}, 1000, "
+                    + ", ".join(vals))
+time.sleep(0.05)
+text = "\n".join(rows) + "\n"
+if out == "-":                      # real rtl_power writes the CSV to stdout for "-"
+    sys.stdout.write(text)
+else:
+    open(out, "w").write(text)

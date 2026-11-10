@@ -1,0 +1,57 @@
+# ARIS automated tests: the whole suite on simulated radios (bash test/run_all.sh, no --shots), on the oldest
+# Python the code promises (3.8) and the newest, on every push and pull request. The real rtl_433 is built from
+# source (pinned tag) because the fake rtl_433 hands recordings to it; multimon-ng and direwolf come from apt
+# (their tests skip or pass without them, but the decoder self-test is more complete with them).
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  suite:
+    runs-on: ubuntu-22.04          # the newest runner with Python 3.8 still available
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.8", "3.x"]
+    name: python ${{ matrix.python }}
+    timeout-minutes: 40            # (a hung pty console in test_flow must not hold the runner for 6 h)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Python packages
+        run: python -m pip install --upgrade pip && python -m pip install numpy flask ollama pytest
+      - name: Decoders from apt (multimon-ng, direwolf's atest)
+        run: sudo apt-get update -q && sudo apt-get install -y -q multimon-ng direwolf cmake build-essential
+      - name: rtl_433 (cached build of a pinned release, no SDR support needed for file decoding)
+        id: rtl433-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: rtl_433-bin
+          key: rtl_433-25.12-${{ runner.os }}
+      - name: Build rtl_433
+        if: steps.rtl433-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch 25.12 https://github.com/merbanan/rtl_433.git /tmp/rtl_433
+          cmake -S /tmp/rtl_433 -B /tmp/rtl_433/build -DENABLE_RTLSDR=OFF -DENABLE_SOAPYSDR=OFF -DENABLE_OPENSSL=OFF
+          cmake --build /tmp/rtl_433/build -j"$(nproc)"
+          mkdir -p rtl_433-bin && cp /tmp/rtl_433/build/src/rtl_433 rtl_433-bin/
+      - name: Keep the rtl_433 build for the next run (also when the suite fails below)
+        if: steps.rtl433-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: rtl_433-bin
+          key: rtl_433-25.12-${{ runner.os }}
+      - name: Install the decoders where the fakes look (REAL_BIN)
+        run: |
+          sudo install -m 755 rtl_433-bin/rtl_433 /usr/local/bin/rtl_433
+          for t in multimon-ng atest; do p="$(command -v $t || true)"; [ -n "$p" ] && sudo ln -sf "$p" /usr/local/bin/$t; done
+          rtl_433 -V 2>&1 | head -1
+          ls -l /usr/local/bin/rtl_433 /usr/local/bin/multimon-ng /usr/local/bin/atest || true
+      - name: Test suite (simulated radios)
+        run: bash test/run_all.sh
+        env:
+          REAL_BIN: /usr/local/bin

@@ -1,0 +1,34 @@
+[Unit]
+Description=ARIS Bluetooth helper (Ubertooth, listens only, writes a summary to /run/aris-bt/scan.json)
+After=multi-user.target
+
+[Service]
+Type=simple
+# an unprivileged dynamic user: the Ubertooth is opened through the plugdev group, no capability is needed
+DynamicUser=yes
+SupplementaryGroups=plugdev
+RuntimeDirectory=aris-bt
+RuntimeDirectoryMode=0755
+StateDirectory=aris-bt
+StateDirectoryMode=0700
+ExecStart=/usr/bin/python3 /opt/aris/deploy/aris-bt-scan.py
+Restart=on-failure
+RestartSec=10
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=no
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_NETLINK AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+IPAddressDeny=any
+
+[Install]
+WantedBy=multi-user.target
