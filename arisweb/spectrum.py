@@ -59,6 +59,7 @@ SPECTRUM_PRESETS = [
 LIVE_MAX_SPAN_MHZ = 0.8          # one IQ capture: the window sits 0.05-0.85 MHz below the tuning point, so the
 LIVE_TUNE_ABOVE_MHZ = 0.05       # receiver's own centre spike is always just outside it
 LIVE_FS = 2048000                # ... at this sample rate; a receiver that cannot stream it sweeps narrow views instead
+GAIN_EDGES_MHZ = (880.0, 960.0)     # where the dongle's own 915 MHz gain starts and ends (engine _gain_for)
 MAX_POINTS = 1600
 COARSE_STEP_KHZ = 200.0          # the widest step the automatic choice uses. A coarser one (the user's own choice)
                                  # leaves a hop only a few points (one point per hop at 1000 kHz), too few to tell a
@@ -201,7 +202,12 @@ def _frame(eng, serial, s_mhz, e_mhz, gain, step_khz=None, points=MAX_POINTS, li
         mode, unit = "sweep", _radios.sweep_unit(serial)
         step_khz = float(step_khz or _nice_step_khz(span))
         freqs, db = [], []
-        for lo, hi in _sp.cut(s_mhz, e_mhz, eng.MAX_SPAN_MHZ):
+        # Auto gain differs by band (the FM band has its own, 880-960 MHz too): cut at those edges, so a quiet band
+        # next to the FM band is not measured at the FM band's low gain
+        edges = sorted({s_mhz, e_mhz} | ({x for x in (*eng.FM_BROADCAST, *GAIN_EDGES_MHZ) if s_mhz < x < e_mhz}
+                                         if callable(gain) else set()))
+        regions = [r for a, b in zip(edges, edges[1:]) for r in _sp.cut(a, b, eng.MAX_SPAN_MHZ)]
+        for lo, hi in regions:
             g = gain_of(lo, hi)
             f, v, h, c = _sweep_piece(eng, serial, lo, hi, step_khz, g)
             if remove_gain and unit == "dBFS":

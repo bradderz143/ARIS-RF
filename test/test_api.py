@@ -356,7 +356,7 @@ class Spectrum(unittest.TestCase):
             self.assertTrue(400 < len(t["freqs"]) <= 1600, len(t["freqs"]))
             self.assertEqual(j["gaps"], [[0.0, 24.0], [1766.0, 6000.0]])
             self.assertEqual(j["gap_note"], one["gap_note"])
-            self.assertEqual(len(asked), 9)                                       # in pieces the engine accepts
+            self.assertEqual(len(asked), 12)          # in pieces the engine accepts, cut at the FM and 915 MHz gain edges too
             self.assertTrue(all(e - s <= eng.MAX_SPAN_MHZ + 1e-6 and 24.0 <= s < e <= 1766.0 for s, e in asked))
             self.assertTrue(any(abs(p["mhz"] - 96.9) < 0.3 for p in j["peaks"]), j["peaks"])   # an FM station
             # one piece of the plan, as the page asks for them: the plan's step, its share of the points
@@ -411,15 +411,12 @@ class Spectrum(unittest.TestCase):
         for a, b in zip(raw["traces"][0]["db"], inp["traces"][0]["db"]):
             self.assertAlmostEqual(a - 19.7, b, delta=0.11)
         # a sweep in pieces at different gains: every point has its own piece's gain taken off
-        pieces = list(S._sp.cut(24.0, 500.0, eng.MAX_SPAN_MHZ))
-        self.assertEqual(len(pieces), 3)
-        gains = dict(zip([round(lo, 4) for lo, _ in pieces], (10.0, 30.0, 20.0)))
-        gain_of = lambda lo, hi: gains[round(lo, 4)]                                        # noqa: E731
+        gain_of = lambda lo, hi: 10.0 if hi <= 88.01 else (30.0 if hi <= 108.01 else 20.0)   # noqa: E731
         a = S._frame(eng, "00001001", 24.0, 500.0, gain_of, step_khz=200.0, points=100000, live=False, remove_gain=False)
         b = S._frame(eng, "00001001", 24.0, 500.0, gain_of, step_khz=200.0, points=100000, live=False)
         self.assertEqual(a["freqs"], b["freqs"])
         self.assertEqual(a["gain_db"], "10.0 to 30.0 to 20.0")
-        edges = [hi for _, hi in pieces[:2]]
+        edges = [88.0, 108.0]                               # the FM band is its own piece with its own gain
         diffs = {}
         for f, x, y in zip(a["freqs"], a["db"], b["db"]):
             if any(abs(f - e) < 0.5 for e in edges):
@@ -429,6 +426,16 @@ class Spectrum(unittest.TestCase):
         for g, d in diffs.items():                                                          # two sweeps differ at the stations (they wander), so: on average
             self.assertAlmostEqual(sorted(d)[len(d) // 2], 0.0, delta=0.3, msg=g)
             self.assertGreater(len(d), 50)
+        # Auto: the FM band is swept on its own (its own gain), so its low gain does not reach the bands beside it
+        asked = []
+        real = eng._rtl_power
+        eng._rtl_power = lambda *a, **k: (asked.append((a[0], a[1], a[3])), real(*a, **k))[1]
+        try:
+            S._frame(eng, "00001001", 24.0, 200.0, lambda lo, hi: eng._gain_for("00001001", lo, hi), step_khz=200.0,
+                     points=1000, live=False)
+        finally:
+            eng._rtl_power = real
+        self.assertEqual([(round(a, 1), round(b, 1)) for a, b, _ in asked], [(24.0, 87.5), (87.5, 108.0), (108.0, 200.0)])
         # a bad gain or level is refused in plain words
         for q in ("gain=abc", "gain=-5", "gain=99", "level=loud"):
             r = c.get("/api/spectrum?dongle=1&start=140&stop=170&" + q)

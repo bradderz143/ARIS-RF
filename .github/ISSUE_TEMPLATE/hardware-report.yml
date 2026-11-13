@@ -33,7 +33,7 @@ body:
     attributes:
       label: ARIS version, OS, and driver versions
       description: The version is next to the ARIS name on the page. For SoapySDR, the output of `SoapySDRUtil --info` (first lines) helps.
-      placeholder: "ARIS 4.18.0, Ubuntu 24.04, SoapySDR 0.8.1, rx_tools from git"
+      placeholder: "ARIS 4.19.0, Ubuntu 24.04, SoapySDR 0.8.1, rx_tools from git"
     validations:
       required: true
   - type: checkboxes
