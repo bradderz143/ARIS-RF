@@ -340,6 +340,23 @@ class BandWatch(unittest.TestCase):
         d = bandwatch.BurstDetector(2.4e6)
         self.assertEqual(d.feed(z) + d.flush(), [])
 
+    def test_running_mean_and_median_are_the_plain_forms_bit_for_bit(self):
+        # the detector's main cost, worked bin by bin along the memory: the same numbers as the plain form, to the
+        # last bit (a detector that is faster and finds other bursts would be another detector)
+        rng = np.random.default_rng(7)
+        for frames, bins, a in ((1171, 512, 4), (1, 512, 4), (2, 64, 1), (333, 256, 6), (5, 512, 2), (40, 16, 40)):
+            P = (rng.exponential(1.0, (frames, bins)) * 10 ** rng.uniform(-4, 5, (frames, 1))).astype(np.float32)
+            P[frames // 2] = 0.0                                         # a block of zeros (samples missing)
+            Q = np.concatenate([np.repeat(P[:1], a - 1, axis=0), P]) if a > 1 else P
+            c = np.cumsum(Q, axis=0, dtype=np.float64)
+            S = ((c[a - 1:] - np.concatenate([np.zeros((1, bins)), c[:-a]])) / a).astype(np.float32)
+            med = np.median(S, axis=0)
+            S2, med2 = bandwatch.BurstDetector._smooth(Q, a)
+            self.assertEqual((S2.dtype, S2.shape, med2.dtype, med2.shape), (S.dtype, S.shape, med.dtype, med.shape))
+            self.assertEqual(S2.tobytes(), S.tobytes(), (frames, bins, a))
+            self.assertEqual(med2.tobytes(), med.tobytes(), (frames, bins, a))
+            self.assertTrue(S2.flags["C_CONTIGUOUS"])                    # the row loop reads it frame by frame
+
     def test_slices_cover_the_band(self):
         s = bandwatch.slices(902, 928, 1.6)
         self.assertEqual(len(s), 17)
@@ -933,6 +950,250 @@ class Bluetooth(unittest.TestCase):
             self.assertIn((tool, opts), allowed, f"ubertooth-{tool} {opts}")
         self.assertNotRegex(helper, r"ubertooth-(tx|rx|scan|specan|dump|follow)")
         self.assertNotRegex(helper, r'"-(i|I|s\S*|f|p|t\S*)"')                            # follow / interfere / fake slave / promiscuous
+
+
+class StateFiles(unittest.TestCase):
+    """The Wi-Fi and Bluetooth lists' state files: read again only when the file changed (the page asks every few
+    seconds), written on one line, and never out of step with what the file holds."""
+
+    def test_compact_write_holds_the_same_content_and_stat_key_follows_the_file(self):
+        from arislib import config
+        path = Path(harness.DATA) / "state_files_test.json"
+        path.unlink(missing_ok=True)
+        self.assertIsNone(config.stat_key(path))
+        data = {"version": 1, "nets": {"aa:bb": {"hist": [[1, -60], [2, -61]], "ssid": "Caf\u00e9 \"x\""}}, "n": None}
+        config.write_json(path, data, private=True, compact=True)
+        text = path.read_text()
+        self.assertEqual(json.loads(text), data)
+        self.assertNotIn("\n", text)
+        self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+        self.assertFalse(list(path.parent.glob("state_files_test.json.*")))              # atomic: no leftovers
+        k1 = config.stat_key(path)
+        self.assertEqual(k1, config.stat_key(path))
+        config.write_json(path, dict(data, n=1), private=True, compact=True)             # one character more
+        self.assertNotEqual(config.stat_key(path), k1)
+        config.write_json(path, data)                                                    # the indented form, as before
+        self.assertEqual((config.read_json(path, None), path.read_text().count("\n") > 5), (data, True))
+        path.unlink()
+
+    def _counted(self, mod, name):
+        calls, real = [], getattr(mod, name)
+
+        def wrapper(*a, **k):
+            calls.append(a)
+            return real(*a, **k)
+        setattr(mod, name, wrapper)
+        self.addCleanup(setattr, mod, name, real)
+        return calls
+
+    def test_wifi_state_is_read_once_per_file_version(self):
+        from arislib import config, wireless as W
+        from arisweb import wifi as WF
+        scan = Path(harness.DATA) / "state_files_scan.txt"
+        keep = os.environ.get("ARIS_WIFI_SCAN_FILE")
+        os.environ["ARIS_WIFI_SCAN_FILE"] = str(scan)
+        self.addCleanup(lambda: os.environ.pop("ARIS_WIFI_SCAN_FILE") if keep is None
+                        else os.environ.__setitem__("ARIS_WIFI_SCAN_FILE", keep))
+        self.addCleanup(lambda: (scan.unlink(missing_ok=True), WF._state_file().unlink(missing_ok=True),
+                                 WF._STATE.update(key=None, st=None)))
+        WF._state_file().unlink(missing_ok=True)
+        WF._STATE.update(key=None, st=None)
+        reads, parses = self._counted(WF, "read_json"), self._counted(W, "parse_iw_dump")
+        now = time.time()
+        with WF._LOCK:
+            st = WF._load()
+            self.assertEqual(st, W.new_state())                             # no file: an empty state, not kept
+            self.assertEqual(WF._refresh(st, now), {"helper": "missing", "scan_age_s": None})
+            scan.write_text(Wireless.DUMP)
+            os.utime(scan, (now - 20, now - 20))
+            self.assertEqual(WF._refresh(st, now), {"helper": "ok", "scan_age_s": 20})
+            self.assertEqual(len(parses), 1)
+            n_reads = len(reads)
+            for _ in range(5):                                              # the page's polls: nothing is read again
+                st2 = WF._load()
+                self.assertIs(st2, st)
+                self.assertEqual(WF._refresh(st2, now)["helper"], "ok")
+            self.assertEqual((len(reads), len(parses)), (n_reads, 1))
+            self.assertEqual(config.read_json(WF._state_file(), None), st)  # the copy kept is what the file holds
+            self.assertEqual(len(st["nets"]), 4)
+            # another writer changed the file: it is read again
+            other = json.loads(WF._state_file().read_text())
+            other["marks"] = {"aa:bb:cc:00:00:01": "mine"}
+            config.write_json(WF._state_file(), other, private=True)
+            st3 = WF._load()
+            self.assertEqual((len(reads), st3["marks"]), (n_reads + 1, {"aa:bb:cc:00:00:01": "mine"}))
+            # a newer scan is folded in (its text read and parsed once) and written
+            os.utime(scan, (now - 2, now - 2))
+            self.assertEqual(WF._refresh(st3, now), {"helper": "ok", "scan_age_s": 2})
+            self.assertEqual(len(parses), 2)
+            self.assertEqual(config.read_json(WF._state_file(), None)["scan_t"], st3["scan_t"])
+            self.assertIs(WF._load(), st3)
+            # a write that fails: the changed copy is dropped, the next look reads what the file really holds
+            real_write = WF.write_json
+
+            def no_write(*a, **k):
+                raise OSError("disk full")
+            WF.write_json = no_write
+            try:
+                st3["marks"] = {"never": "written"}
+                with self.assertRaises(OSError):
+                    WF._save(st3)
+            finally:
+                WF.write_json = real_write
+            self.assertEqual(WF._load()["marks"], {"aa:bb:cc:00:00:01": "mine"})
+            # the scan file gone: the helper is missing, whatever is kept
+            scan.unlink()
+            self.assertEqual(WF._refresh(WF._load(), now)["helper"], "missing")
+
+    def test_bluetooth_summary_is_parsed_once_per_file_version(self):
+        from arislib import config
+        from arisweb import bluetooth as BF
+        scan = Path(harness.DATA) / "state_files_bt.json"
+        keep = os.environ.get("ARIS_BT_SCAN_FILE")
+        os.environ["ARIS_BT_SCAN_FILE"] = str(scan)
+        self.addCleanup(lambda: os.environ.pop("ARIS_BT_SCAN_FILE") if keep is None
+                        else os.environ.__setitem__("ARIS_BT_SCAN_FILE", keep))
+        self.addCleanup(lambda: (scan.unlink(missing_ok=True), BF._state_file().unlink(missing_ok=True),
+                                 BF._STATE.update(key=None, st=None), BF._SNAP.update(key=None, snap=None)))
+        BF._state_file().unlink(missing_ok=True)
+        BF._STATE.update(key=None, st=None)
+        BF._SNAP.update(key=None, snap=None)
+        loads = self._counted(BF.json, "loads")
+        reads = self._counted(BF, "read_json")
+        now = time.time()
+
+        def snap(t, labels):
+            return {"v": 1, "t": t, "window_s": 60, "adv": 10,
+                    "stable": [{"label": "#" + x, "atype": "public", "oui": "aa:bb:cc", "company": "Maker", "uuids": [],
+                                "rssi_max": -70, "rssi_last": -72, "n": 3, "trackers": []} for x in labels],
+                    "rotating": {"distinct": 2, "by_company": {}, "rssi_max": -60}, "trackers": {}}
+        with BF._LOCK:
+            st = BF._load()
+            self.assertEqual(BF._refresh(st, now), {"helper": "missing", "scan_age_s": None})
+            scan.write_text(json.dumps(snap(now - 5, ["aaaaaa", "bbbbbb"])))
+            self.assertEqual(BF._refresh(st, now), {"helper": "ok", "scan_age_s": 5})
+            n_loads, n_reads = len(loads), len(reads)
+            for _ in range(5):
+                st2 = BF._load()
+                self.assertIs(st2, st)
+                self.assertEqual(BF._refresh(st2, now), {"helper": "ok", "scan_age_s": 5})
+            self.assertEqual((len(loads), len(reads)), (n_loads, n_reads))
+            self.assertEqual(config.read_json(BF._state_file(), None), st)
+            self.assertEqual(sorted(st["devices"]), ["#aaaaaa", "#bbbbbb"])
+            scan.write_text(json.dumps(snap(now - 1, ["aaaaaa", "cccccc"])))            # the next summary
+            self.assertEqual(BF._refresh(BF._load(), now), {"helper": "ok", "scan_age_s": 1})
+            self.assertEqual(sorted(BF._load()["devices"]), ["#aaaaaa", "#bbbbbb", "#cccccc"])
+            scan.write_text("{half a file")                                             # caught while being written
+            self.assertEqual(BF._refresh(BF._load(), now)["helper"], "missing")
+            scan.write_text(json.dumps(snap(now - 1, ["dddddd"])))                      # ... and whole again
+            self.assertEqual(BF._refresh(BF._load(), now)["helper"], "ok")
+            self.assertEqual(len(BF._load()["devices"]), 3)                             # (not newer: not folded in twice)
+
+    def _bt_scan(self, name):
+        """A stand-in for the Bluetooth helper's summary file, with nothing kept from another test."""
+        from arisweb import bluetooth as BF
+        scan = Path(harness.DATA) / name
+        keep = os.environ.get("ARIS_BT_SCAN_FILE")
+        os.environ["ARIS_BT_SCAN_FILE"] = str(scan)
+        self.addCleanup(lambda: os.environ.pop("ARIS_BT_SCAN_FILE") if keep is None
+                        else os.environ.__setitem__("ARIS_BT_SCAN_FILE", keep))
+        self.addCleanup(lambda: (scan.unlink(missing_ok=True), BF._state_file().unlink(missing_ok=True),
+                                 BF._STATE.update(key=None, st=None), BF._SNAP.update(key=None, snap=None)))
+        BF._state_file().unlink(missing_ok=True)
+        BF._STATE.update(key=None, st=None)
+        BF._SNAP.update(key=None, snap=None)
+        return BF, scan
+
+    @staticmethod
+    def _bt_snap(t, labels):
+        return {"v": 1, "t": t, "window_s": 60, "adv": 10,
+                "stable": [{"label": "#" + x, "atype": "public", "oui": "aa:bb:cc", "company": "Maker", "uuids": [],
+                            "rssi_max": -70, "rssi_last": -72, "n": 3, "trackers": []} for x in labels],
+                "rotating": {"distinct": 2, "by_company": {}, "rssi_max": -60}, "trackers": {}}
+
+    def test_bluetooth_summary_of_the_same_size_at_the_same_file_time_is_taken(self):
+        # Many file clocks move in whole ticks (1 to 10 ms), so two summaries written within one tick carry the
+        # same time. Written in place with the same size they look like one version of the file: the summary's
+        # text has to decide, not the file's time and size.
+        from arislib import config
+        BF, scan = self._bt_scan("state_files_bt_tick.json")
+        now = float(int(time.time()))
+        first = json.dumps(self._bt_snap(now - 5, ["aaaaaa", "bbbbbb"]))
+        second = json.dumps(self._bt_snap(now - 2, ["aaaaaa", "cccccc"]))
+        self.assertEqual(len(first), len(second))
+        loads = self._counted(BF.json, "loads")
+        with BF._LOCK:
+            scan.write_text(first)
+            key = config.stat_key(scan)
+            self.assertEqual(BF._refresh(BF._load(), now), {"helper": "ok", "scan_age_s": 5})
+            scan.write_text(second)                                    # in place: the same file, the same size
+            os.utime(scan, ns=(key[0], key[0]))                        # ... and the same tick of the file clock
+            self.assertEqual(config.stat_key(scan), key)
+            self.assertEqual(BF._refresh(BF._load(), now), {"helper": "ok", "scan_age_s": 2})
+            self.assertEqual(sorted(BF._load()["devices"]), ["#aaaaaa", "#bbbbbb", "#cccccc"])
+            n_loads = len(loads)
+            self.assertEqual(BF._refresh(BF._load(), now)["scan_age_s"], 2)             # the same text: not parsed again
+            self.assertEqual(len(loads), n_loads)
+
+    def test_a_change_that_fails_half_way_is_not_kept(self):
+        # The kept copy is changed in place before it is written. A change that fails half way must not stay in
+        # it: the next look would start from the half and make the same step again on top of it.
+        from arislib import config, wireless as W
+        from arisweb import wifi as WF
+        BF, scan = self._bt_scan("state_files_bt_half.json")
+        now = float(int(time.time()))
+        bad = self._bt_snap(now - 20, ["aaaaaa", "bbbbbb"])
+        bad["stable"].insert(1, "not a device")                        # the first device is counted, then the rule fails
+        with BF._LOCK:
+            scan.write_text(json.dumps(self._bt_snap(now - 30, ["aaaaaa", "bbbbbb"])))
+            BF._refresh(BF._load(), now)
+            self.assertEqual(BF._load()["devices"]["#aaaaaa"]["seen"], 3)
+            scan.write_text(json.dumps(bad))
+            for _ in range(4):                                         # the page keeps asking
+                with self.assertRaises(AttributeError):
+                    BF._refresh(BF._load(), now)
+                self.assertEqual(BF._load(), config.read_json(BF._state_file(), None))
+                self.assertEqual(BF._load()["devices"]["#aaaaaa"]["seen"], 3)
+            scan.write_text(json.dumps(self._bt_snap(now - 10, ["aaaaaa", "bbbbbb"])))
+            self.assertEqual(BF._refresh(BF._load(), now), {"helper": "ok", "scan_age_s": 10})
+            self.assertEqual(config.read_json(BF._state_file(), None)["devices"]["#aaaaaa"]["seen"], 6)
+        # the Wi-Fi list: a newer scan that cannot be folded in, then a round of notices that fails
+        wscan = Path(harness.DATA) / "state_files_scan_half.txt"
+        keep = os.environ.get("ARIS_WIFI_SCAN_FILE")
+        os.environ["ARIS_WIFI_SCAN_FILE"] = str(wscan)
+        self.addCleanup(lambda: os.environ.pop("ARIS_WIFI_SCAN_FILE") if keep is None
+                        else os.environ.__setitem__("ARIS_WIFI_SCAN_FILE", keep))
+        real_update, real_events = W.update, W.events
+        self.addCleanup(lambda: (wscan.unlink(missing_ok=True), WF._state_file().unlink(missing_ok=True),
+                                 WF._STATE.update(key=None, st=None),
+                                 setattr(W, "update", real_update), setattr(W, "events", real_events)))
+        WF._state_file().unlink(missing_ok=True)
+        WF._STATE.update(key=None, st=None)
+
+        def half(st, *a, **k):
+            st["nets"].clear()
+            st["noticed"] = {"half": now}
+            raise RuntimeError("half way")
+        with WF._LOCK:
+            wscan.write_text(Wireless.DUMP)
+            os.utime(wscan, (now - 20, now - 20))
+            self.assertEqual(WF._refresh(WF._load(), now), {"helper": "ok", "scan_age_s": 20})
+            held = config.read_json(WF._state_file(), None)
+            self.assertEqual(len(held["nets"]), 4)
+            os.utime(wscan, (now - 5, now - 5))
+            W.update = half
+            for _ in range(2):
+                with self.assertRaises(RuntimeError):
+                    WF._refresh(WF._load(), now)
+                self.assertEqual(WF._load(), held)
+            W.update = real_update
+        W.events = half
+        with self.assertRaises(RuntimeError):
+            WF.tick(now)                                               # (the newer scan is folded in and written first)
+        with WF._LOCK:
+            st = WF._load()
+            self.assertEqual(st, config.read_json(WF._state_file(), None))
+            self.assertEqual((len(st["nets"]), st["scan_t"], "half" in (st.get("noticed") or {})), (4, now - 5, False))
 
 
 class Devices(unittest.TestCase):

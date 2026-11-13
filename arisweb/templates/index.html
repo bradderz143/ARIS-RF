@@ -47,12 +47,23 @@
 <div class="view" id="view-signals"><div class="act-sub" style="margin:0 2px 8px"><span id="sig-count">0 saved signals</span> (investigated and kept)</div><div id="signals-box"></div></div>
 
 <div class="view" id="view-spectrum">
-<div class="row"><select class="sel" id="sp-dongle" onchange="specClear()" aria-label="Dongle"></select>
+<div class="row"><select class="sel" id="sp-dongle" onchange="specDongle()" aria-label="Receiver"></select>
 <div class="seg" id="sp-scale"><button class="on" data-v="abs" onclick="specScale('abs')">dBFS</button><button data-v="rel" onclick="specScale('rel')">Above floor</button></div></div>
 <div class="chips" id="sp-presets"></div>
-<div class="row">
-<label class="field">Start MHz<input id="sp-start" type="number" step="0.001" inputmode="decimal" onchange="specCustom()"></label>
-<label class="field">Stop MHz<input id="sp-stop" type="number" step="0.001" inputmode="decimal" onchange="specCustom()"></label>
+<div class="sp-bar">
+<div class="row sp-freq">
+<label class="field">Start MHz<input id="sp-start" type="number" step="any" min="0" max="6000" inputmode="decimal" onchange="specCustom('s')"></label>
+<label class="field">Stop MHz<input id="sp-stop" type="number" step="any" min="0" max="6000" inputmode="decimal" onchange="specCustom('e')"></label>
+<label class="field">Centre MHz<input id="sp-centre" type="number" step="any" min="0" max="6000" inputmode="decimal" onchange="specCentreSpan('c')"></label>
+<label class="field">Span MHz<input id="sp-span" type="number" step="any" min="0.01" max="6000" inputmode="decimal" onchange="specCentreSpan('w')"></label>
+</div>
+<div class="row sp-nav">
+<button class="btn-ghost" onclick="specZoom(0.5)" title="Zoom in: half the span" aria-label="Zoom in">+</button>
+<button class="btn-ghost" onclick="specZoom(2)" title="Zoom out: twice the span" aria-label="Zoom out">&minus;</button>
+<button class="btn-ghost" onclick="specPan(-1)" title="Move the view down in frequency" aria-label="Move left">&larr;</button>
+<button class="btn-ghost" onclick="specPan(1)" title="Move the view up in frequency" aria-label="Move right">&rarr;</button>
+<button class="btn-ghost" onclick="specFull()" title="The whole range, 0 to 6000 MHz">Full span</button>
+<button class="btn-ghost" id="sp-back" onclick="specBack()" title="The view before this one" disabled>Back</button>
 </div>
 <div class="row">
 <button class="btn-ghost" id="sp-live" onclick="specToggle()">Live</button>
@@ -60,9 +71,24 @@
 <button class="btn-ghost" id="sp-hold" onclick="specHoldToggle()">Peak hold</button>
 <button class="btn-ghost" onclick="specClear()">Clear</button>
 </div>
+</div>
 <div class="spec-legend" id="sp-legend"></div>
 <div class="plot-wrap"><canvas id="spec-canvas"></canvas><canvas id="wf-canvas"></canvas></div>
 <div class="spec-info"><span id="sp-readout">Tap the spectrum or a signal below to select a frequency.</span><span id="sp-status">Stopped</span></div>
+<div class="sp-gap" id="sp-gap"></div>
+<div class="row sp-mk">
+<button class="btn-ghost" onclick="specMkPeak()" title="Put the marker on the strongest point in view">Peak</button>
+<button class="btn-ghost" onclick="specMkNext(-1)" title="Marker to the next signal below" aria-label="Next peak left">&larr; Next</button>
+<button class="btn-ghost" onclick="specMkNext(1)" title="Marker to the next signal above" aria-label="Next peak right">Next &rarr;</button>
+<button class="btn-ghost" onclick="specMkCentre()" title="Move the view so the marker sits in the middle">Centre on marker</button>
+<button class="btn-ghost" id="sp-delta" onclick="specMkDelta()" title="Keep this marker as the reference: the readout then shows how far the marker is from it, in MHz and dB">Delta</button>
+</div>
+<div class="row sp-set">
+<label class="field">Step<select id="sp-rbw" onchange="specRbw()" aria-label="Step between points"><option value="auto">Auto</option></select></label>
+<label class="field">Top<input id="sp-top" type="number" step="any" min="-200" max="100" inputmode="decimal" placeholder="auto" onchange="specLevel()" title="The level at the top of the plot, from -200 to 100. Leave empty for automatic."></label>
+<label class="field">Range<select id="sp-range" onchange="specLevel()" aria-label="Level range"><option value="auto">Auto</option><option value="40">40 dB</option><option value="60">60 dB</option><option value="80">80 dB</option><option value="100">100 dB</option><option value="120">120 dB</option></select></label>
+<label class="field">Average<select id="sp-avg" onchange="specAvg()" aria-label="Average"><option value="0">Off</option><option value="4">4 sweeps</option><option value="16">16 sweeps</option><option value="64">64 sweeps</option></select></label>
+</div>
 <div id="sp-warn"></div>
 <div class="sel-panel" id="sp-sel"><div class="f" id="sp-sel-f"></div><div class="muted" id="sp-sel-sub"></div>
 <div class="dec-row"><span class="lab">Decode for</span><div class="seg" id="sp-dec-t">
@@ -73,7 +99,7 @@
 <button class="btn-ghost" onclick="specLocate()">Locate</button></div>
 <div id="sp-result"></div></div>
 <div class="peaks" id="sp-peaks"></div>
-<div class="note">Decode listens on every dongle at once for the time you pick and runs the decoders that suit the band (rtl_433, RDS, pager / APRS, ADS-B); "Identified" means a decoder recognised the device. Capture keeps the dongle that hears it best on the frequency in the background until a packet is decoded or demodulated, then reports in the chat. "All dongles" draws one line per dongle, captured at the same time. The antennas differ, so "Above floor" (each line measured from its own dongle's noise floor) compares what each one hears better than raw dB. Ranges up to 0.8 MHz wide refresh several times a second (live IQ); wider ranges are swept every second or two. Amber = FM-band signal off the station channel plan, which is only checked when the range is 30 MHz wide or less (the FM preset).</div>
+<div class="note">Pick any range from 0 to 6000 MHz. A part no receiver here tunes is hatched and never drawn as a level: nothing was measured there. A wide range is swept in pieces, and the picture fills in as each piece comes back. With a mouse, the wheel zooms about the pointer and dragging across the plot zooms into that range. Step is the distance between the points of a sweep: Auto picks one that suits the range. Average smooths the line over several sweeps; Peak hold keeps the highest level seen. Decode listens on every dongle at once for the time you pick and runs the decoders that suit the band (rtl_433, RDS, pager / APRS, ADS-B); "Identified" means a decoder recognised the device. Capture keeps the dongle that hears it best on the frequency in the background until a packet is decoded or demodulated, then reports in the chat. "All dongles" draws one line per dongle, captured at the same time. The antennas differ, so "Above floor" (each line measured from its own dongle's noise floor) compares what each one hears better than raw dB. Ranges up to 0.8 MHz wide refresh several times a second (live IQ); wider ranges are swept every second or two. Amber = FM-band signal off the station channel plan, which is only checked when the range is 30 MHz wide or less (the FM preset).</div>
 </div>
 
 <div class="view" id="view-map">

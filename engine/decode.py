@@ -374,7 +374,6 @@ def _rtl433_device(serial) -> list:
 
 
 # rtl_433 only prints its own errors and warnings with "-F log" (to stderr, as "SOURCE: message" lines)
-_R433_LOG = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*: \S")
 _R433_NOISE = ("Use \"-F log\"", "rtl_433 version", "Consider using", "Registered", "Trying conf", "Reading conf",
                "Please donate", "New defaults", "Detached kernel", "Allocating", "Exact sample rate", "Tuned to",
                "Sample rate set", "Bit detection level")

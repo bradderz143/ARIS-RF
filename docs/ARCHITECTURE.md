@@ -52,8 +52,10 @@ replies, the AI loop) and `plugins`. Every top-level name is defined in one part
   text recognised). What an IQ look finds on a channel is remembered (`fm_stations.json`).
 - Receivers of different kinds tune different ranges (an RTL-SDR 24-1766 MHz, a Signal Hound SA124B to 12.4 GHz):
   every radio command is checked against its receiver's range (`arislib.radios.covers`), multi-receiver work picks
-  only receivers that tune the band (`_pick_serials(band=)`), and the Spectrum presets and band names above 1.7 GHz
-  appear only when one does. Allocation labels, busy bands (Wi-Fi, Bluetooth, phones: bursts score lower) and the
+  only receivers that tune the band (`_pick_serials(band=)`), and the band names above 1.7 GHz appear only when one
+  does. The Spectrum tab is the exception by design: it takes any range from 0 to 6000 MHz (`arislib/specplan.py`
+  plans the view: the parts some receiver tunes, cut into pieces to sweep, and the gaps), asks each receiver only
+  for its own part, and shows a gap as "no receiver here tunes this", never as a level. Allocation labels, busy bands (Wi-Fi, Bluetooth, phones: bursts score lower) and the
   GPS band (a steady new signal scores higher: a jammer looks like that) cover up to 12.75 GHz.
 - The FM channel-plan check assumes the Americas' plan (stations on odd tenths, 88.1-107.9 MHz) and the threat rules
   know the Americas' bands (902-928 MHz ISM). Elsewhere these hints are wrong: treat off-plan flags accordingly.

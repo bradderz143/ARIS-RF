@@ -69,6 +69,12 @@ freqs = [30 + i * 0.2 for i in range(851)]
 db = [random.uniform(-50, -40) for _ in freqs]
 hops2 = [30 + 2.0 * i + 1.0 for i in range(85)]
 t("spectrum hop-spike fill (30-200 MHz)", lambda: S._fill_hop_spikes(freqs, list(db), hops2, 200.0, 0.5))
+from arislib import specplan as SPL  # noqa: E402
+rng4 = {"a": (24.0, 1766.0), "b": (24.0, 1766.0), "c": (24.0, 1766.0), "d": (0.1, 12400.0)}
+t("spectrum plan x100 (0-6000 MHz, 4 receivers)", lambda: [SPL.plan(0, 6000, rng4, 0.8) for _ in range(100)])
+big_f = [24 + i * 0.01 for i in range(100000)]
+big_d = [random.uniform(-50, -40) for _ in big_f]
+t("spectrum pool 100000 points to 1600", lambda: S._pool(big_f, big_d, 1600))
 
 # v4.7: RDS station name from a 3 s look (256 kS/s MPX), rtl_433 output of a busy 60 s listen
 from arislib import rds as R  # noqa: E402

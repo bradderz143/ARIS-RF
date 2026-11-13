@@ -59,15 +59,6 @@ def init_db():
     _DB_READY.add(DB_PATH)
 
 
-def _crc16_ccitt(data: bytes, poly=0x1021, init=0xFFFF) -> int:
-    crc = init
-    for b in data:
-        crc ^= (b << 8)
-        for _ in range(8):
-            crc = ((crc << 1) ^ poly) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
-    return crc
-
-
 def _fingerprint(freq, mod_type, sync_word=None, allocation=""):
     """Band-plan device guess plus, in the sensor bands only, a radio-chip sync-word match. The demodulated bits
     never reach this (v4.9.4): before, the card showed a 'Candidate ID' from the first bytes of the burst, which

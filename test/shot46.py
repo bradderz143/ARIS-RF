@@ -15,7 +15,7 @@ POS = {"00001001": (1, 1), "00003003": (9, 1), "00004004": (5, 7)}
 async def main():
     async with async_playwright() as p:
         br = await p.chromium.launch()
-        pg = await br.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=2)
+        pg = await br.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=2, has_touch=True)
         errors = []
         pg.on("pageerror", lambda e: errors.append(str(e)))
         await pg.goto(B + "/login")

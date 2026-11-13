@@ -2947,6 +2947,63 @@ class DeviceHistory(unittest.TestCase):
         self.assertNotIn("Toyota at", v)
         A.mark_device_known("Nexus-TH|213", None)
 
+    def test_history_file_is_written_on_one_line_with_the_same_content(self):
+        # the history is written up to once a second while devices are decoded: on one line (json.dumps in one
+        # piece) it takes a third of the time of the indented form, and holds the same
+        now = time.time()
+        for i in range(3):
+            A._devices_note({"model": "Nexus-TH", "id": 7, "channel": 1, "temperature_C": 20.0 + i, "humidity": 40,
+                             "time": "2026-11-02 15:21:03", "t": now - 30 + 10 * i, "type": "packet",
+                             "aris_serial": "00001001", "aris_freq_mhz": 433.92})
+        A._devices_flush()
+        text = A.DEVICES_FILE.read_text()
+        self.assertEqual(text.count("\n"), 0, text[:200])
+        store = json.loads(text)
+        self.assertEqual((store["devices"]["Nexus-TH|7"]["packets"], store["devices"]["Nexus-TH|7"]["transmissions"]),
+                         (3, 3))
+        self.assertEqual(A._devices_read(), store)
+        self.assertFalse(sorted(A.DATA_DIR.glob("devices.json.*")))         # atomic: no leftovers
+        a, b = A.DATA_DIR / "one_line_test.json", A.DATA_DIR / "indented_test.json"
+        try:
+            A._atomic_write_json(a, store, compact=True)
+            A._atomic_write_json(b, store)
+            self.assertEqual(json.loads(a.read_text()), json.loads(b.read_text()))
+            self.assertGreater(b.read_text().count("\n"), 5)                # other files keep their indented form
+        finally:
+            a.unlink(missing_ok=True)
+            b.unlink(missing_ok=True)
+
+    def test_log_summary_gives_each_device_its_last_packet_without_codes(self):
+        # the summary strips the codes from each device's last packet (once per device, not once per packet)
+        real_wl, A.WATCHDOG_LOG = A.WATCHDOG_LOG, A.DATA_DIR / "summary_last_test.jsonl"
+        now = time.time()
+        try:
+            with open(A.WATCHDOG_LOG, "w") as f:
+                for i in range(4):
+                    f.write(json.dumps({"model": "Nexus-TH", "id": 7, "channel": 1, "temperature_C": 20.0 + i,
+                                        "time": f"2026-11-02 15:21:0{i}", "t": now - 400 + 100 * i, "snr": 20.0 + i,
+                                        "aris_serial": "00001001", "aris_freq_mhz": 433.92}) + "\n")
+                    # a remote as a decoder prints it, codes and all (the log never holds one like this)
+                    f.write(json.dumps({"model": "Generic-Remote", "id": 1193046, "cmd": 12 + i, "code": "a5c3b1",
+                                        "tristate": "0F10FF01F1F0", "time": f"2026-11-02 15:22:0{i}",
+                                        "t": now - 390 + 100 * i, "aris_serial": "00003003",
+                                        "aris_freq_mhz": 433.92}) + "\n")
+            rep = A._watchdog_summary(None, None, 0)
+        finally:
+            A.WATCHDOG_LOG.unlink(missing_ok=True)
+            A.WATCHDOG_LOG = real_wl
+        self.assertEqual((rep["total_packets"], rep["decoded_devices_total"]), (8, 2))
+        by = {d["model"]: d for d in rep["decoded_devices"]}
+        nexus, remote = by["Nexus-TH"], by["Generic-Remote"]
+        self.assertEqual(nexus["last_packet"], {"model": "Nexus-TH", "id": 7, "channel": 1, "temperature_C": 23.0})
+        self.assertEqual((nexus["packets"], nexus["last_seen"], nexus["best_snr_db"], nexus["transmissions"]),
+                         (4, "2026-11-02 15:21:03", 23.0, 4))
+        self.assertEqual(sorted(remote["last_packet"]), ["id", "model"])
+        self.assertTrue(remote["last_packet"]["id"].startswith("#"), remote)
+        text = json.dumps(rep)
+        for bad in ("a5c3b1", "0F10FF01F1F0", "tristate", '"cmd"', '"code"', '"_last"', '"_t"'):
+            self.assertNotIn(bad, text, bad)
+
     def test_logged_packets_feed_it_without_codes(self):
         raw = {"model": "Generic-Remote", "id": 1193046, "cmd": 12, "tristate": "0F10FF01F1F0", "code": "a5c3b1",
                "time": "2026-11-02 15:21:03", "t": time.time(), "aris_serial": "00001001", "aris_freq_mhz": 433.92}

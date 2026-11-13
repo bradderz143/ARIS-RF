@@ -9,12 +9,13 @@ from __future__ import annotations
 import os
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
 from arislib import wireless
-from arislib.config import DATA_DIR, read_json, write_json
+from arislib.config import DATA_DIR, read_json, stat_key, write_json
 
 from .auth import api_admin_required, api_login_required
 
@@ -22,6 +23,7 @@ bp = Blueprint("wifi", __name__)
 _LOCK = threading.Lock()
 STALE_S = 300      # a scan file older than this: the helper stopped
 _WATCH = {"thread": None}
+_STATE = {"key": None, "st": None}     # wifi.json as last read or written, and the file's time, size and inode then
 
 
 def _scan_file() -> Path:
@@ -33,10 +35,38 @@ def _state_file() -> Path:
 
 
 def _load() -> dict:
+    """The state (the caller holds _LOCK). The file is read again only when it changed: the page asks every few
+    seconds, and a day of history for a few hundred networks is a megabyte of JSON. Callers change the state
+    inside _changing and write it with _save, so the copy kept here is what the file holds: a change that fails
+    half way drops the copy."""
+    key = stat_key(_state_file())
+    if key is not None and key == _STATE["key"]:
+        return _STATE["st"]
     st = read_json(_state_file(), None)
     if not isinstance(st, dict) or st.get("version") != 1 or not isinstance(st.get("nets"), dict):
-        st = wireless.new_state()
+        st, key = wireless.new_state(), None
+    _STATE.update(key=key, st=st)
     return st
+
+
+def _save(st: dict) -> None:
+    """Write the state (the caller holds _LOCK) and keep it as the copy _load hands out. If the write fails, the
+    next _load reads the file again."""
+    _STATE.update(key=None, st=None)
+    write_json(_state_file(), st, private=True, compact=True)
+    _STATE.update(key=stat_key(_state_file()), st=st)
+
+
+@contextmanager
+def _changing():
+    """Round every change made to the kept state in place (the caller holds _LOCK). If the change fails half way,
+    the kept copy is dropped: the next look reads what the file holds, and the half-made change is never applied
+    a second time on top of itself."""
+    try:
+        yield
+    except BaseException:
+        _STATE.update(key=None, st=None)
+        raise
 
 
 def _refresh(st: dict, now: float) -> dict:
@@ -44,13 +74,19 @@ def _refresh(st: dict, now: float) -> dict:
     p = _scan_file()
     try:
         mt = p.stat().st_mtime
-        text = p.read_text(errors="replace")
+        if not os.access(str(p), os.R_OK):
+            raise OSError("the scan file cannot be read")
     except OSError:
         return {"helper": "missing", "scan_age_s": None}
-    if mt > float(st.get("scan_t") or 0):
+    if mt > float(st.get("scan_t") or 0):              # (the scan's text is read only when it is a new scan)
+        try:
+            text = p.read_text(errors="replace")
+        except OSError:
+            return {"helper": "missing", "scan_age_s": None}
         nets = wireless.parse_iw_dump(text)
-        wireless.update(st, nets, mt)
-        write_json(_state_file(), st, private=True)
+        with _changing():
+            wireless.update(st, nets, mt)
+            _save(st)
     age = max(0.0, now - mt)
     return {"helper": "stale" if age > STALE_S else "ok", "scan_age_s": int(age)}
 
@@ -73,9 +109,10 @@ def tick(now=None) -> list:
         if _refresh(st, now)["helper"] == "missing":
             return []
         before = (dict(st.get("noticed") or {}), st.get("noticed_since"))
-        texts = wireless.events(st, now)
-        if (st.get("noticed"), st.get("noticed_since")) != before:
-            write_json(_state_file(), st, private=True)
+        with _changing():
+            texts = wireless.events(st, now)
+            if (st.get("noticed"), st.get("noticed_since")) != before:
+                _save(st)
     for t in texts:
         _post(t)
     return texts
@@ -113,13 +150,14 @@ def api_wifi():
         with _LOCK:
             st = _load()
             helper = _refresh(st, now)
+            # (the tag first: the page asks every few seconds, and the rows are only built when it has an older list)
+            tag = f"{st.get('scan_t')}-{st.get('baseline_t')}-{st.get('marks_t')}-{helper['helper']}"
+            if request.args.get("have") == tag:
+                return jsonify({"unchanged": True, "tag": tag, **helper})
             out = wireless.rows(st, now)
-        out.update(helper)
-        tag = f"{out.get('scan_t')}-{out.get('baseline_t')}-{st.get('marks_t')}-{helper['helper']}"
-        if request.args.get("have") == tag:
-            return jsonify({"unchanged": True, "tag": tag, **helper})
-        out["tag"] = tag
-        return jsonify(out)
+            out.update(helper)
+            out["tag"] = tag
+            return jsonify(out)      # (written out under the lock: the rows share lists with the state kept by _load)
     except Exception as e:
         return jsonify({"error": f"could not read the Wi-Fi list: {type(e).__name__}: {e}"}), 500
 
@@ -134,8 +172,9 @@ def api_wifi_baseline():
             _refresh(st, time.time())
             if not st.get("nets"):
                 return jsonify({"error": "No Wi-Fi network has been heard yet, so there is nothing to record. Wait until the list has networks."}), 409
-            n = wireless.record_baseline(st)
-            write_json(_state_file(), st, private=True)
+            with _changing():
+                n = wireless.record_baseline(st)
+                _save(st)
         return jsonify({"ok": True, "baseline_n": n, "message": f"Wi-Fi baseline recorded: {n} networks are normal here."})
     except Exception as e:
         return jsonify({"error": f"could not record the baseline: {type(e).__name__}: {e}"}), 500
@@ -152,8 +191,9 @@ def api_wifi_mark():
     try:
         with _LOCK:
             st = _load()
-            n = wireless.set_mark(st, bssids, mark)
-            write_json(_state_file(), st, private=True)
+            with _changing():
+                n = wireless.set_mark(st, bssids, mark)
+                _save(st)
         what = {"mine": "marked as yours", "known": "marked as known", "no": "marked as not known", None: "back to the rule"}[mark]
         return jsonify({"ok": True, "changed": n, "message": f"Wi-Fi network {what}." if n else "Nothing changed."})
     except Exception as e:
@@ -166,7 +206,7 @@ def api_wifi_forget():
     """Forget the Wi-Fi list and its baseline."""
     try:
         with _LOCK:
-            write_json(_state_file(), wireless.new_state(), private=True)
+            _save(wireless.new_state())
         return jsonify({"ok": True, "message": "Wi-Fi list and baseline forgotten."})
     except Exception as e:
         return jsonify({"error": f"could not forget the Wi-Fi list: {type(e).__name__}: {e}"}), 500

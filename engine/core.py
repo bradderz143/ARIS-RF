@@ -268,12 +268,18 @@ def _now() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _atomic_write_json(path: Path, obj) -> None:
+def _atomic_write_json(path: Path, obj, compact: bool = False) -> None:
+    """Write a JSON file through a temp file and a rename (a crash never leaves half a file). compact: on one line,
+    for big files only programs read and that are written often (the device history): json.dumps in one piece is
+    about three times faster than json.dump with an indent, which builds the text in small Python steps."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".")
     try:
         with os.fdopen(fd, "w") as f:
-            json.dump(obj, f, indent=2, default=str)
+            if compact:
+                f.write(json.dumps(obj, separators=(",", ":"), default=str))
+            else:
+                json.dump(obj, f, indent=2, default=str)
         os.replace(tmp, path)
     except Exception:
         try:

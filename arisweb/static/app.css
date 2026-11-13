@@ -83,6 +83,36 @@ pre{background:#000;color:#34d399;padding:8px;border-radius:6px;overflow-x:auto;
 .pk .s{white-space:nowrap;text-align:right;font-size:.78rem;color:#cbd5e1}
 .pk.sel{border-color:var(--blue)}
 .h{font-size:.8rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:14px 2px 6px}
+/* Spectrum controls. At phone width the four frequency fields share one line and the buttons wrap; the plot
+   stays the main thing. Wide screens give the plot more height when the window is tall enough to keep it in view. */
+.sp-bar{display:flex;flex-wrap:wrap;column-gap:18px;align-items:flex-end}
+.sp-bar > .sp-freq{flex:1 1 100%}
+.sp-freq{flex-wrap:nowrap;gap:6px}
+.sp-freq .field{flex:1 1 0;min-width:0}
+.sp-freq .field input[type=number]{width:100%;min-width:0;padding:8px 6px}
+.sp-nav .btn-ghost,.sp-mk .btn-ghost{padding:8px 11px}
+.sp-nav .btn-ghost{min-width:40px}
+.sp-mk{margin-top:8px}
+.sp-set{flex-wrap:nowrap;gap:6px}
+.sp-set .field{flex:1 1 0;min-width:0}
+.sp-set .field select,.sp-set .field input[type=number]{width:100%;min-width:0;height:38px;padding:6px}
+.sp-gap{font-size:.8rem;color:#fde68a;margin:2px 2px 6px;line-height:1.4}
+.sp-gap:empty{display:none}
+.chip.untuned{opacity:.5;border-style:dashed}
+.spec-legend .lg.out{color:var(--dim)}
+.spec-legend .lg.sub{color:var(--dim)}
+.spec-legend .lg.out i{background:repeating-linear-gradient(135deg,#475569 0 3px,transparent 3px 6px)}
+#spec-canvas.drag{cursor:ew-resize}
+@media (min-width:1024px){
+  .sp-bar > .sp-freq{flex:0 0 auto}
+  .sp-set{flex-wrap:wrap;gap:8px}
+  .sp-set .field{flex:0 0 auto}
+  .sp-set .field select,.sp-set .field input[type=number]{width:120px}
+  .sp-freq{flex-wrap:wrap;gap:8px}
+  .sp-freq .field{flex:0 0 auto}
+  .sp-freq .field input[type=number]{width:120px}
+}
+@media (min-width:1024px) and (min-height:900px){#spec-canvas{height:340px}#wf-canvas{height:210px}}
 
 /* Activity */
 .act-row{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:.88rem;line-height:1.45}

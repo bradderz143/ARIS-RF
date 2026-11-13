@@ -38,7 +38,6 @@ _DATA_RX = re.compile(r"^\s+Data:\s+([0-9A-Fa-f]{2})\b")
 _UUID_HEAD_RX = re.compile(r"^\s+Type (?:02|03) \(16-bit Service UUIDs")
 _UUID_BARE_RX = re.compile(r"^\s+([0-9A-Fa-f]{4})\s*$")
 _UUID_SVC_RX = re.compile(r"^\s+UUID:\s+([0-9A-Fa-f]{4})\b")
-_TYPE_LINE_RX = re.compile(r"^\s+Type [0-9A-Fa-f]{2}\b")
 
 
 class AdvParser:

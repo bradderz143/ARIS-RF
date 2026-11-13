@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import os
 import select
-import shutil
 import subprocess
 import threading
 import time

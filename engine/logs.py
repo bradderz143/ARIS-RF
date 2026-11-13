@@ -135,7 +135,7 @@ def _devices_read() -> dict:
     if isinstance(store, dict) and isinstance(store.get("devices"), dict):
         if devices.scrub(store):            # an earlier version's file: remote readings and labels brought up to date
             try:
-                _atomic_write_json(DEVICES_FILE, store)
+                _atomic_write_json(DEVICES_FILE, store, compact=True)
             except OSError:
                 pass
         return store
@@ -155,7 +155,7 @@ def _devices_load() -> tuple:
             _devices_apply(store, p)
     devices.prune(store)
     store["built_from_log"] = _now()
-    _atomic_write_json(DEVICES_FILE, store)
+    _atomic_write_json(DEVICES_FILE, store, compact=True)
     return store, True
 
 
@@ -180,7 +180,7 @@ def _devices_flush() -> None:
                             _devices_apply(store, p)
                         devices.prune(store)
                         store["updated"] = _now()
-                        _atomic_write_json(DEVICES_FILE, store)
+                        _atomic_write_json(DEVICES_FILE, store, compact=True)
         except Exception as e:                    # noqa: BLE001 - the history must never stop a capture
             log.warning("device history not written (%s): %s", type(e).__name__, e)
         _DEV_TIMER["last"] = time.time()
@@ -248,7 +248,7 @@ def forget_devices() -> dict:
         with _devices_file_lock():
             store = _devices_read()
             n = len((store or {}).get("devices") or {})
-            _atomic_write_json(DEVICES_FILE, devices.new_store(forgotten=_now()))
+            _atomic_write_json(DEVICES_FILE, devices.new_store(forgotten=_now()), compact=True)
         _DEV_CACHE.update(tag=None, rows=None)
     return {"message": (f"Forgotten: {_plural(n, 'device')}. " if n else "There were no devices to forget. ")
                        + "New decodes start the list again.", "forgotten": n}
@@ -264,7 +264,7 @@ def mark_device_known(key, known) -> dict:
             store = _devices_read() or devices.new_store()
             n = devices.mark_known(store, str(key), known)
             if n:
-                _atomic_write_json(DEVICES_FILE, store)
+                _atomic_write_json(DEVICES_FILE, store, compact=True)
         _DEV_CACHE.update(tag=None, rows=None)
     if not n:
         return {"status": "error", "error": "no such device"}

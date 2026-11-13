@@ -233,26 +233,265 @@ class ExtraLogins(unittest.TestCase):
 
 
 class Spectrum(unittest.TestCase):
-    def test_presets_only_for_bands_a_receiver_here_tunes(self):
+    def test_every_preset_is_listed_and_says_whether_a_receiver_here_tunes_it(self):
         c = client()
-        ids = [p["id"] for p in c.get("/api/spectrum/meta").get_json()["presets"]]
-        self.assertIn("gnss", ids)                              # 1575 MHz: an RTL-SDR tunes it
-        self.assertNotIn("ism24", ids)                          # 2.4 GHz: none of the simulated dongles does
+        m = c.get("/api/spectrum/meta").get_json()
+        by = {p["id"]: p for p in m["presets"]}
+        self.assertEqual(m["presets"][0]["id"], "full")
+        self.assertEqual((by["full"]["start"], by["full"]["stop"]), (0.0, 6000.0))
+        self.assertEqual((m["view_min_mhz"], m["view_max_mhz"]), (0.0, 6000.0))
+        self.assertIn(25.0, m["steps_khz"])
+        self.assertTrue(by["gnss"]["tuned"])                    # 1575 MHz: an RTL-SDR tunes it
+        self.assertFalse(by["ism24"]["tuned"])                  # 2.4 GHz: none of the simulated dongles does,
+        self.assertFalse(by["ism24"]["tuned_part"])             # ... and the preset is listed all the same
+        self.assertEqual((by["phones2"]["tuned"], by["phones2"]["tuned_part"]), (False, True))    # 1710-1910
+        self.assertEqual((by["full"]["tuned"], by["full"]["tuned_part"]), (False, True))
+        self.assertEqual([d["range_mhz"] for d in m["dongles"]], [[24.0, 1766.0]] * 3)
         os.environ["ARIS_SA_SIM"] = "1"                          # a simulated SA124B plugged in
         from arisweb.engine import engine as _eng
         eng = _eng()
         try:
             eng._load_plugins()
             eng._sync_found_dongles(eng._list_devices())
-            ids = [p["id"] for p in c.get("/api/spectrum/meta").get_json()["presets"]]
-            self.assertIn("ism24", ids)
-            j = c.get("/api/spectrum?dongle=all&start=2400&stop=2483.5").get_json()
+            m = c.get("/api/spectrum/meta").get_json()
+            by = {p["id"]: p for p in m["presets"]}
+            self.assertTrue(by["ism24"]["tuned"])
+            self.assertEqual(m["dongles"][-1]["range_mhz"], [0.1, 12400.0])
+            from arisweb import spectrum as S
+            filled, real_fill = [], S._fill_hop_spikes
+            S._fill_hop_spikes = lambda *a, **k: (filled.append(a[3]), real_fill(*a, **k))[1]
+            try:
+                j = c.get("/api/spectrum?dongle=all&start=2400&stop=2483.5").get_json()
+            finally:
+                S._fill_hop_spikes = real_fill
+            self.assertEqual(filled, [])                         # a receiver with its own sweep: no spike filter
             self.assertEqual([t["dongle"] for t in j["traces"]], ["sa-19184001"])     # only the one that tunes it
             self.assertEqual(j["unit"], "dBm")
+            self.assertEqual(j["gaps"], [])
+            self.assertEqual([(x["name"], x["why"]) for x in j["left_out"]],
+                             [("Dongle 1", "range"), ("Dongle 2", "range"), ("Dongle 3", "range")])
+            self.assertTrue(any(abs(p["mhz"] - 2437.0) < 0.5 for p in j["peaks"]), j["peaks"])
+            # nothing was filled in or left in as a spike, and the points of its carrier are one entry in the list
+            self.assertEqual((j["spikes_removed"], j["spikes_kept"]), (0, False))
+            self.assertEqual(len([p for p in j["peaks"] if abs(p["mhz"] - 2437.0) < 1.0]), 1, j["peaks"])
+            # a view that crosses the top of the dongles' range: each receiver shows its own part and no more
+            j = c.get("/api/spectrum?dongle=all&start=1700&stop=1900").get_json()
+            rng = {t["dongle"]: t["range_mhz"] for t in j["traces"]}
+            self.assertEqual(rng["00001001"], [1700.0, 1766.0])
+            self.assertEqual(rng["sa-19184001"], [1700.0, 1900.0])
+            for t in j["traces"]:
+                self.assertLessEqual(max(t["freqs"]), t["range_mhz"][1] + 1e-6, t["name"])
+            self.assertEqual((j["gaps"], j["warnings"]), ([], []))    # a signal outside a range is no antenna fault
+            # a narrow view: this receiver streams too slowly for the direct capture, so it sweeps it instead ...
+            j = c.get("/api/spectrum?dongle=all&start=2436.75&stop=2437.25").get_json()
+            self.assertEqual((j["mode"], [t["dongle"] for t in j["traces"]]), ("sweep", ["sa-19184001"]))
+            self.assertTrue(any(abs(p["mhz"] - 2437.0) < 0.05 for p in j["peaks"]), j["peaks"])
+            # ... and where the dongles can make it, it is left out and the answer says why
+            j = c.get("/api/spectrum?dongle=all&start=433.52&stop=434.32").get_json()
+            self.assertEqual((j["mode"], len(j["traces"])), ("live", 3))
+            self.assertEqual([(x["name"], x["why"]) for x in j["left_out"]], [("Dongle 4", "live")])
+            pl = c.get("/api/spectrum/plan?dongle=all&start=0&stop=6000").get_json()
+            self.assertEqual((pl["covered"], pl["gaps"]), ([[0.1, 6000.0]], [[0.0, 0.1]]))
+            self.assertEqual(pl["gap_note"], "No receiver here tunes 0-0.1 MHz.")
         finally:
             os.environ.pop("ARIS_SA_SIM", None)                  # unplugged, then forgotten
             eng.TOOLS["forget_dongle"](dongle="sa-19184001")
         self.assertNotIn("sa-19184001", eng.DONGLE_NAMES)
+
+    def test_a_view_no_receiver_tunes_opens_no_radio_and_shows_no_level(self):
+        c = client()
+        from arisweb.engine import engine as _eng
+        eng = _eng()
+        opened, real = [], eng._use_dongle
+        eng._use_dongle = lambda *a, **k: (opened.append(a), real(*a, **k))[1]
+        try:
+            r = c.get("/api/spectrum?dongle=all&start=2400&stop=2500")
+            j = r.get_json()
+            self.assertEqual(r.status_code, 200)
+            self.assertEqual((j["mode"], j["traces"], j["freqs"], j["db"], j["peaks"]), ("none", [], [], [], []))
+            self.assertEqual((j["gaps"], j["covered"]), ([[2400.0, 2500.0]], []))
+            self.assertEqual(j["gap_note"], "No receiver here tunes 2400-2500 MHz.")
+            self.assertEqual([x["name"] for x in j["left_out"]], ["Dongle 1", "Dongle 2", "Dongle 3"])
+            self.assertIsNone(j["floor_db"])
+            j = c.get("/api/spectrum?dongle=2&start=5725&stop=5875").get_json()
+            self.assertEqual(j["mode"], "none")
+            self.assertEqual(j["gap_note"], "Dongle 2 tunes 24-1766 MHz, so there is nothing to show here.")
+            self.assertEqual(opened, [])                         # nothing was opened for either
+        finally:
+            eng._use_dongle = real
+
+    def test_any_range_from_0_to_6000_is_swept_where_it_is_tuned(self):
+        c = client()
+        from arisweb.engine import engine as _eng
+        eng = _eng()
+        pl = c.get("/api/spectrum/plan?dongle=all&start=0&stop=6000").get_json()
+        self.assertEqual((pl["mode"], pl["covered"], pl["step_khz"]), ("sweep", [[24.0, 1766.0]], 200.0))
+        self.assertEqual(pl["gap_note"], "No receiver here tunes 0-24 MHz or 1766-6000 MHz.")
+        self.assertTrue(8 <= len(pl["chunks"]) <= 16, len(pl["chunks"]))
+        one = c.get("/api/spectrum/plan?dongle=1&start=0&stop=6000").get_json()
+        self.assertEqual(one["gap_note"], "Dongle 1 tunes 24-1766 MHz, so there is nothing to show outside that.")
+        from arisweb import spectrum as S
+        asked, real = [], eng._rtl_power
+        refs, real_ref = [], S._sweep_fullscale_db
+
+        def spy(s, e, *a, **k):
+            asked.append((s, e))
+            return real(s, e, *a, **k)
+
+        def spy_ref(eng_, s, e, step):
+            refs.append((s, e, step))
+            return real_ref(eng_, s, e, step)
+        eng._rtl_power, S._sweep_fullscale_db = spy, spy_ref
+        try:
+            j = c.get("/api/spectrum?dongle=1&start=0&stop=6000").get_json()       # one request, one whole answer
+            self.assertEqual(refs, [(s, e, 200.0) for s, e in asked])             # each piece's own full-scale level
+            self.assertEqual((j["mode"], j["step_khz"], len(j["traces"])), ("sweep", 200.0, 1))
+            t = j["traces"][0]
+            self.assertEqual(t["range_mhz"], [24.0, 1766.0])
+            self.assertGreaterEqual(min(t["freqs"]), 24.0)
+            self.assertLessEqual(max(t["freqs"]), 1766.0)
+            self.assertLess(min(t["freqs"]), 30.0)
+            self.assertGreater(max(t["freqs"]), 1760.0)
+            self.assertEqual(t["freqs"], sorted(set(t["freqs"])))               # joined pieces: no point twice
+            self.assertTrue(400 < len(t["freqs"]) <= 1600, len(t["freqs"]))
+            self.assertEqual(j["gaps"], [[0.0, 24.0], [1766.0, 6000.0]])
+            self.assertEqual(j["gap_note"], one["gap_note"])
+            self.assertEqual(len(asked), 9)                                       # in pieces the engine accepts
+            self.assertTrue(all(e - s <= eng.MAX_SPAN_MHZ + 1e-6 and 24.0 <= s < e <= 1766.0 for s, e in asked))
+            self.assertTrue(any(abs(p["mhz"] - 96.9) < 0.3 for p in j["peaks"]), j["peaks"])   # an FM station
+            # one piece of the plan, as the page asks for them: the plan's step, its share of the points
+            ch = pl["chunks"][2]
+            del asked[:]
+            j = c.get("/api/spectrum?dongle=1&start=%s&stop=%s&step_khz=%s&points=%d"
+                      % (ch["start"], ch["stop"], pl["step_khz"], ch["points"])).get_json()
+            self.assertEqual(asked, [(ch["start"], ch["stop"])])
+            self.assertLessEqual(len(j["traces"][0]["freqs"]), ch["points"])
+            self.assertEqual(j["step_khz"], 200.0)
+            # a view that reaches below the tuner: only the tuned part is asked for
+            del asked[:]
+            j = c.get("/api/spectrum?dongle=1&start=0&stop=60").get_json()
+            self.assertEqual(asked, [(24.0, 60.0)])
+            self.assertEqual((j["gaps"], j["traces"][0]["range_mhz"]), ([[0.0, 24.0]], [24.0, 60.0]))
+        finally:
+            eng._rtl_power, S._sweep_fullscale_db = real, real_ref
+
+    def test_a_receiver_that_is_not_plugged_in_is_left_out_of_all(self):
+        c = client()
+        from arisweb.engine import engine as _eng
+        eng = _eng()
+        eng._set_dongle("00004004", present=False)
+        try:
+            j = c.get("/api/spectrum?dongle=all&start=433&stop=435").get_json()
+            self.assertEqual([t["dongle"] for t in j["traces"]], ["00001001", "00003003"])
+            m = c.get("/api/spectrum/meta").get_json()
+            self.assertEqual([d["present"] for d in m["dongles"]], [True, True, False])
+        finally:
+            eng._set_dongle("00004004", present=True)
+        self.assertEqual(len(c.get("/api/spectrum?dongle=all&start=433&stop=435").get_json()["traces"]), 3)
+
+    def test_a_receiver_name_nobody_has_is_refused(self):
+        c = client()
+        for url in ("/api/spectrum", "/api/spectrum/plan"):
+            r = c.get(url + "?dongle=nope&start=88&stop=108")
+            self.assertEqual((r.status_code, r.get_json()["error"]), (400, "No receiver here has that name."), url)
+            self.assertEqual(c.get(url + "?dongle=dongle%202&start=88&stop=108").status_code, 200, url)
+
+    def test_a_coarse_sweep_keeps_signals_near_the_hop_centres(self):
+        """A wide view has a hop's spike core cover a large part of the hop: only the centre point standing a little
+        over its surroundings is filled in there, and above the widest automatic step nothing is."""
+        import numpy as np
+        from arisweb import spectrum as S
+        from arisweb.engine import engine as _eng
+        eng = _eng()
+        freqs = [round(100.0 + 0.2 * i, 4) for i in range(41)]                     # 100-108 MHz, a point every 200 kHz
+        hop, guard = [104.0], eng._guard_mhz(200.0)
+
+        def sweep(**levels):                     # a flat floor at -46 with these points raised (MHz -> dB)
+            return [levels.get("f%d" % round(f * 10), -46.0) for f in freqs]
+
+        def at(db, mhz):
+            return db[freqs.index(mhz)]
+        spike = sweep(f1038=-41.2, f1040=-36.0, f1042=-41.2)                       # the receiver's own spike
+        db, n = S._fill_hop_spikes(freqs, spike, hop, 200.0, guard, coarse=True)
+        self.assertEqual((n, at(db, 104.0), at(db, 103.8)), (1, -46.0, -46.0))
+        strong = sweep(f1040=-26.0)                                                # 20 dB on the centre point: a signal
+        db, n = S._fill_hop_spikes(freqs, strong, hop, 200.0, guard, coarse=True)
+        self.assertEqual((n, db), (0, strong))
+        beside = sweep(f1040=-36.0, f1042=-34.0)                                   # the strongest point is beside it
+        db, n = S._fill_hop_spikes(freqs, beside, hop, 200.0, guard, coarse=True)
+        self.assertEqual((n, db), (0, beside))
+        db, n = S._fill_hop_spikes(freqs, beside, hop, 200.0, guard)               # the fine-step rule is as it was
+        self.assertEqual((n, at(db, 104.2)), (1, -46.0))
+        # the first preset: every simulated station is in the list (105.3 sits beside a hop centre of that sweep)
+        c = client()
+        j = c.get("/api/spectrum?dongle=1&start=0&stop=6000").get_json()
+        for mhz in (88.9, 96.9, 101.7, 105.3):
+            self.assertTrue(any(abs(p["mhz"] - mhz) <= 0.25 for p in j["peaks"]), (mhz, j["peaks"]))
+        self.assertFalse(j["spikes_kept"])
+        # a step of 1000 kHz is one point per hop: every point is shown as it was measured
+        env = os.environ.get("FAKE_PEAKS")
+        os.environ["FAKE_PEAKS"] = "150:25:300"
+        asked, real = [], eng._rtl_power
+
+        def spy(*a, **k):
+            asked.append(real(*a, **k))
+            return asked[-1]
+        eng._rtl_power = spy
+        try:
+            j = c.get("/api/spectrum?dongle=1&start=140&stop=170&step_khz=1000&gain=20").get_json()
+        finally:
+            eng._rtl_power = real
+            os.environ["FAKE_PEAKS"] = env
+        self.assertEqual((j["step_khz"], j["spikes_removed"], j["spikes_kept"]), (1000.0, 0, True))
+        raw = sorted((round(hz / 1e6, 4), sum(v) / len(v)) for hz, v in asked[0][0].items())
+        raw = [(f, v) for f, v in raw if 140.0 <= f <= 170.0]
+        ref = S._sweep_fullscale_db(eng, 140.0, 170.0, 1000.0)
+        t = j["traces"][0]
+        self.assertEqual(t["freqs"], [f for f, _ in raw])
+        self.assertEqual(t["db"], [round(v - ref, 1) for _, v in raw])             # nothing filled in, nothing moved
+        self.assertGreater(max(t["db"]) - float(np.median(t["db"])), 4.0)          # the carrier is in it
+
+    def test_fm_stations_a_few_coarse_points_apart_are_told_apart(self):
+        from arisweb import spectrum as S
+        from arisweb.engine import engine as _eng
+        eng = _eng()
+        self.assertEqual(S._valleys([0, 10, 3, 10, 9, 2, 1, 8]), [2, 6])           # the lowest point of each clear dip
+        self.assertEqual(S._valleys([0, 10, 8, 10, 0]), [])                        # a 2 dB dip parts nothing
+        self.assertEqual(S._valleys([]), [])
+        freqs = [round(95.0 + 0.2 * i, 4) for i in range(21)]                      # 95-99 MHz, a point every 200 kHz
+
+        def found(**levels):
+            db = [levels.get("f%d" % round(f * 10), -46.0) for f in freqs]
+            return sorted(p["frequency_mhz"] for p in S._signals(eng, freqs, db, 200.0, -46.0, None))
+        self.assertEqual(found(f960=-30.0, f962=-38.0, f964=-30.0), [96.0, 96.4])  # two stations, a dip between them
+        self.assertEqual(len(found(f960=-30.0, f962=-32.0, f964=-30.0)), 1)        # no clear dip: one entry
+        # a receiver's own spike beside a station is no second station
+        db = [{96.0: -30.0, 96.2: -40.0, 96.4: -36.0, 96.6: -41.0}.get(f, -46.0) for f in freqs]
+        self.assertEqual(len(S._signals(eng, freqs, db, 200.0, -46.0, [96.4])), 1)
+        self.assertEqual(len(S._signals(eng, freqs, db, 200.0, -46.0, None)), 2)   # (no spike there: two signals)
+        # outside the FM band the points of one signal still join step by step
+        wide = [round(400.0 + 0.2 * i, 4) for i in range(21)]
+        db = [{402.0: -30.0, 402.2: -38.0, 402.4: -30.0}.get(f, -46.0) for f in wide]
+        self.assertEqual(len(S._signals(eng, wide, db, 200.0, -46.0, None)), 1)
+
+    def test_step_and_points_are_checked(self):
+        c = client()
+        j = c.get("/api/spectrum?dongle=1&start=433&stop=435&step_khz=10").get_json()
+        self.assertEqual((j["step_khz"], j["step_auto"], j["step_raised"]), (10.0, False, False))
+        self.assertTrue(150 < len(j["traces"][0]["freqs"]) <= 260, len(j["traces"][0]["freqs"]))
+        pl = c.get("/api/spectrum/plan?dongle=1&start=24&stop=1766&rbw=1").get_json()
+        self.assertTrue(pl["step_raised"])
+        self.assertEqual(pl["step_khz"], 25.0)
+        self.assertIn("raised from 1 to 25 kHz", pl["step_note"])
+        for q in ("start=abc&stop=100", "start=100", "start=200&stop=100", "start=-5&stop=100",
+                  "start=100&stop=6001", "start=100&stop=100.001", "start=88&stop=108&step_khz=0.01",
+                  "start=88&stop=108&step_khz=wide", "start=88&stop=108&points=999999",
+                  "start=88&stop=108&points=many", "start=2400&stop=2500&step_khz=99999"):
+            for url in ("/api/spectrum?dongle=1&", "/api/spectrum/plan?dongle=1&"):
+                r = c.get(url + q)
+                self.assertEqual(r.status_code, 400, (url, q))
+                self.assertNotIn("Traceback", r.get_json()["error"])
+                self.assertNotRegex(r.get_json()["error"], r"[a-z]_[a-z]", (url, q))     # plain words
 
     def test_wide_sweep_does_not_call_fm_off_plan(self):
         c = client()
@@ -277,6 +516,8 @@ class Spectrum(unittest.TestCase):
                     self.assertLessEqual(max(t["db"]), 0.0, (q, t["name"]))
                     self.assertLess(t["floor_db"], max(t["db"]))
                     self.assertLess(t["floor_db"], -20.0)          # a dongle's noise is far below full scale
+                    if j["mode"] == "sweep":                       # the simulated floor: -46 dBFS (-26 unconverted)
+                        self.assertLess(t["floor_db"], -40.0, (q, t["name"]))
             if j["mode"] == "sweep":
                 self.assertTrue(j["peaks"], q)
         self.assertEqual(j["mode"], "live")
@@ -285,6 +526,8 @@ class Spectrum(unittest.TestCase):
         c = client()
         j = c.get("/api/spectrum?dongle=1&start=88&stop=108").get_json()
         self.assertTrue(j["fm_plan_checked"])
+        for p in j["peaks"]:                     # each entry says how far its signal reaches
+            self.assertTrue(p["lo_mhz"] <= p["hi_mhz"] and abs(p["mhz"] - p["lo_mhz"]) < 0.5, p)
         self.assertIn(96.9, [p["mhz"] for p in j["peaks"]])
         self.assertFalse(any(p["flag"] for p in j["peaks"] if p["mhz"] in (88.9, 96.9, 101.7, 105.3)))
 

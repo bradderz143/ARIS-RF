@@ -25,10 +25,15 @@ off with `"update_check": false` in the data folder's `config.json`). It never t
 
 ## What it does
 
-- **Spectrum**: live sweeps from every receiver at once (overlaid, each against its own noise floor), peak lists,
-  waterfall, presets for common bands, true dBFS levels for RTL-SDR dongles and calibrated dBm for Signal Hound
-  receivers. Bands above 1.7 GHz (phone bands, 2.4 and 5 GHz Wi-Fi and Bluetooth) appear when a receiver tunes them,
-  and the threat audit knows them too (a steady signal in the GPS band is flagged as a possible jammer).
+- **Spectrum**: a spectrum analyzer in the browser. Pick any range from 0 to 6000 MHz by Start / Stop or Centre /
+  Span; zoom and pan with the buttons, the mouse wheel or by dragging across the plot. Every receiver sweeps the part
+  of the range it tunes, at the same time, overlaid and each against its own noise floor; a wide range is swept in
+  pieces and the picture fills in as they come back. What no receiver here tunes is hatched and labelled, never drawn
+  as a level (an RTL-SDR covers 24-1766 MHz; above that the plot says so until a receiver that reaches further is
+  plugged in). Step between points, level axis, peak hold, averaging, a marker with Peak, Next peak and Delta, a
+  waterfall, signal lists and presets for common bands. True dBFS levels for RTL-SDR dongles and calibrated dBm for
+  Signal Hound receivers. The threat audit knows the bands above 1.7 GHz too (a steady signal in the GPS band is
+  flagged as a possible jammer).
 - **Investigate and decode**: listen on a frequency for up to 10 minutes on every receiver; rtl_433's 200+ device
   decoders, FM station names (RDS, decoded and checksummed by ARIS itself), pager and APRS metadata, ADS-B aircraft
   (checksum-verified only). Anything a decoder does not recognise is described by what was measured, never guessed.

@@ -1036,7 +1036,10 @@ def _watchdog_summary(freq_mhz=None, model_filter=None, max_events=8) -> dict:
         if isinstance(p.get("snr"), (int, float)):
             d["best_snr_db"] = max(d["best_snr_db"] or -99.0, round(float(p["snr"]), 1))
         d["heard_on"].add(_short(p.get("aris_serial", "?")))
-        d["last_packet"] = {k: v for k, v in _safe_packet(p).items()
+        d["last_packet"] = None           # (filled in below, once per device and not once per packet)
+        d["_last"] = p
+    for d in devices.values():            # each device's last packet, codes stripped as always
+        d["last_packet"] = {k: v for k, v in _safe_packet(d.pop("_last")).items()
                             if k not in ("time", "t", "type", "aris_serial", "aris_freq_mhz", "mod", "freq", "rssi",
                                          "snr", "noise", "protocol")}
     sigs, near = {}, {}

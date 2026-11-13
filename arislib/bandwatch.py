@@ -78,6 +78,27 @@ class BurstDetector:
         X = np.fft.fftshift(np.fft.fft(z[: n * self.nfft].reshape(n, self.nfft) * self.win, axis=1), axes=1)
         return (X.real ** 2 + X.imag ** 2).astype(np.float32)
 
+    @staticmethod
+    def _smooth(Q, a):
+        """(S, med): every bin's running mean over `a` frames (Q holds a - 1 frames more than S), and every bin's
+        median over the block.
+
+        Worked on a copy laid out bin after bin, so that each bin's frames lie next to each other in memory: the
+        running sum and the median's partial sort then run along the memory instead of across it, which takes less
+        than half the time (this is the detector's main cost, all day during a band capture). The arithmetic is
+        the same, value for value, as the plain form
+            c = np.cumsum(Q, axis=0, dtype=np.float64)
+            S = ((c[a - 1:] - np.concatenate([np.zeros((1, bins)), c[:-a]])) / a).astype(np.float32)
+            med = np.median(S, axis=0)
+        and the result is the same bit for bit (test_unit checks it against that form)."""
+        c = np.ascontiguousarray(Q.T, dtype=np.float64)              # (bins, frames)
+        np.cumsum(c, axis=1, out=c)
+        d = c[:, a - 1:].copy()
+        d[:, 1:] -= c[:, :-a]
+        d /= a
+        St = d.astype(np.float32)
+        return np.ascontiguousarray(St.T), np.median(St, axis=1)
+
     def feed(self, z) -> list:
         P = self._frames(z)
         if not len(P):
@@ -86,9 +107,7 @@ class BurstDetector:
         prev = self._tail if self._tail is not None else np.repeat(P[:1], a - 1, axis=0)
         Q = np.concatenate([prev, P]) if a > 1 else P
         self._tail = Q[-(a - 1):] if a > 1 else None
-        c = np.cumsum(Q, axis=0, dtype=np.float64)
-        S = ((c[a - 1:] - np.concatenate([np.zeros((1, self.nfft)), c[:-a]])) / a).astype(np.float32)
-        med = np.median(S, axis=0)
+        S, med = self._smooth(Q, a)
         if self.floor is None:
             self.floor = med
         if self._absorb.any():                   # a carrier closed in the last block: it is floor from now on
@@ -125,7 +144,7 @@ class BurstDetector:
                 continue
             # runs of active bins (gaps of up to 2 bins joined): one signal each
             cuts = np.flatnonzero(np.diff(cols) > 3)
-            for lo, hi in zip(np.r_[cols[0], cols[cuts + 1]], np.r_[cols[cuts], cols[-1]]):
+            for lo, hi in zip(np.concatenate((cols[:1], cols[cuts + 1])), np.concatenate((cols[cuts], cols[-1:]))):
                 b = next((o for o in self.open if o["last"] >= g - self.gap and lo <= o["hi"] + 4
                           and hi >= o["lo"] - 4), None)
                 if b is None:

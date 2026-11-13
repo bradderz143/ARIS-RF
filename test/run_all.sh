@@ -9,8 +9,8 @@ cd "$R"
 echo "== compile"; python3 -m py_compile aris.py aris_gui.py aris_node.py engine/*.py arislib/*.py arisweb/*.py plugins/*.py test/*.py && echo ok
 for f in arisweb/static/js/*.js; do command -v node >/dev/null && node --check "$f"; done
 cd "$T"
-if python3 -c "import pytest" 2>/dev/null; then python3 -m pytest -q test_unit.py test_api.py test_node.py test_radios.py test_engine.py test_flow.py
-else python3 -m unittest -v test_unit test_api test_node test_radios test_engine test_flow; fi
+if python3 -c "import pytest" 2>/dev/null; then python3 -m pytest -q test_unit.py test_specplan.py test_api.py test_node.py test_radios.py test_engine.py test_flow.py
+else python3 -m unittest -v test_unit test_specplan test_api test_node test_radios test_engine test_flow; fi
 if [[ "${1:-}" == "--shots" ]]; then
   PORT=5099; OUT="$T/shots"; mkdir -p "$OUT"
   FAKE_WD_PERIOD=1 ARIS_SEED_DEVICES=1 python3 serve.py $PORT > "$OUT/serve.log" 2>&1 & PID=$!
