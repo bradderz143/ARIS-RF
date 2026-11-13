@@ -30,7 +30,7 @@ off with `"update_check": false` in the data folder's `config.json`). It never t
   of the range it tunes, at the same time, overlaid and each against its own noise floor; a wide range is swept in
   pieces and the picture fills in as they come back. What no receiver here tunes is hatched and labelled, never drawn
   as a level (an RTL-SDR covers 24-1766 MHz; above that the plot says so until a receiver that reaches further is
-  plugged in). Step between points, level axis, peak hold, averaging, a marker with Peak, Next peak and Delta, a
+  plugged in). Gain: Auto uses the best gain for each dongle and band from setup, or one fixed gain for all; levels are shown with the gain taken off (dBFS at the input) so parts of a wide sweep measured at different gains join without a step, or as read. Step between points, level axis, peak hold, averaging, a marker with Peak, Next peak and Delta, a
   waterfall, signal lists and presets for common bands. True dBFS levels for RTL-SDR dongles and calibrated dBm for
   Signal Hound receivers. The threat audit knows the bands above 1.7 GHz too (a steady signal in the GPS band is
   flagged as a possible jammer).

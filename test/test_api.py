@@ -396,6 +396,45 @@ class Spectrum(unittest.TestCase):
             self.assertEqual((r.status_code, r.get_json()["error"]), (400, "No receiver here has that name."), url)
             self.assertEqual(c.get(url + "?dongle=dongle%202&start=88&stop=108").status_code, 200, url)
 
+    def test_levels_have_the_gain_taken_off_so_pieces_at_other_gains_join(self):
+        from arisweb.engine import engine as _eng
+        from arisweb import spectrum as S
+        eng = _eng()
+        c = client()
+        # one request, the same gain: "input" is "raw" minus that gain (the dongle snaps 20 to 19.7)
+        raw = c.get("/api/spectrum?dongle=1&start=140&stop=170&gain=20&level=raw").get_json()
+        inp = c.get("/api/spectrum?dongle=1&start=140&stop=170&gain=20").get_json()          # input is the default
+        self.assertTrue(inp["gain_removed"])
+        self.assertFalse(raw["gain_removed"])
+        self.assertEqual(inp["traces"][0]["gain_db"], 19.7)
+        self.assertEqual(len(raw["traces"][0]["db"]), len(inp["traces"][0]["db"]))
+        for a, b in zip(raw["traces"][0]["db"], inp["traces"][0]["db"]):
+            self.assertAlmostEqual(a - 19.7, b, delta=0.11)
+        # a sweep in pieces at different gains: every point has its own piece's gain taken off
+        pieces = list(S._sp.cut(24.0, 500.0, eng.MAX_SPAN_MHZ))
+        self.assertEqual(len(pieces), 3)
+        gains = dict(zip([round(lo, 4) for lo, _ in pieces], (10.0, 30.0, 20.0)))
+        gain_of = lambda lo, hi: gains[round(lo, 4)]                                        # noqa: E731
+        a = S._frame(eng, "00001001", 24.0, 500.0, gain_of, step_khz=200.0, points=100000, live=False, remove_gain=False)
+        b = S._frame(eng, "00001001", 24.0, 500.0, gain_of, step_khz=200.0, points=100000, live=False)
+        self.assertEqual(a["freqs"], b["freqs"])
+        self.assertEqual(a["gain_db"], "10.0 to 30.0 to 20.0")
+        edges = [hi for _, hi in pieces[:2]]
+        diffs = {}
+        for f, x, y in zip(a["freqs"], a["db"], b["db"]):
+            if any(abs(f - e) < 0.5 for e in edges):
+                continue                                                                    # the point two pieces share
+            g = 10.0 if f < edges[0] else (30.0 if f < edges[1] else 20.0)
+            diffs.setdefault(g, []).append(y - (x - g))
+        for g, d in diffs.items():                                                          # two sweeps differ at the stations (they wander), so: on average
+            self.assertAlmostEqual(sorted(d)[len(d) // 2], 0.0, delta=0.3, msg=g)
+            self.assertGreater(len(d), 50)
+        # a bad gain or level is refused in plain words
+        for q in ("gain=abc", "gain=-5", "gain=99", "level=loud"):
+            r = c.get("/api/spectrum?dongle=1&start=140&stop=170&" + q)
+            self.assertEqual(r.status_code, 400, q)
+            self.assertIn("must be", r.get_json()["error"])
+
     def test_a_coarse_sweep_keeps_signals_near_the_hop_centres(self):
         """A wide view has a hop's spike core cover a large part of the hop: only the centre point standing a little
         over its surroundings is filled in there, and above the widest automatic step nothing is."""
@@ -438,7 +477,7 @@ class Spectrum(unittest.TestCase):
             return asked[-1]
         eng._rtl_power = spy
         try:
-            j = c.get("/api/spectrum?dongle=1&start=140&stop=170&step_khz=1000&gain=20").get_json()
+            j = c.get("/api/spectrum?dongle=1&start=140&stop=170&step_khz=1000&gain=20&level=raw").get_json()
         finally:
             eng._rtl_power = real
             os.environ["FAKE_PEAKS"] = env

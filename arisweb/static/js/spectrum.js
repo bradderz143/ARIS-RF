@@ -6,6 +6,7 @@ const SP = {running: false, busy: false, timer: null, data: null, holdOn: false,
             holdMax: -1e9, key: '', sel: null, yMin: null, yMax: null, meta: null, retry: false, geom: null,
             scale: 'abs', preset: null, fmOpen: false, labelBoxes: [],
             view: {s: 88, e: 108}, hist: [], histAt: 0,          // the view in MHz, and the views before it (Back)
+            gain: 'auto', lvl: 'input',                          // receiver gain (auto = the best for each dongle); levels with the gain taken off
             rbw: 'auto', top: null, range: 'auto',               // step between points; level axis (null / auto = automatic)
             avgN: 0, avg: {},                                    // average over N sweeps, kept as power per line
             ref: null,                                           // the Delta reference frequency
@@ -21,7 +22,7 @@ function spColor(serial){
   return DONGLE_COLORS[k < 0 ? 3 : k % DONGLE_COLORS.length];
 }
 function spSave(){ try { localStorage.setItem('aris_spec', JSON.stringify({p: SP.preset, d: document.getElementById('sp-dongle').value,
-  s: String(SP.view.s), e: String(SP.view.e), sc: SP.scale, rbw: SP.rbw, top: SP.top, rng: SP.range, avg: SP.avgN})); } catch (e) {} }
+  s: String(SP.view.s), e: String(SP.view.e), sc: SP.scale, rbw: SP.rbw, top: SP.top, rng: SP.range, avg: SP.avgN, gain: SP.gain, lvl: SP.lvl})); } catch (e) {} }
 function spLoad(){ try { return JSON.parse(localStorage.getItem('aris_spec') || 'null'); } catch (e) { return null; } }
 
 // ---- the view: start, stop, centre and span, always inside 0-6000 MHz ----
@@ -104,6 +105,12 @@ function specPan(dir){ const v = SP.view, d = (v.e - v.s) / 2 * dir; specSetView
 function specFull(){ const L = spLim(); specSetView(L.lo, L.hi, {preset: 'full'}); }
 function specBack(){ const h = SP.hist.pop(); if (h) specSetView(h[0], h[1], {noHist: true}); else spFields(); }
 function specDongle(){ SP.plan = null; specClear(); spPlanSoon(); if (SP.running) spRestartLoop(100); }
+function specGainLvl(){                         // another gain or level reading: what is on screen is not comparable
+  SP.gain = document.getElementById('sp-gain').value || 'auto';
+  SP.lvl = document.getElementById('sp-lvl').value === 'raw' ? 'raw' : 'input';
+  specCancel(); spResetTraces(); spForget(); spSave(); specDraw();
+  if (SP.running) spRestartLoop(100); else specStatus('Gain or levels changed: sweep to measure again');
+}
 function specRbw(){                             // a new step is a new sweep: hold and average start again
   SP.rbw = document.getElementById('sp-rbw').value || 'auto';
   specCancel(); spResetTraces(); SP.stale = !!SP.data; spSave(); spPlanSoon(); specDraw();
@@ -147,6 +154,9 @@ async function specInit(){
   if (typeof saved.top === 'number' && isFinite(saved.top)){ SP.top = spTopLimit(saved.top); document.getElementById('sp-top').value = SP.top; }
   const rg = document.getElementById('sp-range');
   if (saved.rng && [...rg.options].some(o => o.value === String(saved.rng))){ rg.value = String(saved.rng); SP.range = rg.value; }
+  const gn = document.getElementById('sp-gain'), lv = document.getElementById('sp-lvl');
+  if (saved.gain && [...gn.options].some(o => o.value === String(saved.gain))){ gn.value = String(saved.gain); SP.gain = gn.value; }
+  if (saved.lvl === 'raw'){ lv.value = 'raw'; SP.lvl = 'raw'; }
   const av = document.getElementById('sp-avg');
   if (saved.avg && [...av.options].some(o => o.value === String(saved.avg))){ av.value = String(saved.avg); SP.avgN = Number(saved.avg); }
   const s = parseFloat(saved.s), e = parseFloat(saved.e);
@@ -164,7 +174,7 @@ function specScale(v, quiet){
 function specStatus(t){ document.getElementById('sp-status').textContent = t; }
 function specParams(){
   const d = document.getElementById('sp-dongle').value, s = SP.view.s, e = SP.view.e;
-  return {d: d, s: s, e: e, key: d + '|' + s + '|' + e + '|' + SP.rbw};
+  return {d: d, s: s, e: e, key: d + '|' + s + '|' + e + '|' + SP.rbw + '|' + SP.gain + '|' + SP.lvl};
 }
 // Peak hold, the average, the level scale and the waterfall start again (a new view, receiver or step).
 function spResetTraces(){
@@ -216,6 +226,7 @@ function spPlanSoon(){
 async function spFetchPiece(p, pl, c){
   let url = '/api/spectrum?dongle=' + encodeURIComponent(p.d) + '&start=' + c.start + '&stop=' + c.stop;
   if (pl.mode === 'sweep') url += '&step_khz=' + pl.step_khz + '&points=' + c.points;
+  url += '&gain=' + encodeURIComponent(SP.gain) + '&level=' + SP.lvl;
   const r = await fetch(url); if (toLogin(r)) return null;
   const j = await r.json().catch(() => ({error: 'bad reply'}));
   j.failed = !r.ok; return j;
@@ -480,7 +491,8 @@ function spInGap(f){ return spGaps().some(g => f >= g[0] && f <= g[1]); }
 function unitOf(u){ return u === 'dBFS' ? ' dBFS' : u === 'dBm' ? ' dBm' : ' dB'; }
 function axisLabel(u){
   return u === 'dBm' ? 'dBm (calibrated)' : u === 'dB' ? "dB (the receiver's own scale)"
-    : u === 'mixed' ? 'dB (receivers on different scales: use Above floor)' : 'dBFS (0 = full scale)';
+    : u === 'mixed' ? 'dB (receivers on different scales: use Above floor)'
+    : SP.lvl === 'input' ? 'dBFS at the input (receiver gain taken off)' : 'dBFS (0 = full scale, as read)';
 }
 function spSigned(x, d){ return (x >= 0 ? '+' : '') + x.toFixed(d); }
 function readoutAt(f){

@@ -93,8 +93,8 @@ pre{background:#000;color:#34d399;padding:8px;border-radius:6px;overflow-x:auto;
 .sp-nav .btn-ghost,.sp-mk .btn-ghost{padding:8px 11px}
 .sp-nav .btn-ghost{min-width:40px}
 .sp-mk{margin-top:8px}
-.sp-set{flex-wrap:nowrap;gap:6px}
-.sp-set .field{flex:1 1 0;min-width:0}
+.sp-set{flex-wrap:wrap;gap:6px}
+.sp-set .field{flex:1 1 30%;min-width:96px}
 .sp-set .field select,.sp-set .field input[type=number]{width:100%;min-width:0;height:38px;padding:6px}
 .sp-gap{font-size:.8rem;color:#fde68a;margin:2px 2px 6px;line-height:1.4}
 .sp-gap:empty{display:none}

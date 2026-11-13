@@ -180,10 +180,12 @@ def _sweep_piece(eng, serial, s_mhz, e_mhz, step_khz, gain):
     return freqs, db, hops, cleaned
 
 
-def _frame(eng, serial, s_mhz, e_mhz, gain, step_khz=None, points=MAX_POINTS, live=None):
+def _frame(eng, serial, s_mhz, e_mhz, gain, step_khz=None, points=MAX_POINTS, live=None, remove_gain=True):
     """What one receiver measures between s and e MHz (a range it tunes). gain is a number, or a function of
     (low MHz, high MHz) for sweeps that cross bands with their own gain. A range wider than the engine's widest
-    sweep is swept in pieces, one after another, and joined."""
+    sweep is swept in pieces, one after another, and joined. remove_gain: levels in dBFS have the receiver's gain
+    taken off (dBFS at the input), so pieces measured at different gains join without a step and receivers set
+    to different gains can be compared; levels in dBm or a receiver's own dB are never changed."""
     span = e_mhz - s_mhz
     gain_of = gain if callable(gain) else (lambda lo, hi: gain)
     if live is None:
@@ -193,6 +195,8 @@ def _frame(eng, serial, s_mhz, e_mhz, gain, step_khz=None, points=MAX_POINTS, li
         mode, unit = "live", "dBFS"
         gains.append(gain_of(s_mhz, e_mhz))
         freqs, db, step_khz = _live_frame(eng, serial, s_mhz, e_mhz, gains[0])
+        if remove_gain:
+            db = [round(v - gains[0], 1) for v in db]
     else:
         mode, unit = "sweep", _radios.sweep_unit(serial)
         step_khz = float(step_khz or _nice_step_khz(span))
@@ -200,6 +204,8 @@ def _frame(eng, serial, s_mhz, e_mhz, gain, step_khz=None, points=MAX_POINTS, li
         for lo, hi in _sp.cut(s_mhz, e_mhz, eng.MAX_SPAN_MHZ):
             g = gain_of(lo, hi)
             f, v, h, c = _sweep_piece(eng, serial, lo, hi, step_khz, g)
+            if remove_gain and unit == "dBFS":
+                v = [round(x - g, 1) for x in v]
             if freqs:                            # the point two pieces share is kept once
                 k = next((i for i, x in enumerate(f) if x > freqs[-1] + 1e-9), len(f))
                 f, v = f[k:], v[k:]
@@ -220,7 +226,8 @@ def _frame(eng, serial, s_mhz, e_mhz, gain, step_khz=None, points=MAX_POINTS, li
     return {"mode": mode, "freqs": freqs, "db": db, "floor_db": floor, "max_db": top, "_raw_peaks": raw,
             "step_khz": round(step_khz, 3), "spikes_removed": cleaned, "unit": unit,
             "spikes_kept": mode == "sweep" and step_khz > COARSE_STEP_KHZ and _hops_spike(serial),
-            "range_mhz": [s_mhz, e_mhz], "gain_db": gains[0] if len(gains) == 1 else " to ".join(f"{g}" for g in gains)}
+            "range_mhz": [s_mhz, e_mhz], "gain_db": gains[0] if len(gains) == 1 else " to ".join(f"{g}" for g in gains),
+            "gain_removed": bool(remove_gain and unit == "dBFS")}
 
 
 DIP_DB = 4.0                     # a dip this far below the tops on both sides parts two FM stations (coarse steps)
@@ -411,7 +418,7 @@ def _plan_for(eng, cfg, args):
     return pl, serials
 
 
-def frames(eng, serials, s_mhz, e_mhz, gain_arg, cfg, pl=None):
+def frames(eng, serials, s_mhz, e_mhz, gain_arg, cfg, pl=None, remove_gain=True):
     """One frame per receiver, captured at the same time, plus a combined (strongest) trace and merged peaks.
     Each receiver is asked only for the part of the view it tunes (the plan's); one that tunes none is left out."""
     if pl is None:
@@ -425,12 +432,13 @@ def frames(eng, serials, s_mhz, e_mhz, gain_arg, cfg, pl=None):
 
     def one(ser):
         lo, hi = (s_mhz, e_mhz) if live else pl["receivers"][ser]
-        if gain_arg in ("", "auto", None):
+        if gain_arg in ("", "auto", None):                          # the best gain for each dongle and band (/setup)
             gain = lambda a, b: eng._gain_for(ser, a, b, cfg)       # noqa: E731
-        else:
-            gain = eng._snap_gain(gain_arg)
+        else:                                                       # one gain for all, snapped to what each dongle has
+            gain = eng._snap_gain(gain_arg, gains=eng._dongle_cfg(ser, cfg).get("gains"))
         share = pl["points"] if live else int(round(pl["points"] * (hi - lo) / total))
-        return _frame(eng, ser, lo, hi, gain, step_khz=pl["step_khz"], points=min(MAX_POINTS, share), live=live)
+        return _frame(eng, ser, lo, hi, gain, step_khz=pl["step_khz"], points=min(MAX_POINTS, share), live=live,
+                      remove_gain=remove_gain)
     res = eng._parallel(one, use)
     traces, ok, errors = [], {}, []
     for ser in use:
@@ -463,6 +471,7 @@ def frames(eng, serials, s_mhz, e_mhz, gain_arg, cfg, pl=None):
             "fm_plan_checked": plan_checked, "warnings": warnings,
             "spikes_removed": sum(r["spikes_removed"] for r in ok.values()), "unit": unit,
             "spikes_kept": any(r["spikes_kept"] for r in ok.values()),
+            "gain_removed": all(r["gain_removed"] for r in ok.values()),
             "gain_db": " / ".join(f"{t['gain_db']}" for t in traces if "gain_db" in t)}
 
 
@@ -470,7 +479,7 @@ def _nothing():
     """The answer for a view no receiver here tunes: no trace, no level, no signal. Nothing was measured."""
     return {"mode": "none", "freqs": [], "db": [], "floor_db": None, "traces": [], "peaks": [], "step_khz": None,
             "fm_plan_checked": False, "warnings": [], "spikes_removed": 0, "spikes_kept": False, "unit": None,
-            "gain_db": ""}
+            "gain_removed": False, "gain_db": ""}
 
 
 def _plan_fields(pl):
@@ -540,7 +549,17 @@ def api_spectrum():
         if pl["mode"] == "none":                 # nothing here tunes any of it: no radio is opened
             out = _nothing()
         else:
-            out = frames(eng, serials, s_mhz, e_mhz, request.args.get("gain", "auto"), cfg, pl)
+            gain = str(request.args.get("gain", "auto") or "auto").strip().lower()
+            if gain != "auto":
+                try:
+                    if not 0.0 <= float(gain) <= 60.0:
+                        raise ValueError
+                except ValueError:
+                    raise ValueError("Gain must be Auto or a number from 0 to 60 dB.")
+            level = str(request.args.get("level", "input") or "input").strip().lower()
+            if level not in ("input", "raw"):
+                raise ValueError("Level must be input (gain removed) or raw (as read).")
+            out = frames(eng, serials, s_mhz, e_mhz, gain, cfg, pl, remove_gain=level == "input")
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except eng.RFError as e:
