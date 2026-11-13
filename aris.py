@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ARIS v4.15.0 - passive (receive-only) multi-receiver RF monitoring station.
+ARIS v4.16.0 - passive (receive-only) multi-receiver RF monitoring station.
 
 Run:      python3 aris.py                     (first time: type /check, then /setup)
 Tidy up:  python3 aris.py --cleanup           (lists old files from earlier versions, asks before deleting)
@@ -55,7 +55,7 @@ if _HERE not in sys.path:
 from arislib import radioproc      # noqa: E402  (stopping radio programs: see _end_radio)
 from arislib import radios         # noqa: E402  (receivers of every kind: see _radio_cmd)
 
-VERSION = "4.15.0"
+VERSION = "4.16.0"
 
 
 # ---------------------------------------------------------------------------------------------------------------

@@ -62,31 +62,48 @@ _HASH_PREFIXES = ("scrypt:", "pbkdf2:")
 
 def check_login(user, password, fallback=None) -> str:
     """The account name when user/password match the admin or an extra account, else ''. Reads the secrets file
-    each time (an added or removed account counts at once); `fallback` when it cannot be read."""
-    from werkzeug.security import check_password_hash
+    each time (an added or removed account counts at once); `fallback` when it cannot be read. A login with an
+    unknown name checks a made-up hash, so it takes as long as one with a wrong password (names cannot be told apart
+    by timing)."""
     sec = load_secrets() or fallback or {}
     user, password = str(user or ""), str(password or "")
     if not user or not password:
         return ""
     if user == sec.get("admin_user"):
-        return user if check_password_hash(sec.get("admin_hash", ""), password) else ""
+        return user if _hash_matches(sec.get("admin_hash", ""), password) else ""
     h = (sec.get("extra_users") or {}).get(user)
     if h:
-        return user if check_password_hash(h, password) else ""
-    check_password_hash(_DUMMY_HASH, password)     # an unknown name costs the same time as a wrong password
+        return user if _hash_matches(h, password) else ""
+    _hash_matches(_dummy_hash(), password)         # an unknown name costs the same time as a wrong password
     return ""
+
+
+def _hash_matches(h, password) -> bool:
+    """check_password_hash, but a hash of a kind this Werkzeug cannot read (scrypt before Werkzeug 2.3, as on
+    Debian 12 and Ubuntu 22.04) is a wrong password, never an error page."""
+    from werkzeug.security import check_password_hash
+    try:
+        return bool(check_password_hash(h, password))
+    except ValueError:
+        return False
+
+
+_DUMMY = []
+
+
+def _dummy_hash() -> str:
+    """A hash nobody's password matches, of the kind this Werkzeug makes for a new password (so checking it costs
+    what checking a real one costs here). Made once per process."""
+    if not _DUMMY:
+        from werkzeug.security import generate_password_hash
+        _DUMMY.append(generate_password_hash(os.urandom(16).hex()))
+    return _DUMMY[0]
 
 
 def is_admin(user, fallback=None) -> bool:
     """Only the admin account changes or deletes things; the extra accounts (`--add-user`) look and measure."""
     sec = load_secrets() or fallback or {}
     return bool(user) and user == sec.get("admin_user")
-
-
-# A real werkzeug hash (of a random string, never a password) so a login with an unknown name takes as long as
-# one with a wrong password (the review: an unknown name returned at once, which told names apart by timing).
-_DUMMY_HASH = ("scrypt:32768:8:1$9h3d5lI8QhE5Vb2b$3c0b4c6cb0a07ad4b5af5a8f4a2c7a1a2d9ef0bcf7b1a8e2c1b4d7f6e9a0c3b5d8e1f2a4b6c8"
-               "d0e2f4a6b8c0d2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b6c8d0e2f4a6b8c0d2e4f6a8b0c2")
 
 
 def cmd_add_user(name: str, stream=None) -> None:

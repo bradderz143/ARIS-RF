@@ -1390,5 +1390,789 @@ class DeployUnprivileged(unittest.TestCase):
         self.assertEqual(subprocess.run(["bash", "-n", os.path.join(self.ROOT, "deploy", "update.sh")]).returncode, 0)
 
 
+class DeployEverything(unittest.TestCase):
+    """deploy/install.sh --everything and deploy/get.sh, run for real against stand-in programs in a temporary
+    folder: as an ordinary user, with no network and no systemd.
+
+    The installer insists on root and has no switch to skip that. So the tests run it as the "root" of a user
+    namespace (unshare -r): root inside, an ordinary user outside, who can change nothing on the computer even by
+    mistake. Every path it writes is pointed into the temporary folder (ARIS_ROOT, ARIS_REPO, ARIS_DATA), and its
+    PATH holds only the stand-ins and a short list of plain tools. Where user namespaces are not allowed, the tests
+    that run the installer are skipped; the static ones still run."""
+    ROOT = DeployUnprivileged.ROOT
+    INSTALL = os.path.join(ROOT, "deploy", "install.sh")
+    GET = os.path.join(ROOT, "deploy", "get.sh")
+    UBUNTU = 'PRETTY_NAME="Ubuntu 24.04.1 LTS"\nNAME="Ubuntu"\nVERSION_ID="24.04"\nID=ubuntu\nID_LIKE=debian\n'
+    DEBIAN = 'PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\nNAME="Debian GNU/Linux"\nVERSION_ID="12"\nID=debian\n'
+    FEDORA = 'PRETTY_NAME="Fedora Linux 41"\nNAME="Fedora Linux"\nVERSION_ID=41\nID=fedora\n'
+    # plain tools the scripts may use besides the stand-ins (whatever the computer has of them)
+    BASE = ("bash sh env cat cp mv rm mkdir rmdir ls ln chmod touch head tail sed awk grep tr cut sort uniq wc "
+            "dirname basename readlink mktemp tee find stat true false expr seq date tar gzip").split()
+    # A stand-in is a few lines of bash. Each call is written to state/calls.log first (see _world).
+    STUBS = {
+        "systemctl": r'''
+case "$1" in
+  is-system-running) echo "${STUB_SYSTEMD:-running}"; [[ ${STUB_SYSTEMD:-running} == running ]];;
+  is-active) [[ -e $STUB_STATE/enabled && -s $ARIS_DATA/gui_secrets.json ]];;   # the real service needs a login
+  enable) touch "$STUB_STATE/enabled";;
+  stop|disable) [[ -e $STUB_STATE/enabled ]] && rm -f "$STUB_STATE/enabled";;
+esac''',
+        "apt-get": r'''
+if [[ $1 == update ]]; then [[ -z ${STUB_APT_OFFLINE:-} ]] || exit 100; touch "$STUB_STATE/lists"; exit 0; fi
+[[ $1 == install ]] || exit 0
+shift; skip=0
+for a in "$@"; do
+  if [[ $skip -eq 1 ]]; then skip=0; continue; fi
+  case "$a" in -o) skip=1; continue;; -*) continue;; esac
+  if [[ " ${STUB_APT_FAIL:-} " == *" $a "* ]]; then echo "E: stand-in apt-get: cannot install $a" >&2; exit 100; fi
+  touch "$STUB_STATE/pkg_$a"
+  case "$a" in
+    rtl-sdr) tools="rtl_sdr rtl_power rtl_test rtl_adsb";; rtl-433) tools=rtl_433;; direwolf) tools=atest;;
+    python3-numpy|python3-flask|python3-werkzeug|python3-ollama) tools=""; touch "$STUB_STATE/mod_${a#python3-}";;
+    python3-pip) tools=""; touch "$STUB_STATE/pip";;
+    *) tools=$a;;
+  esac
+  for t in $tools; do [[ ! -e $STUB_SHELF/$t ]] || cp -P "$STUB_SHELF/$t" "$STUB_BIN/$t"; done
+done''',
+        "apt-cache": r'''
+[[ $1 == policy ]] || exit 0
+word=Candidato; [[ ${LC_ALL:-} != C ]] || word=Candidate               # apt answers in the user's language
+if [[ -n ${STUB_NO_LISTS:-} && ! -e $STUB_STATE/lists ]]; then         # no package lists yet: no package source is
+  [[ -n ${2:-} && -e $STUB_STATE/pkg_$2 ]] || exit 0                   # listed, and only what is installed is known
+  printf '%s\n' "$2:" "  Installed: 1.0-1" "  $word: 1.0-1"; exit 0
+fi
+[[ -n ${2:-} ]] || { echo " 500 http://archive.example/ubuntu noble/main amd64 Packages"; exit 0; }
+[[ " ${STUB_APT_NONE-python3-ollama} " != *" $2 "* ]] || exit 0        # a package this release does not have
+v=1.0-1; [[ $2 != rtl-433 ]] || v=${STUB_R433_PKG:-23.11-1build1}
+printf '%s\n' "$2:" "  Installed: (none)" "  $word: $v"''',
+        "dpkg-query": r'''
+p=${*: -1}; [[ -e $STUB_STATE/pkg_$p ]] || exit 1; printf installed''',
+        "runuser": r'''
+[[ $1 != -u ]] || shift 2; [[ $1 != -- ]] || shift; exec "$@"''',
+        "id": r'''
+if [[ $# -eq 1 && $1 == aris ]]; then [[ -e $STUB_STATE/user_aris ]]; exit; fi
+exec "@ID@" "$@"''',
+        "adduser": r'''
+touch "$STUB_STATE/user_aris"''',
+        "getent": r'''
+[[ $1 == group && $2 == plugdev ]] || exit 2; echo "plugdev:x:46:"''',
+        "hostname": r'''
+echo "192.0.2.10 "''',
+        "df": r'''
+echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+echo "/dev/x 999999999 1 $(( ${STUB_FREE_GB:-50} * 1048576 )) 1% /"''',
+        "curl": r'''
+out=""; url=""
+while [[ $# -gt 0 ]]; do case "$1" in -o) out=$2; shift;; --proto|-m) shift;; -*) ;; *) url=$1;; esac; shift; done
+case "$url" in
+  https://ollama.com/install.sh)
+    [[ -z ${STUB_OLLAMA_DOWN:-} ]] || exit 22
+    printf '%s\n' '#!/bin/sh' 'echo "(a stand-in for the installer of Ollama)"' \
+      'cp "$STUB_SHELF/ollama" "$STUB_BIN/ollama" && touch "$STUB_STATE/ollama_up"' > "$out";;
+  http://127.0.0.1:11434/*) [[ -e $STUB_STATE/ollama_up ]];;
+  *) exit 6;;
+esac''',
+        "ollama": r'''
+case "$1" in
+  list) echo "NAME ID SIZE MODIFIED"; cat "$STUB_STATE/models" 2>/dev/null;;
+  pull) [[ -z ${STUB_PULL_FAIL:-} ]] || exit 1; echo "$2 0123abcd 4.7 GB now" >> "$STUB_STATE/models";;
+esac
+exit 0''',
+        "rtl_433": r'''
+case "$1" in
+  -V) echo "rtl_433 version ${STUB_R433:-23.11} (a date) inputs file rtl_tcp RTL-SDR" >&2;;
+  -h) if [[ ${STUB_R433:-23.11} < 23.11 ]]; then        # the real help lines of 21.12 and of 23.11
+        echo "  [-F kv | json | csv | mqtt | influx | syslog | null | help] Produce decoded output in given format."
+        echo "       Append output to file with :<filename> (e.g. -F csv:log.csv), defaults to stdout."; exit 1
+      fi
+      echo "  [-F log | kv | json | csv | mqtt | influx | syslog | trigger | null | help] Produce decoded output in given format.";;
+esac''',
+        "python3": r'''
+if [[ $1 == -c && $2 =~ ^import\ [a-z0-9_,\ ]+$ ]]; then                  # "can an ordinary user import these?"
+  for m in ${2#import }; do [[ -e $STUB_STATE/mod_${m%,} ]] || exit 1; done; exit 0
+fi
+if [[ $1 == -m && $2 == pip ]]; then
+  echo "pip ${*:3}" >> "$STUB_STATE/calls.log"
+  [[ -e $STUB_STATE/pip ]] || { echo "No module named pip" >&2; exit 1; }
+  [[ $3 != --version ]] || { echo "pip 24.0"; exit 0; }
+  if [[ " $* " == *" --help "* ]]; then
+    [[ -n ${STUB_PIP_OLD:-} ]] || printf '%s\n' "  --break-system-packages" "  --root-user-action <action>"; exit 0
+  fi
+  [[ -z ${STUB_PIP_FAIL:-} ]] || exit 1
+  for a in "${@:4}"; do [[ $a == -* ]] || touch "$STUB_STATE/mod_$a"; done; exit 0
+fi
+exec "@PY@" "$@"''',
+        "rsync": r'''
+src=${*: -2:1}; dst=${*: -1}; mkdir -p "$dst" && cp -a "$src". "$dst"     # only where the computer has no rsync''',
+    }
+    QUIET = ("id", "python3", "runuser", "sleep", "getent", "df", "hostname")       # not written to calls.log
+    PLAIN = ("usermod", "chown", "modprobe", "sleep", "zstd", "rtl_sdr", "rtl_power", "rtl_test", "rtl_adsb",
+             "multimon-ng", "atest")                                                # stand-ins that only say yes
+    ALWAYS = ("systemctl", "apt-get", "apt-cache", "dpkg-query", "runuser", "id", "getent", "hostname", "df",
+              "usermod", "chown", "modprobe", "sleep")
+    FRESH = ("python3", "git", "curl", "adduser")          # a new computer: the radio tools, rsync, Ollama are missing
+    READY = FRESH + ("rsync", "rtl_sdr", "rtl_power", "rtl_test", "rtl_adsb", "rtl_433", "multimon-ng", "atest", "ollama")
+
+    _fr = False
+
+    @classmethod
+    def _fake_root(cls):
+        """The command prefix that makes a harmless stand-in root, or None where that cannot be had."""
+        import shutil
+        import subprocess
+        if cls._fr is False:
+            cls._fr = None
+            unshare = shutil.which("unshare")
+            pre = [unshare, "-r"] if unshare else None
+            if pre and os.geteuid() == 0:           # the tests themselves run as root: become nobody first
+                setpriv = shutil.which("setpriv")
+                pre = [setpriv, "--reuid=65534", "--regid=65534", "--clear-groups"] + pre if setpriv else None
+            if pre:
+                probe = 'test "$(id -u)" = 0 && ! test -w /etc/passwd && ! test -w /etc'
+                try:
+                    if subprocess.run(pre + ["sh", "-c", probe], capture_output=True, timeout=20).returncode == 0:
+                        cls._fr = pre
+                except (OSError, subprocess.SubprocessError):
+                    pass
+        return cls._fr
+
+    def setUp(self):
+        self._dirs = []
+
+    def tearDown(self):
+        import shutil
+        for d in self._dirs:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def _tmp(self):
+        import tempfile
+        d = tempfile.mkdtemp(prefix="aris_inst_")
+        self._dirs.append(d)
+        if os.geteuid() == 0:
+            os.chmod(d, 0o755)
+        return d
+
+    def _world(self, have=FRESH, mods=(), pkgs=("ca-certificates",), os_release=UBUNTU, user=False, **env):
+        """A temporary folder that stands in for a computer: a copy of the code, an empty "/" and the stand-ins."""
+        import shutil
+        import sys
+        if not self._fake_root():
+            self.skipTest("no user namespaces here (unshare -r): the installer cannot run as a harmless stand-in root")
+        w = self._tmp()
+        p = {k: os.path.join(w, k) for k in ("src", "root", "bin", "shelf", "base", "state", "home", "t")}
+        p["repo"] = os.path.join(w, "opt", "aris")
+        p["data"] = os.path.join(w, "var", "lib", "aris")
+        for k in ("bin", "shelf", "base", "state", "home", "t"):
+            os.makedirs(p[k])
+        for d in ("etc/systemd/system", "etc/modprobe.d"):
+            os.makedirs(os.path.join(p["root"], d))
+        if os_release:
+            with open(os.path.join(p["root"], "etc", "os-release"), "w") as f:
+                f.write(os_release)
+        def skip(d, names):                           # the code only: no caches, no data files, no pictures
+            return [n for n in names if n == "__pycache__" or (os.path.isfile(os.path.join(d, n))
+                                                               and not n.endswith((".py", ".sh", ".service")))]
+        os.makedirs(os.path.join(p["src"], "deploy"))
+        for name in os.listdir(os.path.join(self.ROOT, "deploy")):
+            if name.endswith((".py", ".sh", ".service")):
+                shutil.copy(os.path.join(self.ROOT, "deploy", name), os.path.join(p["src"], "deploy"))
+        for name in ("engine", "arislib", "arisweb"):
+            shutil.copytree(os.path.join(self.ROOT, name), os.path.join(p["src"], name), ignore=skip)
+        for name in ("aris.py", "aris_gui.py"):
+            shutil.copy(os.path.join(self.ROOT, name), p["src"])
+        bash = shutil.which("bash")
+        for t in self.BASE:
+            real = shutil.which(t)
+            if real:
+                os.symlink(real, os.path.join(p["base"], t))
+        names = set(self.STUBS) | set(self.PLAIN)
+        for name in names:                           # every stand-in waits on the shelf until it is "installed"
+            body = self.STUBS.get(name, "\nexit 0").replace("@PY@", sys.executable).replace("@ID@", shutil.which("id"))
+            log = "" if name in self.QUIET else 'echo "$(basename "$0") $*" >> "$STUB_STATE/calls.log"'
+            path = os.path.join(p["shelf"], name)
+            with open(path, "w") as f:
+                f.write("#!%s\n%s%s\n" % (bash, log, body))
+            os.chmod(path, 0o755)
+        for name in ("git", "rsync"):                # the real ones, where the computer has them
+            real = shutil.which(name)
+            if real:
+                if name in names:
+                    os.remove(os.path.join(p["shelf"], name))
+                os.symlink(real, os.path.join(p["shelf"], name))
+        for name in set(self.ALWAYS) | set(have):
+            shutil.copy(os.path.join(p["shelf"], name), os.path.join(p["bin"], name), follow_symlinks=False)
+        for m in mods:
+            open(os.path.join(p["state"], "mod_" + m), "w").close()
+        for k in pkgs:
+            open(os.path.join(p["state"], "pkg_" + k), "w").close()
+        if "pip" in pkgs:
+            open(os.path.join(p["state"], "pip"), "w").close()
+        if user:
+            open(os.path.join(p["state"], "user_aris"), "w").close()
+        if "ollama" in have:
+            open(os.path.join(p["state"], "ollama_up"), "w").close()
+        open(os.path.join(p["state"], "calls.log"), "w").close()
+        p["env"] = dict({"PATH": p["bin"] + os.pathsep + p["base"], "HOME": p["home"], "LANG": "C", "TMPDIR": p["t"],
+                         "ARIS_ROOT": p["root"], "ARIS_REPO": p["repo"], "ARIS_DATA": p["data"],
+                         "STUB_STATE": p["state"], "STUB_BIN": p["bin"], "STUB_SHELF": p["shelf"],
+                         "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"}, **env)
+        p["w"] = w
+        self._own(w)
+        return p
+
+    def _own(self, top):
+        """When the tests run as root the installer runs as nobody: hand the temporary folder over."""
+        if os.geteuid() != 0:
+            return
+        for d, dirs, files in os.walk(top):
+            for n in [""] + dirs + files:
+                os.lchown(os.path.join(d, n), 65534, 65534)
+
+    @staticmethod
+    def _plain(b):
+        import re
+        return re.sub(r"\x1b\[[0-9;]*m", "", b.decode("utf-8", "replace")).replace("\r", "")
+
+    def _run(self, w, *args, script="install.sh", stdin=None, **env):
+        """Run a deploy script in the world, with no terminal. Returns (exit code, what it printed)."""
+        import subprocess
+        cmd = self._fake_root() + [os.path.join(w["base"], "bash")]
+        cmd += ["-s", "--"] if stdin else [os.path.join(w["src"], "deploy", script)]
+        with (open(stdin, "rb") if stdin else open(os.devnull, "rb")) as f:
+            r = subprocess.run(cmd + list(args), env=dict(w["env"], **env), stdin=f, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, start_new_session=True, timeout=180)
+        return r.returncode, self._plain(r.stdout)
+
+    def _run_tty(self, w, args, answers, script="install.sh", stdin=None, **env):
+        """The same on a pseudo-terminal, typing `answers` [(prompt, reply)] as the prompts appear."""
+        import pty
+        import select
+        cmd = self._fake_root() + [os.path.join(w["base"], "bash")]
+        cmd += ["-s", "--"] if stdin else [os.path.join(w["src"], "deploy", script)]
+        cmd += list(args)
+        pid, fd = pty.fork()
+        if pid == 0:                                  # the child: its terminal is the pseudo-terminal
+            try:
+                if stdin:                             # the script comes on standard input, as from "curl ... |"
+                    os.dup2(os.open(stdin, os.O_RDONLY), 0)
+                os.execve(cmd[0], cmd, dict(w["env"], **env))
+            finally:
+                os._exit(127)
+        buf, pos, todo, end, status = b"", 0, list(answers), time.time() + 180, None
+        while time.time() < end:
+            if select.select([fd], [], [], 0.2)[0]:
+                try:
+                    d = os.read(fd, 4096)
+                except OSError:
+                    d = b""
+                if not d:
+                    break
+                buf += d
+                while todo and todo[0][0].encode() in buf[pos:]:
+                    pos = buf.index(todo[0][0].encode(), pos) + len(todo[0][0])
+                    os.write(fd, todo.pop(0)[1].encode() + b"\n")
+            else:
+                done, st = os.waitpid(pid, os.WNOHANG)
+                if done:
+                    status = st
+                    break
+        if status is None:
+            try:
+                os.kill(pid, 0)
+                if time.time() >= end:
+                    os.kill(pid, 9)
+            except OSError:
+                pass
+            _, status = os.waitpid(pid, 0)
+        os.close(fd)
+        return (os.WEXITSTATUS(status) if os.WIFEXITED(status) else -1), self._plain(buf)
+
+    @staticmethod
+    def _calls(w, *words):
+        """The stand-ins' calls, in order; with words, only the calls that contain all of them."""
+        with open(os.path.join(w["state"], "calls.log")) as f:
+            lines = [ln.rstrip("\n") for ln in f]
+        return [ln for ln in lines if all(x in ln for x in words)]
+
+    def _ai_calls(self, w):
+        """Calls of the ollama program and fetches from ollama.com (the Python module "ollama" is another thing)."""
+        return [c for c in self._calls(w) if c.startswith("ollama ") or "ollama.com" in c]
+
+    def _untouched(self, w):
+        """Nothing was installed or changed: no user, no code, no data, no unit, no blacklist, no package."""
+        self.assertFalse(os.path.exists(w["repo"]))
+        self.assertFalse(os.path.exists(w["data"]))
+        self.assertEqual(os.listdir(os.path.join(w["root"], "etc", "systemd", "system")), [])
+        self.assertEqual(os.listdir(os.path.join(w["root"], "etc", "modprobe.d")), [])
+        self.assertFalse(os.path.exists(os.path.join(w["state"], "user_aris")))
+        changing = [c for c in self._calls(w) if c.split()[0] in ("apt-get", "pip", "adduser", "usermod", "chown",
+                                                                    "modprobe", "ollama", "rsync")
+                    and not c.startswith(("ollama list", "pip --version", "pip install --help"))]
+        changing += [c for c in self._calls(w, "systemctl") if c.split()[1] not in ("is-system-running", "is-active")]
+        changing += self._calls(w, "curl", "ollama.com")
+        self.assertEqual(changing, [])
+
+    # ---- static: what the scripts are -------------------------------------------------------------------------
+    def test_both_scripts_parse_and_are_lint_clean(self):
+        import shutil
+        import subprocess
+        for p in (self.INSTALL, self.GET):
+            self.assertEqual(subprocess.run(["bash", "-n", p]).returncode, 0, p)
+        if shutil.which("shellcheck"):               # warnings and errors; the notes left are the "A && B || C" style
+            r = subprocess.run(["shellcheck", "-S", "warning", self.INSTALL, self.GET], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_the_installer_stays_safe_by_default(self):
+        with open(self.INSTALL, encoding="utf-8") as f:
+            s = f.read()
+        for want in ("MODE=dry", "--everything", "--no-ai", "--apply", "--remove", "set -euo pipefail",
+                     "https://ollama.com/install.sh", "--proto '=https'"):
+            self.assertIn(want, s)
+        for never in ("rm -rf", "/root", "eval ", "curl -k", "--insecure", "| sh", "| bash", "http://ollama"):
+            self.assertNotIn(never, s)
+        self.assertNotIn("EUID", s.replace("[[ $EUID -eq 0 ]] ||", "", 1))      # one root check, and no way round it
+
+    def test_get_is_one_function_called_on_its_last_line(self):
+        with open(self.GET, encoding="utf-8") as f:
+            lines = f.read().split("\n")
+        self.assertEqual(lines[-1], "")                                # ends with a newline
+        self.assertEqual(lines[-2], 'aris_get "$@"')
+        self.assertEqual(lines[-3], "}")
+        start = lines.index("aris_get() {")
+        for ln in lines[:start]:                                       # before it: the #! line and comments only
+            self.assertTrue(ln.startswith("#") or ln == "", ln)
+        for ln in lines[start + 1:-3]:                                 # the body: indented, so inside the function
+            self.assertTrue(ln.startswith("  ") or ln == "", ln)
+
+    def test_get_fetches_over_https_only_and_removes_only_its_own_folder(self):
+        import re
+        with open(self.GET, encoding="utf-8") as f:
+            s = f.read()
+        for never in ("curl -k", "--insecure", "eval ", "http://", "git://", "sslVerify", "GIT_SSL_NO_VERIFY"):
+            self.assertNotIn(never, s)
+        self.assertIn("protocol.allow=never", s)                       # git may use nothing but what is allowed next
+        self.assertIn("protocol.https.allow=always", s)
+        self.assertIn('mktemp -d "${TMPDIR:-/tmp}/aris-get.XXXXXXXX"', s)
+        self.assertEqual(re.findall(r"\brm\b.*", s), ['rm -rf -- "$ARIS_GET_TMP" && echo "Removed the temporary folder $ARIS_GET_TMP."'])
+        self.assertIn('if [[ -n ${ARIS_GET_TMP:-} && -d $ARIS_GET_TMP && $ARIS_GET_TMP == */aris-get.* ]]; then', s)
+        self.assertNotIn("/opt/aris", s)                               # the station's folders are install.sh's business
+        self.assertNotIn("/var/lib/aris", s)
+
+    def test_a_download_of_get_that_was_cut_off_runs_nothing(self):
+        import shutil
+        import subprocess
+        with open(self.GET, "rb") as f:
+            text = f.read()
+        empty = self._tmp()                                            # no programs at all on PATH, and an empty "/"
+        os.chmod(empty, 0o755)
+        pre = []
+        if os.geteuid() == 0:                                          # as root the whole script would go on: be nobody
+            if not shutil.which("setpriv"):
+                self.skipTest("the tests run as root and cannot become an ordinary user (no setpriv)")
+            pre = [shutil.which("setpriv"), "--reuid=65534", "--regid=65534", "--clear-groups"]
+        env = {"PATH": empty, "ARIS_ROOT": empty, "HOME": empty}
+
+        def out(script):
+            r = subprocess.run(pre + [shutil.which("bash")], input=script, env=env, stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, start_new_session=True, timeout=30)
+            return r.stdout
+        self.assertIn(b"Run as root", out(text))                       # whole: it starts (and stops: not root)
+        cuts = [i + 1 for i, c in enumerate(text) if c == 10] + list(range(len(text) - 60, len(text)))
+        last = text.rstrip().rfind(b"\n") + 1                          # where the last line, the call, begins
+        for n in sorted(set(cuts)):
+            got = out(text[:n])
+            if text[:n].rstrip() in (text.rstrip(), text[:last] + b"aris_get"):
+                self.assertIn(b"Run as root", got)                     # the call is whole (cut right after the name:
+            else:                                                      # the options are lost, so it asks first)
+                self.assertEqual(got, b"", "cut at byte %d of %d" % (n, len(text)))
+
+    # ---- run: the installer against stand-ins ------------------------------------------------------------------
+    def test_it_refuses_without_root(self):
+        import shutil
+        import subprocess
+        pre = []
+        if os.geteuid() == 0:
+            if not shutil.which("setpriv"):
+                self.skipTest("the tests run as root and cannot become an ordinary user (no setpriv)")
+            pre = [shutil.which("setpriv"), "--reuid=65534", "--regid=65534", "--clear-groups"]
+        empty = self._tmp()
+        here = self._tmp()                  # copies an ordinary user can read, wherever the checkout lives
+        for f in (self.INSTALL, self.GET):
+            shutil.copy(f, here)
+            os.chmod(os.path.join(here, os.path.basename(f)), 0o644)
+        os.chmod(here, 0o755)
+        inst, get = (os.path.join(here, os.path.basename(f)) for f in (self.INSTALL, self.GET))
+        for script, args in ((inst, ["--everything", "--apply"]), (inst, ["--apply"]), (get, ["--yes"])):
+            r = subprocess.run(pre + ["bash", script] + args, env={"PATH": os.environ["PATH"], "ARIS_ROOT": empty,
+                               "ARIS_REPO": os.path.join(empty, "r"), "ARIS_DATA": os.path.join(empty, "d")},
+                               capture_output=True, text=True, start_new_session=True, timeout=30)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertTrue(r.stdout.startswith("Run as root"), r.stdout)
+            self.assertEqual(len(r.stdout.strip().split("\n")), 1)
+            self.assertEqual(os.listdir(empty), [])
+
+    def test_everything_dry_run_shows_the_whole_plan_and_changes_nothing(self):
+        w = self._world()
+        rc, out = self._run(w, "--everything")
+        self.assertEqual(rc, 0, out)
+        for want in ("1. This computer", "Ubuntu 24.04.1 LTS", "systemd is running", "2. Packages", "3. AI part",
+                     "4. Checks", "5. Plan",
+                     "with apt-get: rsync python3-numpy python3-flask python3-werkzeug python3-pip python3-httpx rtl-sdr rtl-433 "
+                     "multimon-ng direwolf zstd",
+                     "install with pip, system-wide, from PyPI: ollama",
+                     "download https://ollama.com/install.sh and run it as root", "a third-party", "--no-ai",
+                     "ollama pull qwen2.5:7b (about 4.7 GB)", "aris-rtl-sdr.conf", "dvb_usb_rtl28xxu",
+                     "create the system user aris", "ask for the web page's login",
+                     "Dry run: nothing was changed. To install:  sudo bash", "--everything --apply"):
+            self.assertIn(want, out)
+        self.assertNotIn("FIX", out)
+        self._untouched(w)
+        rc, out = self._run(w, "--everything", "--no-ai")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("the AI part is left out (--no-ai)", out)
+        self.assertIn("--everything --no-ai --apply", out)
+        self.assertNotIn("ollama.com/install.sh and run", out)
+        self.assertNotIn("zstd", out)
+        self._untouched(w)
+
+    def test_everything_apply_installs_all_of_it_and_a_second_run_changes_nothing_more(self):
+        w = self._world()
+        rc, out = self._run(w, "--everything", "--apply")
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("FIX", out)
+        self.assertEqual(self._calls(w, "apt-get")[0], "apt-get update -q")
+        self.assertEqual(self._calls(w, "apt-get", "install")[0].split()[-5:],            # the needed ones in one go
+                         ["rsync", "python3-numpy", "python3-flask", "python3-werkzeug", "python3-pip"])
+        for c in self._calls(w, "apt-get", "install"):
+            self.assertIn("-y -q --no-install-recommends", c)
+        self.assertEqual([c.split()[-1] for c in self._calls(w, "apt-get", "install")[1:]],     # the others one by one
+                         ["python3-httpx", "rtl-sdr", "rtl-433", "multimon-ng", "direwolf", "zstd"])
+        self.assertLess(self._calls(w).index(self._calls(w, "apt-get", "install", "python3-httpx")[0]),
+                        self._calls(w).index(self._calls(w, "pip install", "ollama")[0]))   # before pip: pip adds less
+        pip = self._calls(w, "pip install", "ollama")
+        self.assertEqual(len(pip), 1)                                  # this release has no python3-ollama package
+        self.assertIn("--break-system-packages", pip[0])
+        self.assertEqual(self._calls(w, "curl", "ollama.com"),
+                         [c for c in self._calls(w, "curl") if "--proto =https" in c and c.endswith("https://ollama.com/install.sh")])
+        self.assertEqual(len(self._calls(w, "curl", "ollama.com")), 1)
+        self.assertEqual(self._calls(w, "ollama pull"), ["ollama pull qwen2.5:7b"])
+        self.assertEqual(len(self._calls(w, "adduser", "--system", "--shell /usr/sbin/nologin aris")), 1)
+        self.assertEqual(self._calls(w, "systemctl enable"), ["systemctl enable --now aris.service"])
+        self.assertTrue(os.path.isfile(os.path.join(w["repo"], "aris.py")))
+        self.assertEqual(os.stat(w["data"]).st_mode & 0o777, 0o700)
+        with open(os.path.join(w["root"], "etc", "systemd", "system", "aris.service")) as f:
+            unit = f.read()
+        self.assertIn("ExecStart=/usr/bin/env python3 %s/aris_gui.py" % w["repo"], unit)
+        self.assertNotIn("@REPO@", unit)
+        with open(os.path.join(w["root"], "etc", "modprobe.d", "aris-rtl-sdr.conf")) as f:
+            self.assertEqual([ln for ln in f.read().split("\n") if ln and not ln.startswith("#")], ["blacklist dvb_usb_rtl28xxu"])
+        for want in ("the service waits for a login", "no terminal here to ask for the login", "--set-password",
+                     "http://localhost:5000 on this computer", "http://192.0.2.10:5000 from another device",
+                     "/check", "/setup", "unplug it and plug it in again", "deploy/update.sh"):
+            self.assertIn(want, out)
+        with open(os.path.join(w["data"], "baseline.keep"), "w") as f:      # the station's own data
+            f.write("mine")
+        self._own(w["data"])
+        open(os.path.join(w["state"], "calls.log"), "w").close()
+        self._own(w["state"])
+        rc, out = self._run(w, "--everything", "--apply")                   # again: an upgrade
+        self.assertEqual(rc, 0, out)
+        self.assertIn("nothing to install", out)
+        self.assertIn("user aris exists", out)
+        self.assertIn("already kept off RTL-SDR dongles", out)
+        for never in ("apt-get", "pip install", "ollama pull", "adduser", "ollama.com", "modprobe"):
+            self.assertEqual(self._calls(w, never), [], never)
+        with open(os.path.join(w["data"], "baseline.keep")) as f:
+            self.assertEqual(f.read(), "mine")
+
+    def test_a_computer_without_python_or_git_gets_them_first(self):
+        w = self._world(have=("curl", "adduser"))
+        rc, out = self._run(w, "--everything", "--no-ai")
+        self.assertEqual(rc, 0, out)
+        for want in ("NOTE python3: not here yet, to install", "NOTE git: not here yet, to install",
+                     "NOTE python3 is not here yet: the install brings it",
+                     "NOTE python modules numpy, flask, werkzeug, ollama: not all there yet",
+                     "NOTE the code is compiled as a check once python3 is there",
+                     "with apt-get: python3 rsync git python3-numpy python3-flask python3-werkzeug python3-pip"):
+            self.assertIn(want, out)
+        self.assertNotIn("FIX", out)
+        self._untouched(w)
+        rc, out = self._run(w, "--everything", "--apply", "--no-ai")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("OK   code compiles", out)
+        self.assertIn("OK   python modules numpy, flask, werkzeug, ollama (visible to an ordinary user)", out)
+        self.assertTrue(os.path.isfile(os.path.join(w["repo"], "deploy", "install.sh")))
+
+    def test_a_release_with_its_own_ollama_package_needs_no_pip(self):
+        w = self._world(STUB_APT_NONE="")
+        rc, out = self._run(w, "--everything", "--apply", "--no-ai")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self._calls(w, "apt-get", "install")[0].split()[-5:],
+                         ["rsync", "python3-numpy", "python3-flask", "python3-werkzeug", "python3-ollama"])
+        self.assertEqual(self._calls(w, "pip install"), [])
+        self.assertEqual(self._calls(w, "python3-pip"), [])
+
+    def test_old_pip_and_a_computer_without_package_lists(self):
+        w = self._world(STUB_PIP_OLD="1", STUB_NO_LISTS="1")
+        rc, out = self._run(w, "--everything", "--no-ai")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("this computer has no package lists yet", out)
+        self.assertIn("python3-ollama where this release has it, else with pip", out)
+        self._untouched(w)
+        rc, out = self._run(w, "--everything", "--apply", "--no-ai")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("no package python3-ollama in this release: the module comes from pip instead", out)
+        pip = self._calls(w, "pip install", "ollama")
+        self.assertEqual(len(pip), 1)
+        self.assertNotIn("--break-system-packages", pip[0])            # a pip that does not know the flag
+        self.assertNotIn("--root-user-action", pip[0])
+
+    def test_no_ai_leaves_ollama_alone(self):
+        w = self._world()
+        rc, out = self._run(w, "--everything", "--apply", "--no-ai")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("left out (--no-ai)", out)
+        self.assertEqual(self._ai_calls(w), [])                        # neither the installer nor the program
+        self.assertEqual(self._calls(w, "zstd"), [])
+        self.assertTrue(os.path.isfile(os.path.join(w["repo"], "aris.py")))
+
+    def test_the_ai_part_never_fails_the_install(self):
+        for env, said in (({"STUB_OLLAMA_DOWN": "1"}, "Ollama could not be installed"),
+                          ({"STUB_PULL_FAIL": "1"}, "the model could not be downloaded"),
+                          ({"STUB_FREE_GB": "7"}, "only 7 GB free")):
+            w = self._world(**env)
+            rc, out = self._run(w, "--everything", "--apply")
+            self.assertEqual(rc, 0, out)
+            self.assertIn(said, out)
+            self.assertNotIn("FIX", out)
+            self.assertEqual(self._calls(w, "systemctl enable"), ["systemctl enable --now aris.service"])
+            if "STUB_FREE_GB" in env:                                  # too little room: not even Ollama's installer
+                self.assertEqual(self._ai_calls(w), [])
+        w = self._world(have=self.FRESH + ("ollama",), STUB_FREE_GB="7")   # Ollama is there: the model alone fits
+        rc, out = self._run(w, "--everything", "--apply")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self._calls(w, "ollama pull"), ["ollama pull qwen2.5:7b"])
+        self.assertEqual(self._calls(w, "ollama.com"), [])
+
+    def test_an_rtl_433_too_old_for_aris_is_named_with_what_to_do(self):
+        w = self._world(have=self.FRESH + ("rtl_433",), STUB_R433="21.12")           # the program is here, and old
+        rc, out = self._run(w, "--everything", "--no-ai")
+        self.assertEqual(rc, 0, out)
+        for want in ("NOTE rtl_433 21.12 is older than 23.11", '"-F log"', "most sensor decoding will not work",
+                     "https://github.com/merbanan/rtl_433", "/usr/local/bin", "Debian 13, Ubuntu 24.04 or later"):
+            self.assertIn(want, out)
+        self.assertNotIn("FIX", out)
+        w = self._world(os_release=self.DEBIAN, STUB_R433_PKG="22.11-1", STUB_R433="22.11")   # only the package is old
+        rc, out = self._run(w, "--everything", "--no-ai")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("NOTE rtl_433 in this release (22.11-1) is older than 23.11", out)
+        rc, out = self._run(w, "--everything", "--apply", "--no-ai")                 # it is installed all the same
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(out.count("is older than 23.11"), 1)
+        self.assertIn("rtl_433 22.11 is too old for ARIS (see above)", out)
+        w = self._world(have=self.READY, mods=("numpy", "flask", "werkzeug", "ollama"), STUB_R433="21.12")
+        rc, out = self._run(w)                                                        # the plain dry run says it too
+        self.assertEqual(rc, 0, out)
+        self.assertIn("NOTE rtl_433 21.12 is older than 23.11", out)
+        w = self._world(have=self.READY, mods=("numpy", "flask", "werkzeug", "ollama"), STUB_R433="25.12")
+        rc, out = self._run(w)
+        self.assertIn("OK   rtl_433 (sensor decoding)", out)
+        self.assertNotIn("older than", out)
+
+    def test_without_systemd_or_on_another_system_it_stops_before_anything(self):
+        w = self._world(STUB_SYSTEMD="offline")
+        for args in (("--everything",), ("--everything", "--apply")):
+            rc, out = self._run(w, *args)
+            self.assertEqual(rc, 1, out)
+            self.assertIn("FIX  systemd is not running here (a container", out)
+            self.assertIn("Nothing was changed.", out)
+            self.assertNotIn("2. Packages", out)
+            self._untouched(w)
+        os.makedirs(os.path.join(w["root"], "proc"))
+        with open(os.path.join(w["root"], "proc", "version"), "w") as f:
+            f.write("Linux version 5.15.167.4-microsoft-standard-WSL2 (a build line)\n")
+        self._own(os.path.join(w["root"], "proc"))
+        rc, out = self._run(w, "--everything", "--apply")
+        self.assertEqual(rc, 1, out)
+        for want in ("systemd is not running in this WSL system", "/etc/wsl.conf", "[boot]", "systemd=true", "wsl --shutdown"):
+            self.assertIn(want, out)
+        self._untouched(w)
+        rc, out = self._run(w, script="get.sh", STUB_SYSTEMD="offline")
+        self.assertEqual(rc, 1, out)
+        for want in ("/etc/wsl.conf", "[boot]", "systemd=true", "wsl --shutdown"):
+            self.assertIn(want, out)
+        os.makedirs(os.path.join(w["root"], "run", "systemd", "system"))         # systemd's own mark that it runs
+        self._own(os.path.join(w["root"], "run"))
+        rc, out = self._run(w, "--everything", "--no-ai")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("OK   systemd is running", out)
+        w = self._world(os_release=self.FEDORA)
+        for script, args in (("install.sh", ("--everything", "--apply")), ("get.sh", ("--yes",))):
+            rc, out = self._run(w, *args, script=script)
+            self.assertEqual(rc, 1, out)
+            self.assertIn("for Debian and Ubuntu", out)
+            self.assertIn("Fedora Linux 41", out)
+            self._untouched(w)
+
+    def test_a_package_that_cannot_be_had(self):
+        w = self._world(STUB_APT_NONE="python3-ollama multimon-ng", STUB_APT_FAIL="direwolf")   # decoders: a NOTE
+        rc, out = self._run(w, "--everything", "--apply", "--no-ai")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("NOTE no package multimon-ng in this computer's package sources: left out", out)
+        self.assertIn("NOTE apt-get could not install direwolf", out)
+        self.assertIn("multimon-ng not found (optional decoder)", out)
+        self.assertEqual(self._calls(w, "systemctl enable"), ["systemctl enable --now aris.service"])
+        w = self._world(STUB_APT_FAIL="python3-flask")                                         # needed: stop
+        rc, out = self._run(w, "--everything", "--apply", "--no-ai")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FIX  apt-get could not install: rsync python3-numpy python3-flask python3-werkzeug", out)
+        self.assertIn("ARIS itself was not installed.", out)
+        self.assertFalse(os.path.exists(w["repo"]))
+        self.assertEqual(self._calls(w, "adduser"), [])
+
+    def test_the_plain_install_does_none_of_the_extra_steps(self):
+        w = self._world(have=self.READY, mods=("numpy", "flask", "werkzeug", "ollama"))
+        rc, out = self._run(w)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual([ln for ln in out.split("\n") if ln[:1].isdigit()], ["1. Checks", "2. Plan"])
+        self.assertTrue(out.rstrip().endswith("install.sh --apply"))
+        self._untouched(w)
+        rc, out = self._run(w, "--apply")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual([ln for ln in out.split("\n") if ln[:1].isdigit()],
+                         ["1. Checks", "2. Plan", "3. Installing", "4. Next"])
+        self.assertIn("NOTE the service waits for a login", out)        # a new install: no FIX for the missing login
+        self.assertIn("Set the login:   sudo -u aris env ARIS_DATA_DIR=", out)
+        for never in ("apt-get", "pip", "ollama.com", "ollama pull", "modprobe"):
+            self.assertEqual(self._calls(w, never), [], never)
+        self.assertEqual(os.listdir(os.path.join(w["root"], "etc", "modprobe.d")), [])
+        self.assertEqual(os.listdir(os.path.join(w["root"], "etc", "systemd", "system")), ["aris.service"])
+        w2 = self._world(have=self.READY)                               # modules missing: plain mode does not fetch them
+        rc, out = self._run(w2, "--apply")
+        self.assertEqual(rc, 1, out)
+        self.assertIn("FIX  an ordinary user cannot import numpy / flask / werkzeug / ollama", out)
+        self.assertIn("Nothing was changed.", out)
+        self._untouched(w2)
+        for bad in (("--no-ai",), ("--frobnicate",), ("--everything", "now")):
+            rc, out = self._run(w2, *bad)
+            self.assertEqual(rc, 2, out)
+
+    def test_the_login_is_asked_on_the_terminal_and_never_shown(self):
+        w = self._world(have=self.READY, mods=("numpy", "flask", "werkzeug", "ollama"))
+        with open(os.path.join(w["state"], "models"), "w") as f:
+            f.write("qwen2.5:7b 0123abcd 4.7 GB now\n")
+        self._own(w["state"])
+        secret = "correct-horse-battery"
+        rc, out = self._run_tty(w, ["--everything", "--apply"], [("Username [admin]: ", "keeper"),
+                                ("New password (min 8 chars): ", secret), ("Repeat password: ", secret)])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Choose the name and the password for the web page", out)
+        self.assertIn("OK   login set", out)
+        self.assertIn("OK   service running", out)
+        self.assertNotIn(secret, out)                                   # typed, not echoed
+        path = os.path.join(w["data"], "gui_secrets.json")
+        self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+        with open(path) as f:
+            saved = f.read()
+        self.assertIn('"admin_user": "keeper"', saved)
+        self.assertNotIn(secret, saved)                                 # a hash only
+        rc, out = self._run_tty(w, ["--everything", "--apply"], [])     # again: it does not ask a second time
+        self.assertEqual(rc, 0, out)
+        self.assertIn("a login is set already", out)
+        self.assertNotIn("Username", out)
+        with open(path) as f:
+            self.assertEqual(f.read(), saved)
+
+    def test_remove_takes_the_unit_and_the_blacklist_and_keeps_code_and_data(self):
+        w = self._world()
+        rc, out = self._run(w, "--everything", "--apply", "--no-ai")
+        self.assertEqual(rc, 0, out)
+        rc, out = self._run(w, "--remove")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("unit removed", out)
+        self.assertIn("aris-rtl-sdr.conf", out)
+        self.assertEqual(os.listdir(os.path.join(w["root"], "etc", "systemd", "system")), [])
+        self.assertEqual(os.listdir(os.path.join(w["root"], "etc", "modprobe.d")), [])
+        self.assertTrue(os.path.isfile(os.path.join(w["repo"], "aris.py")))
+        self.assertTrue(os.path.isdir(w["data"]))
+        self.assertEqual(self._calls(w, "systemctl disable"), ["systemctl disable --now aris.service"])
+
+    def _repo(self, w):
+        """The world's copy of the code as a git repository, as GitHub would hand it out."""
+        import subprocess
+        env = dict(os.environ, GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1", HOME=w["home"])
+        for cmd in (["init", "-q"], ["symbolic-ref", "HEAD", "refs/heads/main"], ["add", "-A"],
+                    ["-c", "user.name=test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false",
+                     "commit", "-q", "-m", "a copy for the test"]):
+            subprocess.run(["git", "-c", "safe.directory=*"] + cmd, cwd=w["src"], env=env, check=True, capture_output=True)
+        self._own(w["w"])
+        return w["src"]
+
+    def test_get_shows_the_plan_and_asks_before_it_installs(self):
+        w = self._world()
+        url = self._repo(w)
+        rc, out = self._run(w, stdin=self.GET, ARIS_GET_URL=url)        # piped like the one-liner, no terminal
+        self.assertEqual(rc, 1, out)
+        for want in ("Fetching ARIS (branch main)", "The plan:", "5. Plan", "ollama.com/install.sh",
+                     "Dry run: nothing was changed.", "There is no terminal to ask on, so nothing was installed",
+                     "| sudo bash -s -- --yes", "Removed the temporary folder"):
+            self.assertIn(want, out)
+        self.assertNotIn("To install:  sudo bash", out)                 # (the folder it ran from is gone by then)
+        self.assertEqual(os.listdir(w["t"]), [])
+        self._untouched(w)
+        rc, out = self._run_tty(w, [], [("Install? [y/N] ", "n")], stdin=self.GET, ARIS_GET_URL=url)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Nothing was installed.", out)
+        self.assertEqual(os.listdir(w["t"]), [])
+        self._untouched(w)
+        rc, out = self._run(w, "--yes", "--no-ai", stdin=self.GET, ARIS_GET_URL=url)
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("Install? [y/N]", out)
+        self.assertIn("left out (--no-ai)", out)
+        self.assertIn("Removed the temporary folder", out)
+        self.assertEqual(os.listdir(w["t"]), [])
+        self.assertTrue(os.path.isfile(os.path.join(w["repo"], "aris.py")))
+        self.assertTrue(os.path.isdir(os.path.join(w["repo"], ".git")))   # a checkout: deploy/update.sh can pull
+        self.assertEqual(self._calls(w, "systemctl enable"), ["systemctl enable --now aris.service"])
+        self.assertEqual(self._ai_calls(w), [])
+
+    def test_a_strict_umask_still_leaves_the_code_readable_for_the_service_user(self):
+        import stat
+        w = self._world()
+        url = self._repo(w)
+        old = os.umask(0o077)                 # a hardened root shell: what git fetches is readable by root only
+        try:
+            rc, out = self._run(w, "--yes", "--no-ai", stdin=self.GET, ARIS_GET_URL=url)
+        finally:
+            os.umask(old)
+        self.assertEqual(rc, 0, out)
+        for p in (w["repo"], os.path.join(w["repo"], "aris_gui.py"), os.path.join(w["repo"], "arisweb"),
+                  os.path.join(w["repo"], "arisweb", "app.py")):
+            m = stat.S_IMODE(os.stat(p).st_mode)
+            self.assertEqual(m & 0o004, 0o004, "%s is %o: the service user cannot read it" % (p, m))
+            self.assertEqual(m & 0o022, 0, "%s is %o: others can write to it" % (p, m))
+        self.assertEqual(stat.S_IMODE(os.stat(w["repo"]).st_mode) & 0o001, 0o001)       # and enter the folder
+
+    def test_get_on_a_terminal_installs_on_yes_and_fetches_git_when_it_is_missing(self):
+        w = self._world(have=("python3", "curl", "adduser"))            # no git yet
+        url = self._repo(w)
+        rc, out = self._run_tty(w, ["--no-ai"], [("Install? [y/N] ", "y"), ("Username [admin]: ", ""),
+                                ("New password (min 8 chars): ", "a-long-password"), ("Repeat password: ", "a-long-password")],
+                                stdin=self.GET, ARIS_GET_URL=url)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("git is needed to fetch ARIS", out)
+        self.assertIn("git ca-certificates", self._calls(w, "apt-get", "install")[0])
+        self.assertIn("OK   login set", out)
+        self.assertIn("OK   service running", out)
+        self.assertEqual(os.listdir(w["t"]), [])
+        rc, out = self._run(w, "--yes", stdin=self.GET, ARIS_GET_URL="http://example.org/aris.git")
+        self.assertEqual(rc, 2, out)
+        self.assertIn("must be an https:// address", out)
+        rc, out = self._run(w, "--yes", "--branch", "no-such-branch", stdin=self.GET, ARIS_GET_URL=url)
+        self.assertEqual(rc, 1, out)
+        self.assertIn("The code could not be fetched", out)
+        self.assertEqual(os.listdir(w["t"]), [])
+
+
 if __name__ == "__main__":
     unittest.main()

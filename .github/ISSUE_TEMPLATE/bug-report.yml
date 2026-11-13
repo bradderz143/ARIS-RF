@@ -18,7 +18,7 @@ body:
     id: versions
     attributes:
       label: ARIS version, OS, receivers
-      placeholder: "ARIS 4.15.0, Debian 12, two RTL-SDR dongles"
+      placeholder: "ARIS 4.16.0, Debian 12, two RTL-SDR dongles"
     validations:
       required: true
   - type: textarea

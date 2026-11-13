@@ -144,6 +144,29 @@ class ExtraLogins(unittest.TestCase):
         return APP.test_client().post("/login", data={"username": user, "password": pw},
                                       environ_base={"REMOTE_ADDR": "10.7.7.%d" % (len(user) + len(pw))}).status_code
 
+    def test_a_hash_this_werkzeug_cannot_read_is_a_wrong_password_never_an_error(self):
+        """An older Werkzeug (before 2.3: Debian 12, Ubuntu 22.04) raises on a scrypt hash. A login must answer
+        "wrong", also for an unknown name, whose made-up hash is of the kind this Werkzeug makes itself."""
+        import werkzeug.security as ws
+        from arisweb import auth
+        real, real_load = ws.check_password_hash, auth.load_secrets
+
+        def old_werkzeug(h, pw):
+            if str(h).startswith("scrypt:"):
+                raise ValueError("unsupported hash type scrypt:32768:8:1")
+            return real(h, pw)
+        sec = {"admin_user": "boss", "admin_hash": "scrypt:32768:8:1$salt$00",
+               "extra_users": {"viewer": "scrypt:32768:8:1$salt$00"}}
+        ws.check_password_hash, auth.load_secrets = old_werkzeug, (lambda: sec)
+        try:
+            for name in ("boss", "viewer", "nobody"):
+                self.assertEqual(auth.check_login(name, "a password"), "")
+        finally:
+            ws.check_password_hash, auth.load_secrets = real, real_load
+        made = ws.generate_password_hash("x").split("$")[0]
+        self.assertEqual(auth._dummy_hash().split("$")[0], made)       # checking it costs what a real one costs
+        self.assertFalse(auth._hash_matches(auth._dummy_hash(), "a password"))
+
     def test_add_login_remove(self):
         import io
         import os

@@ -27,6 +27,11 @@ button,input,select{font:inherit}
 .chips{display:flex;gap:6px;overflow-x:auto;padding:6px 0;scrollbar-width:none}
 .chip{background:var(--field);color:#cbd5e1;border:1px solid var(--line2);padding:7px 11px;border-radius:999px;font-size:.8rem;white-space:nowrap;cursor:pointer}
 .chip.on{background:var(--accent-dk);border-color:var(--accent);color:var(--accent-tx)}
+/* A row of chips is one line that scrolls sideways under a finger (its scrollbar is hidden). A mouse cannot drag it,
+   so the row wraps onto as many lines as it needs when the main pointer is a mouse or trackpad, at any window width,
+   and on any screen 1024 px wide or more: wider than a phone held sideways, e.g. a tablet with a mouse attached
+   (it still reports the finger as its main pointer). A touch screen narrower than that keeps the one scrolling line. */
+@media (pointer:fine),(min-width:1024px){.chips{flex-wrap:wrap}}
 .status-bar{background:#064e3b;color:#6ee7b7;padding:7px 12px;border-radius:8px;font-size:.82rem;margin-bottom:8px;display:none;justify-content:space-between;align-items:center}
 .composer{display:flex;gap:8px;padding-top:6px;border-top:1px solid var(--line)}
 .composer input{flex:1;padding:12px;border-radius:10px;border:1px solid var(--line2);background:var(--field);color:#fff;font-size:.95rem;min-width:0}

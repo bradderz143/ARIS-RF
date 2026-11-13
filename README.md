@@ -64,29 +64,59 @@ gains, frequency correction and baselines, and ARIS works out which one hears ea
 Try it without any radio, in the simulator:
 
 ```
+python3 -m venv .venv && . .venv/bin/activate     # Debian 12+ and Ubuntu 23.04+ refuse pip outside a virtual environment
 pip install numpy flask werkzeug ollama pytest
 python3 test/serve.py 5097          # then open http://127.0.0.1:5097  (login: admin / test-password-123)
 ```
 
-Install it for real (Linux, systemd; runs as its own unprivileged user `aris`, never as root):
+Install it for real on Debian or Ubuntu with one command. It shows the whole plan first and asks before it installs
+anything (only git is installed before the question, when the computer has none):
 
 ```
-sudo apt install rtl-sdr rtl-433 multimon-ng        # plus SoapySDR / rx_tools for other receivers
+curl -fsSL https://raw.githubusercontent.com/bradderz143/ARIS-RF/main/deploy/get.sh | sudo bash
+```
+
+If the computer says that curl is not found (a fresh Ubuntu Desktop or Debian has none), run `sudo apt install curl`
+first. In a root shell without sudo, leave out the word `sudo`.
+
+It installs the system's own packages for the radio tools and decoders (rtl-sdr, rtl_433, multimon-ng, direwolf), the
+Python modules (the `ollama` module from PyPI with pip where the system has no package for it), Ollama and the AI
+model (about 4.7 GB), and ARIS itself as a service that runs as its own unprivileged user `aris`, never as root. At
+the end it asks for the web page's login. Ollama comes through its own installer, a third-party script that runs as
+root; on a computer with an NVIDIA graphics card and no NVIDIA driver that script also installs NVIDIA's driver. Add
+`-s -- --no-ai` after `sudo bash` to leave the AI part out.
+
+The same from a checkout, or step by step on any other Linux with systemd:
+
+```
 git clone https://github.com/bradderz143/ARIS-RF.git aris && cd aris
-sudo bash deploy/install.sh                          # dry run: checks everything, changes nothing
+sudo bash deploy/install.sh --everything             # Debian / Ubuntu: dry run, the whole plan, changes nothing
+sudo bash deploy/install.sh --everything --apply     # packages, Ollama and the model, the service, the login
+
+sudo bash deploy/install.sh                          # any Linux, tools installed by you: dry run, changes nothing
 sudo bash deploy/install.sh --apply                  # installs to /opt/aris, data in /var/lib/aris
 sudo -u aris env ARIS_DATA_DIR=/var/lib/aris python3 /opt/aris/aris_gui.py --set-password
 ```
 
+The one-command install is new: it was run on Ubuntu 24.04 in a container, with stand-ins for systemd and for
+Ollama's installer, and not yet on a real Debian or Ubuntu computer.
+
 Open `http://localhost:5000` on the computer itself, or `http://<the computer's address>:5000` from another device
 on your network, then in the chat: **/check** (finds and tests the receivers and decoders,
 changes nothing) and **/setup** (calibrates each receiver: gains, frequency correction, which one hears which band
-best; a few minutes). For the AI chat, install [Ollama](https://ollama.com) and `ollama pull qwen2.5:7b` (any model
-with tool calling works; set `ARIS_MODEL`). Updates: `sudo bash /opt/aris/deploy/update.sh` (the page shows an
+best; a few minutes). For the AI chat without the one-command install, install [Ollama](https://ollama.com) and
+`ollama pull qwen2.5:7b` (any model with tool calling works; set `ARIS_MODEL`). Updates: `sudo bash /opt/aris/deploy/update.sh` (the page shows an
 "update" badge when a newer version is on GitHub).
 
 Keep the web page off your network if you do not need it there: set `ARIS_GUI_HOST=127.0.0.1`, and reach it through
 SSH or `deploy/tailscale-https.sh` (HTTPS inside your own tailnet).
+
+**Windows.** ARIS has no Windows version. It runs inside WSL 2 (Ubuntu on Windows 10 / 11), and
+`deploy/windows/aris-usb.ps1` hands the receivers from Windows to WSL with
+[usbipd-win](https://github.com/dorssel/usbipd-win): with no switch it only lists what it found, `-Attach` does it,
+`-Detach` gives them back. [docs/WINDOWS.md](docs/WINDOWS.md) goes step by step from a fresh Windows computer to the
+page at `http://localhost:5000`. The guide and the helper are written from the documentation and have not yet been
+run on a Windows computer.
 
 ## Plug-ins
 
@@ -118,9 +148,9 @@ is a crime in most. **Check your local law before you use ARIS**, and use it onl
 | `aris_gui.py`, `arisweb/` | the web page: Chat, Signals, Spectrum, Map, Activity, Devices |
 | `aris_node.py` | a remote node: another computer with a receiver, for locating |
 | `plugins/` | plug-ins loaded at start |
-| `deploy/` | installer, update, systemd units, the passive Wi-Fi and Bluetooth helpers |
+| `deploy/` | installers (`get.sh`, `install.sh`), update, systemd units, the passive Wi-Fi and Bluetooth helpers, the Windows helper |
 | `test/` | simulated radios and the automated tests: `bash test/run_all.sh` |
-| `docs/` | how it works ([ARCHITECTURE](docs/ARCHITECTURE.md)), receivers, plug-ins, development |
+| `docs/` | how it works ([ARCHITECTURE](docs/ARCHITECTURE.md)), receivers, plug-ins, development, [Windows through WSL 2](docs/WINDOWS.md) |
 
 Settings, logins, node tokens, databases, baselines and logs live in the data folder (`$ARIS_DATA_DIR`, default
 `~/aris_data`; `/var/lib/aris` for the service), never in the repository.
