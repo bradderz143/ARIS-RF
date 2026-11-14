@@ -84,6 +84,30 @@ def _frame_summary(out):
     return nb.get("modulation_guess"), nb.get("sync_word_match")
 
 
+def _decode_marks(limit=300) -> list:
+    """What the Saved Signals list says about frequencies, newest first: [(mhz, "ok" | "check")]. "ok": a decoder
+    identified it (green on the Spectrum); "check": an identification that looks like noise (red: investigate it
+    first). Nothing else is marked."""
+    out = []
+    try:
+        init_db()
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        try:
+            rows = conn.execute("SELECT frequency_mhz, urh_analysis FROM peaks ORDER BY id DESC LIMIT ?",
+                                (int(limit),)).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return out
+    for freq, analysis in rows:
+        head = next((ln for ln in str(analysis or "").splitlines() if ln.startswith("• ARIS verdict")), "")
+        if "(confirmed decode)" in head:
+            out.append((float(freq or 0.0), "ok"))
+        elif "): Doubtful" in head:
+            out.append((float(freq or 0.0), "check"))
+    return out
+
+
 def _log_signal(peak_info, out, serial):
     """Plain-English card for the Saved Signals list; saves it unless nothing transmitted or it is a confirmed
     public FM broadcast station."""
@@ -94,8 +118,10 @@ def _log_signal(peak_info, out, serial):
     kind = "confirmed decode" if evidence == "confirmed_decode" else "heuristic"
     text = f"• ARIS verdict ({kind}): {verdict}\n" + text
     s2 = out.get("stage2_rtl433_telemetry") or {}
-    if s2.get("identified_models"):
-        text += "\n• rtl_433 confirmed decode: " + ", ".join(s2["identified_models"])
+    models = sorted({str(d["model"]) for d in out.get("identified_devices") or []}) or \
+        (s2.get("identified_models") if evidence == "confirmed_decode" else [])
+    if models:                                                  # (a doubtful decode is never "confirmed")
+        text += "\n• rtl_433 confirmed decode: " + ", ".join(models)
     for fp in (s2.get("unknown_signal_fingerprints") or [])[:1]:
         if fp.get("pattern_hint"):
             text += f"\n• Burst pattern ({fp['modulation']}, {fp['pattern']}): usually {fp['pattern_hint']}"
@@ -103,6 +129,14 @@ def _log_signal(peak_info, out, serial):
         heard = [r["dongle"] for r in out["dongle_comparison"] if r.get("heard")]
         if heard:
             text += f"\n• Heard on: {', '.join(heard)} (strongest: {out.get('strongest_dongle')})"
+    # where the strongest dongle measured it: the row's own frequency is the one asked for, so a later check can
+    # only tell "the same carrier" from "a neighbour" by this line (_freq_history reads it back)
+    best_row = next((r for r in out.get("dongle_comparison") or []
+                     if r.get("heard") and r.get("dongle") == out.get("strongest_dongle")), None)
+    carrier = (best_row or {}).get("line_mhz") or out.get("measured_carrier_mhz")
+    if best_row and carrier:
+        mhz = f"{float(carrier):.5f}".rstrip("0").rstrip(".")
+        text += f"\n• Carrier measured: {mhz} MHz on {out['strongest_dongle']}"
     res = {"device_identification_and_decode": text}
     if evidence == "none":
         res["note"] = ("Not saved to the signal list (no checksum-verified aircraft message)."
@@ -599,7 +633,8 @@ def _remember_check(out):
     rec = {"time": _now(), "epoch": time.time(), "frequency_mhz": out.get("frequency_mhz"),
            "evidence": out.get("evidence"),
            "verdict": _cut_at_word(out.get("verdict_core") or out.get("final_signal_verdict"), 300),
-           "strongest_dongle": out.get("strongest_dongle"), "measured_carrier_mhz": out.get("measured_carrier_mhz")}
+           "strongest_dongle": out.get("strongest_dongle"), "measured_carrier_mhz": out.get("measured_carrier_mhz"),
+           "listened_seconds": out.get("listened_seconds")}
     with _RECENT_LOCK:
         try:
             with open(RECENT_CHECKS) as f:
@@ -610,6 +645,264 @@ def _remember_check(out):
             _atomic_write_json(RECENT_CHECKS, (items + [rec])[-60:])
         except OSError:
             pass
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# The Decode's report (arislib.sigreport judges and words it): what is on record for the frequency, the dongles
+# that watch while the decoders listen, and the facts of one check. Only investigate_single_frequency asks for it;
+# band scans, patrol and captures do not, and nothing here may stop an investigation.
+# ----------------------------------------------------------------------------------------------------------------
+HISTORY_NEAR_MHZ = 0.06          # what is gathered around a frequency; the report's rules pick the narrower windows
+_CARRIER_LINE_RX = re.compile(r"^• Carrier measured: (\d+(?:\.\d+)?) MHz", re.M)
+WATCH_MAX = 2                    # dongles that watch while the decoders listen
+WATCH_LOOKS_MAX = 12             # looks per watcher
+WATCH_EVERY_S = 3.5              # a 3 s look plus the time between two opens of one dongle
+FOUND_LATER_DB = 6.0             # a signal found only in one later look, on one dongle, must stand this far over noise
+WATCH_END_S = 1.5                # a look must be over this long before the decoders' radio time ends
+
+
+def _text_epoch(ts):
+    """A saved time ('2026-11-14 01:24:07', local time) as an epoch, or None."""
+    try:
+        return time.mktime(time.strptime(str(ts), "%Y-%m-%d %H:%M:%S"))
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _freq_history(f_mhz, kind, serials, cfg=None) -> dict:
+    """What is on record for a frequency, as arislib.sigreport.history_summary reads it: the saved checks within
+    60 kHz (when, their frequency and measured carrier, their first line), how far back the saved list goes and
+    whether rows were removed from it, the recent checks (quiet ones too), what each listening dongle's baseline had
+    there, the last capture, the FM station memory and the devices decoded there. Read before the check listens,
+    so it never counts itself or what it is about to learn. Each source on its own: one that cannot be read
+    stays empty."""
+    from arislib import rtlpower as _rp, sigreport
+    cfg = cfg or _load_config()
+    f, near = float(f_mhz), HISTORY_NEAR_MHZ
+    h = {"saved": [], "list_from": None, "list_trimmed": False, "recent": [], "baselines": [],
+         "baseline_covered": False, "last_capture": None, "fm_name": None, "devices_here": None, "carriers": []}
+    try:
+        init_db()
+        conn = sqlite3.connect(DB_PATH, timeout=3)       # (a busy list must not hold the Decode's start up)
+        try:
+            rows = conn.execute("SELECT timestamp, frequency_mhz, urh_analysis FROM peaks WHERE frequency_mhz "
+                                "BETWEEN ? AND ? ORDER BY id DESC LIMIT ?", (f - near, f + near, SIGNALS_KEEP)).fetchall()
+            oldest, first_id = conn.execute("SELECT MIN(timestamp), MIN(id) FROM peaks").fetchone()
+        finally:
+            conn.close()
+        for ts, mhz, text in rows:
+            text = str(text or "")
+            head = next((ln for ln in text.splitlines() if ln.startswith("• ARIS verdict")), "")
+            m = _CARRIER_LINE_RX.search(text)
+            h["saved"].append({"ts": _text_epoch(ts), "mhz": float(mhz or 0.0),
+                               "carrier_mhz": float(m.group(1)) if m else None, "head": head[:200],
+                               "confirmed": "(confirmed decode)" in head, "doubtful": "): Doubtful" in head})
+        h["list_from"] = _text_epoch(oldest)
+        h["list_trimmed"] = bool(first_id and int(first_id) > 1)     # (ids never start again: the oldest are gone)
+    except (sqlite3.Error, TypeError, ValueError) as e:
+        h["list_unread"] = True
+        log.warning("history: saved signals not read: %s: %s", type(e).__name__, e)
+    try:
+        with open(RECENT_CHECKS) as fh:
+            items = json.load(fh)
+    except (OSError, ValueError):
+        items = []
+    for x in items if isinstance(items, list) else []:
+        try:
+            mhz, carrier = float(x.get("frequency_mhz") or 0), x.get("measured_carrier_mhz")
+            heard = x.get("evidence") in ("signal_present", "confirmed_decode")
+            if abs(mhz - f) <= near:
+                h["recent"].append({"ts": x.get("epoch"), "mhz": mhz, "carrier_mhz": carrier, "heard": heard,
+                                    "listened_s": x.get("listened_seconds")})
+            if heard and carrier:                    # (a carrier far below can have its harmonic here)
+                h["carriers"].append(float(carrier))
+        except (AttributeError, TypeError, ValueError):
+            continue
+    if kind not in ("wide", "adsb"):
+        for ser in serials:
+            try:
+                found = _find_baseline(f, f, ser)
+                if not found:
+                    continue
+                base = found[1]
+                bm = _baseline_bins(base)
+                i = int(round(f * 1e6 / float(base["grid_hz"])))
+                cells = [bm[k] for k in (i - 1, i, i + 1) if k in bm]    # (a sweep's bins fall one cell either side)
+                if not cells:
+                    continue
+                floor = base.get("_floor")
+                if floor is None:
+                    floor = base["_floor"] = statistics.median(v[0] for v in bm.values())
+                # the cell of a hop centre holds the receiver's own spike, and a frequency correction changed since
+                # by half a cell or more means the cell is no longer this frequency: neither says anything
+                band, step = base["band"], float(base.get("step_khz") or float(base["grid_hz"]) / 1000.0)
+                hops = _rp.plan(float(band["start_mhz"]) * 1e6, float(band["stop_mhz"]) * 1e6, step * 1e3,
+                                _rp.parse_crop(cfg.get("crop_percent", "20%"), 0.2))
+                spike = _near_hop(f, [x["freq"] / 1e6 for x in hops], _guard_mhz(step))
+                moved = abs(float(base.get("ppm") or 0) - _ppm_of(ser, cfg)) * f >= 5000.0
+                state = sigreport.baseline_state(max(c[0] for c in cells) - floor, max(c[1] for c in cells) - floor,
+                                                 spike, moved)
+                h["baselines"].append({"dongle": _short(ser), "serial": ser, "state": state,
+                                       "date": base.get("created_epoch") or _text_epoch(base.get("created"))})
+            except Exception as e:                   # noqa: BLE001 - an odd baseline file is no reason to stop
+                log.warning("history: baseline of %s not read: %s: %s", _short(ser), type(e).__name__, e)
+        h["baseline_covered"] = bool(h["baselines"])
+    try:
+        for c in _recent_captures(CAPTURES_KEEP):
+            if c.get("mode") != "band" and c.get("freq_mhz") is not None and abs(float(c["freq_mhz"]) - f) <= 0.025:
+                h["last_capture"] = {"ts": c.get("t"), "outcome": c.get("outcome"),
+                                     "minutes": int(round(float(c.get("seconds") or 0) / 60.0))}
+                break
+    except (TypeError, ValueError):
+        pass
+    if _in_fm_band(f):
+        st = _known_near(_known_stations(), f)
+        if st and st.get("name"):
+            h["fm_name"] = {"name": str(st["name"]), "date": st.get("epoch")}
+    if kind == "sensor":
+        try:
+            here = [r for r in devices_list()["rows"] if r.get("freq_min") is not None
+                    and float(r["freq_min"]) - near <= f <= float(r.get("freq_max") or r["freq_min"]) + near]
+            if here:
+                h["devices_here"] = {"names": [str(r.get("title") or r.get("model")) for r in here[:2]],
+                                     "more": max(0, len(here) - 2)}
+        except Exception as e:                       # noqa: BLE001
+            log.warning("history: devices not read: %s: %s", type(e).__name__, e)
+    return h
+
+
+def _map_ready(f_mhz) -> bool:
+    """Could Locate say anything here: 3 or more switched-on receivers that tune the frequency, placed on the
+    floorplan in use."""
+    try:
+        from arislib import floorplan as _fp, nodes as _nd
+        plan = _fp.active()
+        if not plan:
+            return False
+        placed = _nd.placed_on(plan["id"])           # (read only: the node list is kept in step elsewhere)
+        return sum(1 for n in placed if n.get("kind") != "local" or radios.covers(str(n.get("serial")), f_mhz)) >= 3
+    except Exception as e:                           # noqa: BLE001
+        log.warning("report: the Map's nodes not read: %s: %s", type(e).__name__, e)
+        return False
+
+
+def _capture_here(f_mhz):
+    """The capture that is listening on this frequency right now: {dongle, mhz}, or None."""
+    try:
+        for w in _running_watchdogs():
+            band = w.get("band")
+            if (band and float(band[0]) <= f_mhz <= float(band[1])) or (
+                    w.get("freq_mhz") is not None and abs(float(w["freq_mhz"]) - f_mhz) <= 0.025):
+                return {"dongle": w.get("dongle"), "mhz": w.get("freq_mhz")}
+    except Exception as e:                           # noqa: BLE001
+        log.warning("report: running captures not read: %s: %s", type(e).__name__, e)
+    return None
+
+
+def _new_and_known(devs, since) -> tuple:
+    """(new, known) among the devices a check identified: new = not in the Devices list before this check began,
+    known = known by the list's rule or the user's mark."""
+    from arislib import devices
+    if not devs:
+        return 0, 0
+    try:
+        _devices_flush()
+        with _devices_file_lock():
+            store = _devices_read() or devices.new_store()
+    except Exception as e:                           # noqa: BLE001
+        log.warning("report: device history not read: %s: %s", type(e).__name__, e)
+        return 0, 0
+    new = known = 0
+    for d in devs:
+        rec = (store.get("devices") or {}).get(devices.key_of(d.get("model"), d.get("id_label")))
+        if rec is None or float(rec.get("first_t") or 0) >= since - 1.0:
+            new += 1
+        elif devices.is_known(rec):
+            known += 1
+    return new, known
+
+
+def _look_heard(r, kind) -> tuple:
+    """(heard, level in dB above noise) of one look. A burst counts from 3 dB in its strongest 10 ms; the level is
+    the channel's average for a signal that stays on and that strongest block for bursts."""
+    cont = kind == "wide" or r.get("continuous")
+    pk = r.get("peak_snr_db")
+    heard = bool(r.get("signal_present_during_capture")) and bool(cont or pk is None or pk >= 3.0)
+    return heard, (r.get("channel_snr_db") if kind == "wide" else
+                   r.get("channel_avg_snr_db") if cont else r.get("peak_snr_db"))
+
+
+def _look_row(ser, r, kind) -> dict:
+    """One dongle's row of the comparison from its look, or why it could not listen."""
+    row = {"dongle": _short(ser)}
+    if isinstance(r, Exception):
+        row["error"] = str(r)[:140]
+    elif r is not None:
+        if _stage_failed(r):
+            row["error"] = str(r["status"])[:140]
+        else:
+            heard, snr = _look_heard(r, kind)
+            row.update(heard=heard, snr_db=snr, gain_db=r.get("gain_db"),
+                       waveform=r.get("physical_waveform_classification"), carrier_mhz=r.get("measured_carrier_mhz"))
+            if row["heard"] and kind != "wide":
+                row["pattern"] = "continuous" if r.get("continuous") else "bursts"
+    return row
+
+
+def _look_point(r, kind, t) -> dict:
+    """A later look as the report keeps it: when it began (seconds into the check), heard or not, and when heard
+    the line's frequency, the level and whether it was on from the look's start to its end."""
+    heard, snr = _look_heard(r, kind)
+    prof = r.get("look_profile") or {}
+    return {"t": round(float(t), 1), "heard": heard, "line_mhz": prof.get("line_mhz") if heard else None,
+            "snr_db": snr if heard else None,
+            "whole": heard and (prof.get("key") or {}).get("state", "on_whole") == "on_whole"}
+
+
+def _watch_looks(serials, freq, bw, secs, cfg, look_s=3.0, done=None) -> dict:
+    """While the decoders listen for secs seconds, the dongles that have no decoder job repeat the short look:
+    {serial: [(seconds since the decoders began, the look)]}. It is what shows whether a carrier stays on, comes
+    and goes or moves during the listen, and it takes no radio time of its own. One hold per dongle; a look starts
+    only when it will be over before the decoders' radio time is; looks are paced by the clock (a capture can
+    come back early); a failed look is left out and two in a row end that dongle's watch. done (an Event): the
+    decoders have ended or failed, so no further look starts (else a decoder that fails at once would leave the
+    watchers opening and closing their dongles for the whole time asked)."""
+    t0 = time.time()
+    n = min(WATCH_LOOKS_MAX, int((secs + 0.5) // WATCH_EVERY_S))
+    room = secs - WATCH_END_S - (look_s + 0.5)       # the latest a look may begin
+    last_start = t0 + room
+    every = max(WATCH_EVERY_S, room / (n - 1)) if n > 1 else WATCH_EVERY_S     # spread over the whole listen
+
+    def one(ser):
+        got, failed, due = [], 0, t0
+        gain = _gain_for(ser, freq, freq, cfg)
+        over = lambda: done is not None and done.is_set()
+        # (another job may hold the dongle: waiting for it past the last start would only hold the Decode up)
+        with _use_dongle(ser, timeout=max(1.0, min(30.0, room + 1.0)), holder="investigation watch"):
+            for i in range(n):
+                due = max(due, t0 + i * every)
+                while not over():
+                    _check_stop()            # (stage 1 turns a stop into a failed look: the loop has to ask itself)
+                    left = due - time.time()
+                    if left <= 0:
+                        break
+                    time.sleep(min(0.25, left))
+                if over() or time.time() > last_start + 0.3:
+                    break
+                at = time.time() - t0
+                r = _stage1_iq_analysis(freq, ser, gain, bw, look_s, profile="light")
+                due = time.time() + USB_SETTLE_S     # the same dongle is opened again
+                if _stage_failed(r):
+                    failed += 1
+                    log.info("watch look on %s failed: %s", _short(ser), r.get("status"))
+                    if failed >= 2:
+                        break
+                    continue
+                failed = 0
+                r["gain_db"] = gain
+                got.append((at, r))
+        return got
+    return _parallel(one, list(serials)) if n > 0 and room >= 0 else {}      # (too short a listen for one look)
 
 
 def _wide_verdict(s1, target, peak_info):
@@ -681,7 +974,7 @@ def _history_once(per_dongle: dict) -> list:
     return sorted(out, key=lambda p: float(p.get("t") or 0))
 
 
-def _merge_rtl433(results, table):
+def _merge_rtl433(results, table, freq=None):
     """rtl_433 ran on several dongles at once: combine decodes and fingerprints, note who heard what, and feed the
     device history once per packet."""
     m = {"packets_decoded_count": 0, "identified_models": set(), "decoded_packets": [], "bursts_heard": 0,
@@ -740,6 +1033,10 @@ def _merge_rtl433(results, table):
         m["status"].append(f"{_short(ser)}: {r.get('status')}")
     m["identified_models"] = sorted(m["identified_models"])
     m["devices"] = sorted(devs.values(), key=lambda d: (-d["packets"], -(d.get("best_snr_db") or 0)))
+    for d in m["devices"]:
+        d["doubts"] = _decode_doubts(d, freq)
+    doubt_all = bool(m["devices"]) and all(d["doubts"] for d in m["devices"])
+    m["identified_models"] = sorted({str(d["model"]) for d in m["devices"] if not d["doubts"]})   # (not the AI's view either)
     m["decoded_packets"] = sorted(m["decoded_packets"], key=lambda p: -float(p.get("snr") or 0))[:4]
     m["unknown_signal_fingerprints"] = sorted(fpm.values(), key=lambda f: (not f.get("demodulated"),
                                                                             not _clear_pattern(f),
@@ -750,12 +1047,15 @@ def _merge_rtl433(results, table):
     if failed:
         m["failed_on"] = failed
         m["all_failed"] = len(failed) == len(results)
-    for p in _history_once(hist):
+    for p in ([] if doubt_all else _history_once(hist)):         # noise never joins the device history
         _devices_note(p)
     return m, best
 
 
-def _antenna_note(serials, heard_on, table):
+def _antenna_note(serials, heard_on, table, own_clock=False, confirmed=False):
+    """Who heard it, and whether they read one frequency. own_clock: the report found the line on each dongle's
+    own clock multiple, where every dongle makes it itself, so reading the same frequency says nothing. confirmed:
+    a decoder identified it (a station, a device, aircraft), so how it reaches the dongles is no open question."""
     if len(serials) < 2:
         return None
     names = lambda ss: _and_list(_short(s) for s in ss)
@@ -770,9 +1070,17 @@ def _antenna_note(serials, heard_on, table):
         note = (f"Heard on {names(heard_on)}, not on {names(miss)}. The dongles have different antennas, so this "
                 f"usually means {antennas} {names(heard_on)} suit{'' if len(heard_on) > 1 else 's'} this band "
                 f"better; it does not mean the signal is internal.")
-    carriers = [table[s].get("carrier_mhz") for s in heard_on if table[s].get("carrier_mhz")]
-    if len(carriers) >= 2 and (max(carriers) - min(carriers)) * 1000.0 <= 3.0:
-        note += " They measured the same frequency, so it is a real over-the-air signal."
+    # with a clear line on every dongle that heard it the comparison is fine (0.5 kHz or 20 ppm); the look's own
+    # carrier figure is coarser (3 kHz)
+    lines = [table[s].get("line_mhz") for s in heard_on]
+    if len(lines) >= 2 and all(lines):
+        same = (max(lines) - min(lines)) * 1e6 <= max(500.0, 20.0 * max(lines))
+    else:
+        carriers = [table[s].get("carrier_mhz") for s in heard_on if table[s].get("carrier_mhz")]
+        same = len(carriers) >= 2 and (max(carriers) - min(carriers)) * 1000.0 <= 3.0
+    if same and not own_clock and not confirmed:
+        note += (f" They measured the same frequency: one signal reaches {'both' if len(heard_on) == 2 else 'all'} of "
+                 f"them. Whether through the antennas or the wiring is not known from this.")
     return note
 
 
@@ -804,14 +1112,18 @@ def _best_look(runs, kind, span):
     return best
 
 
-def _investigate(peak_info, serials, listen_s=None, timed=None):
+def _investigate(peak_info, serials, listen_s=None, timed=None, report=False):
     """Investigate one frequency.
     1. Listen on every given dongle at the same time and compare how strongly each one hears it.
     2. Run the decoders that suit the band: rtl_433 on every dongle at once (sensor bands), the pager / APRS /
        tone decoders on the strongest dongle, rtl_adsb at 1090 MHz.
     3. Verdict from the strongest dongle plus anything a decoder confirmed on any dongle.
     listen_s: decoder listening time. timed (default: listen_s was given) means the user asked for that time, so
-    it is honoured whatever the band: FM and airband get watched that long, steady carriers still get rtl_433."""
+    it is honoured whatever the band: FM and airband get watched that long, steady carriers still get rtl_433.
+    report: also work out the Decode's signal report (out["signal_report"]): what the signal did during the looks,
+    the spur check, the frequency's history and one next step. The looks then measure more, the dongles with no
+    decoder job keep looking while the decoders listen, and the audio decoders tune to the carrier the look found.
+    The listening time stays the same."""
     cfg = _load_config()
     freq = float(peak_info["frequency_mhz"])
     bw = float(peak_info.get("occupied_bw_khz") or 25.0)
@@ -820,6 +1132,13 @@ def _investigate(peak_info, serials, listen_s=None, timed=None):
     serials = [str(s) for s in serials]
     earlier = _earlier_checks(target, max(0.06, bw / 2000.0))
     names = ", ".join(_short(s) for s in serials)
+    began, history = time.time(), None
+    if report:
+        try:
+            history = _freq_history(target, kind, serials, cfg)
+        except Exception:                            # noqa: BLE001 - the check goes on without its history
+            log.warning("history of %s MHz not read:\n%s", target, traceback.format_exc())
+    profiles, series, first_heard = {}, {}, {}       # per dongle, for the report (never stored as they are)
 
     listen = int(listen_s or 0)          # decoder listening time (0 = automatic)
     timed = bool(listen) if timed is None else bool(timed and listen)
@@ -839,36 +1158,27 @@ def _investigate(peak_info, serials, listen_s=None, timed=None):
         def _look(ser):
             gain = _gain_for(ser, target, target, cfg)
             with _use_dongle(ser, timeout=30, holder="investigation"):
-                once = lambda: (_stage1_wideband(target, ser, gain, look_s) if kind == "wide"
-                                else _stage1_iq_analysis(freq, ser, gain, bw, look_s))
-                runs = [once()]
+                once = lambda: (_stage1_wideband(target, ser, gain, look_s) if kind == "wide" else
+                                _stage1_iq_analysis(freq, ser, gain, bw, look_s, profile="full" if report else False))
+                t0 = time.time()
+                runs, at = [once()], [0.0]
                 end = time.time() + span - look_s
                 while watch and time.time() < end:
+                    _check_stop()                    # (a stopped capture comes back as a failed look, not an error)
                     time.sleep(USB_SETTLE_S)         # the same dongle is opened again straight away
+                    at.append(time.time() - t0)
                     runs.append(once())
+            if report and len(runs) > 1:             # the watch look by look, before only the clearest one is kept
+                ok = [(r, t) for r, t in zip(runs, at) if not _stage_failed(r)]
+                if ok and ok[0][0] is runs[0]:
+                    first_heard[ser] = _look_heard(runs[0], kind)[0]
+                    series[ser] = [_look_point(r, kind, t) for r, t in ok[1:]]
             r = _best_look(runs, kind, span)
+            profiles[ser] = r.pop("look_profile", None)      # (numbers for the report: never part of a stored look)
             r["gain_db"] = gain
             return r
         looks = _parallel(_look, serials)
-    table = {}
-    for ser in serials:
-        r, row = looks.get(ser), {"dongle": _short(ser)}
-        if isinstance(r, Exception):
-            row["error"] = str(r)[:140]
-        elif r is not None:
-            if _stage_failed(r):
-                row["error"] = str(r["status"])[:140]
-            else:
-                cont = kind == "wide" or r.get("continuous")
-                pk = r.get("peak_snr_db")
-                row.update(heard=bool(r.get("signal_present_during_capture")) and (cont or pk is None or pk >= 3.0),
-                           snr_db=(r.get("channel_snr_db") if kind == "wide" else
-                                   r.get("channel_avg_snr_db") if cont else r.get("peak_snr_db")),
-                           gain_db=r.get("gain_db"), waveform=r.get("physical_waveform_classification"),
-                           carrier_mhz=r.get("measured_carrier_mhz"))
-                if row["heard"] and kind != "wide":
-                    row["pattern"] = "continuous" if r.get("continuous") else "bursts"
-        table[ser] = row
+    table = {ser: _look_row(ser, looks.get(ser), kind) for ser in serials}
     usable = [s for s in serials if "error" not in table[s]]
     if not usable and kind != "adsb":
         raise RFError("No dongle could listen: " + "; ".join(f"{t['dongle']}: {t['error']}" for t in table.values()))
@@ -893,6 +1203,26 @@ def _investigate(peak_info, serials, listen_s=None, timed=None):
         else:                        # one dongle: share the time
             secs_aud = max(4, secs433 // 2)
             secs433 = max(4, secs433 - secs_aud)
+    # For the report, the dongles with no decoder job keep looking while the decoders listen (those that heard it
+    # first). Next to a steady carrier with 3 or more dongles, the weakest one that hears it leaves rtl_433 to watch.
+    watchers, aud_mhz = [], freq
+    if report and runaud and kind in ("audio", "other"):
+        hears = [x for x in heard if x in on433]         # (strongest first)
+        if together and steady and len(usable) >= 3 and len(hears) >= 2:
+            on433 = [x for x in on433 if x != hears[-1]]
+        busy = [aud_on] + (on433 if run433 else [])
+        idle = [x for x in usable if x not in busy]
+        watchers = ([x for x in heard if x in idle] + [x for x in idle if x not in heard])[:WATCH_MAX]
+        # the audio decoders hear about 11 kHz either side of their tuning: they listen where the carrier is
+        # (a look wider than its samples hold has no carrier to tune to: its middle may lie between two signals,
+        # and its strongest line may be one tone of a two-tone signal: the line is used only next to the middle)
+        prof_a = profiles.get(aud_on) or {}
+        carrier = None if prof_a.get("folded") else table[aud_on].get("carrier_mhz")
+        line_a = prof_a.get("line_mhz")
+        if line_a and (carrier is None or abs(line_a - carrier) * 1000.0 <= 2.0):
+            carrier = line_a
+        if table[aud_on].get("pattern") == "continuous" and carrier and 4.0 <= abs(carrier - freq) * 1000.0 <= 45.0:
+            aud_mhz = round(float(carrier), 4)
     rates = {x: "250k" for x in on433}
     order = [x for x in heard if x in on433] + [x for x in on433 if x not in heard]
     if run433 and len(order) >= 2:
@@ -906,29 +1236,69 @@ def _investigate(peak_info, serials, listen_s=None, timed=None):
         def _r433(ser):
             with _use_dongle(ser, timeout=30, holder="rtl_433 decode"):
                 return _stage2_rtl433(freq, ser, secs433, _gain_for(ser, freq, freq, cfg), rates[ser])
-        return _merge_rtl433(_parallel(_r433, on433), table)
+        return _merge_rtl433(_parallel(_r433, on433), table, freq)
 
     def jobaud():
-        _say(f"     [DECODE] {_short(aud_on)}: rtl_fm -> pager / APRS / tone decoders ({secs_aud} s)...")
+        _say(f"     [DECODE] {_short(aud_on)}: rtl_fm -> pager / APRS / tone decoders ({secs_aud} s"
+             + (f", at {aud_mhz:g} MHz where the carrier is" if aud_mhz != freq else "") + ")...")
         try:
             with _use_dongle(aud_on, timeout=30, holder="audio decode"):
-                return _stage3_demod_audio(freq, aud_on, secs_aud, _gain_for(aud_on, freq, freq, cfg))
+                return _stage3_demod_audio(aud_mhz, aud_on, secs_aud, _gain_for(aud_on, freq, freq, cfg))
         except RFError as e:
             return {"status": f"skipped: {e}"}
 
-    r433_best = None
-    if together:
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            f433, faud = pool.submit(_carry_ctx(job433)), pool.submit(_carry_ctx(jobaud))
-            (s2, r433_best), s3 = f433.result(), faud.result()
-    else:
-        if run433:
-            s2, r433_best = job433()
-        if runaud:
-            s3 = jobaud()
+    r433_best, watched = None, {}
+    decoders_done = threading.Event()
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        fwatch = (pool.submit(_carry_ctx(_watch_looks), watchers, freq, bw, secs_aud, cfg, 3.0, decoders_done)
+                  if watchers else None)
+        try:
+            if together:
+                f433, faud = pool.submit(_carry_ctx(job433)), pool.submit(_carry_ctx(jobaud))
+                (s2, r433_best), s3 = f433.result(), faud.result()
+            else:
+                if run433:
+                    s2, r433_best = job433()
+                if runaud:
+                    s3 = jobaud()
+        finally:
+            decoders_done.set()                  # ended or failed: the watchers finish their look and stop
+        if fwatch is not None:
+            try:
+                watched = fwatch.result()
+            except Exception as e:               # noqa: BLE001 - the watch only adds to the report
+                log.warning("watch looks not made: %s: %s", type(e).__name__, e)
+    if report:
+        _check_stop()         # (the decoders end early on a stop and would be reported as if they had listened)
     t433 = secs433 if s2 is not None and not s2.get("all_failed") else 0     # time actually spent decoding
     taud = secs_aud if s3 is not None and str(s3.get("status", "")).startswith("listened") else 0
     listened = max(t433, taud) if together else t433 + taud
+    roles = {ser: "decoder" if (run433 and ser in on433) or (runaud and ser == aud_on) or kind == "adsb" else "look"
+             for ser in serials}
+    found_later = []
+    for ser, got in watched.items():
+        if isinstance(got, Exception):
+            log.info("watch looks on %s not made: %s", _short(ser), got)
+        if isinstance(got, Exception) or not got:
+            continue
+        roles[ser] = "watch"
+        first_heard[ser] = bool(table[ser].get("heard"))
+        series[ser] = [_look_point(r, kind, span + at) for at, r in got]
+        later = [p for p in series[ser] if p["heard"]]
+        # (a Decode makes many more looks than before: one click in one of them, on one dongle, is not a signal;
+        # it counts when it is clear, comes twice, or another dongle heard the signal too)
+        clear = len(later) >= 2 or bool(heard) or any((p.get("snr_db") or 0.0) >= FOUND_LATER_DB for p in later)
+        if not first_heard[ser] and later and clear:
+            # the first look missed it and a later one found it: that dongle's row is its clearest look
+            r = _best_look([looks[ser]] + [r for _at, r in got], kind, span + secs_aud)
+            profiles[ser] = r.pop("look_profile", None)
+            looks[ser], table[ser] = r, _look_row(ser, r, kind)
+            found_later.append(ser)
+        elif not first_heard[ser] and later:   # one faint blip: not counted as heard anywhere in the result
+            for p in later:
+                p.update(heard=False, line_mhz=None, snr_db=None, whole=False)
+    if found_later and not heard:              # the first looks heard nothing: the verdict rests on that later look
+        best = max(found_later, key=snr_of)
     if s2 is not None:
         used.append("rtl_433")
         if not heard and r433_best:            # rtl_433 caught an intermittent signal the short look missed
@@ -959,7 +1329,7 @@ def _investigate(peak_info, serials, listen_s=None, timed=None):
 
     s1 = looks.get(best) if isinstance(looks.get(best), dict) else {}
     heard_on = [s for s in serials if table[s].get("heard")]
-    station, core = False, None
+    station, core, doubtful = False, None, []
     if kind == "wide":
         verdict, evidence, note, station = _wide_verdict(s1, target, peak_info)
         if evidence == "none" and len(serials) > 1:
@@ -984,14 +1354,24 @@ def _investigate(peak_info, serials, listen_s=None, timed=None):
         valid, aprs = s3d.get("validated_frames") or [], s3d.get("aprs_frames") or []
         fps = s2d.get("unknown_signal_fingerprints") or []
         ctcss = s3d.get("ctcss_tone", "none")
-        devs = s2d.get("devices") or []
+        alldevs = s2d.get("devices") or []
+        devs = [d for d in alldevs if not d.get("doubts")]
+        bad = [d for d in alldevs if d.get("doubts")]
         if devs:
             evidence = "confirmed_decode"
             verdict = _identified_text(devs)          # known devices folded into one clause
+            if bad:
+                verdict += ". Doubtful, probably noise: " + "; ".join(
+                    f"{_device_line(d)} ({' and '.join(d['doubts'])})" for d in bad[:2])
+                doubtful = [w for d in bad for w in d["doubts"]]
             unk = [f for f in fps if f.get("demodulated")]
             if unk:
                 verdict += (f". Also heard {len(unk)} other signal{'s' if len(unk) > 1 else ''} that no decoder "
                             f"recognised: " + "; ".join(_fp_line(f, hint=False) for f in unk[:2]))
+        elif bad and not valid and not aprs:
+            evidence = "signal_present"
+            verdict = core = _doubtful_text(bad)
+            doubtful = [w for d in bad for w in d["doubts"]]
         elif valid:
             verdict, evidence = f"Identified: {valid[0]}", "confirmed_decode"
         elif aprs:
@@ -1034,6 +1414,8 @@ def _investigate(peak_info, serials, listen_s=None, timed=None):
             note = "the decoder could not run"
 
     out = {k: v for k, v in peak_info.items() if not k.startswith("_")}
+    if report:
+        out["signal_report"] = None            # (its place: the first thing a reader of the result meets)
     if core:
         out["verdict_core"] = core
     out.update({"frequency_mhz": round(target, 4), "band_type": kind, "listened_with": [_short(s) for s in serials],
@@ -1044,9 +1426,7 @@ def _investigate(peak_info, serials, listen_s=None, timed=None):
                 "listened_seconds": round(span + listened),
                 "measured_carrier_mhz": s1.get("measured_carrier_mhz"), "decoders_used": used,
                 "stage1_iq_physical_and_bitstream": s1})
-    an = _antenna_note(serials, heard_on, table)
-    if an:
-        out["antenna_note"] = an
+    out["antenna_note"] = None                 # (worded below, once the report has checked the dongles' own clock)
     if str(s1.get("physical_waveform_classification", "")).startswith("Steady unmodulated carrier"):
         ch = _clock_harmonic(s1.get("measured_carrier_mhz") or freq, best, cfg)
         if ch and len(heard_on) <= 1:
@@ -1057,7 +1437,9 @@ def _investigate(peak_info, serials, listen_s=None, timed=None):
     if s2:
         out["stage2_rtl433_telemetry"] = s2
         if s2.get("devices"):
-            out["identified_devices"] = s2["devices"]
+            out["identified_devices"] = [d for d in s2["devices"] if not d.get("doubts")]
+    if doubtful:
+        out["doubtful"] = sorted(set(doubtful))
     if s3:
         out["stage3_multimon_direwolf_audio"] = s3
     if adsb:
@@ -1071,9 +1453,104 @@ def _investigate(peak_info, serials, listen_s=None, timed=None):
     if kind == "wide":
         out["broadcast_station_confirmed"] = station
         out["save_to_signal_list"] = evidence != "none" and not station
+    own_clock = False
+    if report:
+        for ser in serials:
+            row, line = table[ser], (profiles.get(ser) or {}).get("line_mhz")
+            row.update(serial=ser, role=roles[ser])
+            if line and row.get("heard"):
+                row["line_mhz"] = line
+            if ser in series:
+                row.update(looks=len(series[ser]), looks_heard=sum(1 for p in series[ser] if p["heard"]))
+        audio = {"dongle": _short(aud_on), "mhz": aud_mhz, "seconds": taud} if taud else None
+        if audio and aud_mhz != freq:
+            out["decoders_tuned_mhz"] = aud_mhz
+        try:                                   # the report adds to a result and can never cost one
+            from arislib import sigreport
+            rep = sigreport.build(_report_facts(out, serials, cfg, {
+                "asked": target, "listen": listen, "timed": timed, "began": began, "history": history,
+                "profiles": profiles, "series": series, "first_heard": first_heard, "audio": audio,
+                "rtl433_s": t433}))
+            out["signal_report"] = rep
+            own_clock = ((rep.get("spur") or {}).get("own_clock") or {}).get("result") == "match"
+        except Exception:                      # noqa: BLE001
+            log.warning("signal report not built:\n%s", traceback.format_exc())
+    if out.get("signal_report") is None:
+        out.pop("signal_report", None)
+    an = _antenna_note(serials, heard_on, table, own_clock, out.get("evidence") == "confirmed_decode")
+    if an:
+        out["antenna_note"] = an
+    else:
+        del out["antenna_note"]
     out["stage4_plain_english"] = _log_signal(peak_info, out, best)
     _remember_check(out)
     return out
+
+
+def _report_facts(out, serials, cfg, ctx) -> dict:
+    """One check as arislib.sigreport.build reads it: the result so far (verdict, rows, what the decoders gave)
+    plus what only the check itself knew (ctx: each dongle's look profile and later looks, the times, the
+    frequency's history as it was before the check)."""
+    kind, f = out.get("band_type"), float(ctx["asked"])
+    s1 = out.get("stage1_iq_physical_and_bitstream") or {}
+    s2 = out.get("stage2_rtl433_telemetry") or {}
+    s3 = out.get("stage3_multimon_direwolf_audio") or {}
+    dongles = []
+    for ser, row in zip(serials, out.get("dongle_comparison") or []):
+        heard = bool(row.get("heard"))
+        snr = row.get("snr_db")
+        if snr is None or (row.get("heard_by_rtl433") and row.get("rtl_433_snr_db") is not None):
+            snr = row.get("rtl_433_snr_db")
+        later = ctx["series"].get(ser) or []
+        dongles.append({
+            "dongle": row.get("dongle"), "serial": ser, "heard": heard, "snr_db": snr, "error": row.get("error"),
+            "ppm": _ppm_of(ser, cfg), "rtl": radios.is_rtl(ser), "role": row.get("role"),
+            "continuous": {"continuous": True, "bursts": False}.get(row.get("pattern")),
+            "carrier_mhz": row.get("carrier_mhz"), "profile": ctx["profiles"].get(ser) if heard else None,
+            "first_heard": bool(ctx["first_heard"].get(ser, heard)),
+            # (a dongle that never heard it says nothing by missing it; a longer list than the report keeps
+            # is left to the look counts below)
+            "looks": later if heard and len(later) <= 60 else []})
+    fps = s2.get("unknown_signal_fingerprints") or []
+    audio = ctx.get("audio")
+    if audio:
+        tone = re.match(r"\s*(\d+(?:\.\d+)?) Hz", str(s3.get("ctcss_tone") or ""))
+        audio = {"frames": int(s3.get("validated_count") or 0) + len(s3.get("aprs_frames") or []),
+                 "tone_hz": float(tone.group(1)) if tone else None, "seconds": audio["seconds"],
+                 "decoders": _decoders_phrase({"decoders_used": s3.get("decoders_used")}).replace(" with ", "", 1),
+                 "dongle": audio["dongle"], "tuned_mhz": audio["mhz"]}
+    fm = None
+    if kind == "wide" and _in_fm_band(f):
+        fm = {"name": s1.get("rds_station_name") if out.get("evidence") == "confirmed_decode" else None,
+              "channel_mhz": round(float(s1.get("measured_carrier_mhz") or f), 1),
+              "on_channel": s1.get("on_standard_fm_channel"), "pilot": bool(s1.get("stereo_pilot_19khz")),
+              "rds": bool(s1.get("rds_57khz")), "scrolls": bool(s1.get("rds_name_scrolls")),
+              "wideband": bool(s1.get("wideband_fm"))}
+    history = ctx.get("history") or {}
+    new, known = _new_and_known(out.get("identified_devices"), ctx["began"])
+    listened = int(out.get("listened_seconds") or 0)
+    return {"asked_mhz": f, "band_kind": kind, "band_label": out.get("probable_allocation"),
+            "evidence": out.get("evidence"), "verdict": out.get("verdict_core") or out.get("final_signal_verdict"),
+            "doubtful": out.get("doubtful") or [], "decoder_failed": bool(s2.get("all_failed")),
+            "listen_s": int(ctx["listen"] or (audio or {}).get("seconds") or ctx.get("rtl433_s") or listened),
+            "listened_s": listened, "timed": bool(ctx["timed"]), "strongest": out.get("strongest_dongle"),
+            "dongles": dongles, "tune_offset_hz": {"wide": -250000.0, "adsb": None}.get(kind, -40000.0),
+            "measured_mhz": out.get("measured_carrier_mhz"),
+            "devices": [{"model": d.get("model"), "label": d.get("id_label"), "packets": d.get("packets"),
+                         "doubts": d.get("doubts") or [], "name": str(d.get("device") or "").split(" (")[0]}
+                        for d in (s2.get("devices") or [])[:6]],
+            "rtl433": {"bursts": int(s2.get("bursts_heard") or 0), "packets": int(s2.get("packets_decoded_count") or 0),
+                       "fingerprint": _fp_line(fps[0], hint=False) if fps else None,
+                       "seconds": int(ctx.get("rtl433_s") or 0),
+                       "pattern_hint": fps[0].get("pattern_hint") if fps else None} if s2 else None,
+            "audio": audio,
+            "adsb": {"aircraft": int(out["adsb"].get("aircraft_heard") or 0),
+                     "verified": int(out["adsb"].get("valid_messages") or 0)} if out.get("adsb") else None,
+            "fm": fm,
+            "air": {"looks": int(s1["looks"]), "looks_heard": int(s1.get("looks_with_signal") or 0)}
+            if s1.get("looks") else None,
+            "history": history, "carriers": history.get("carriers") or [], "map_ready": _map_ready(f),
+            "capture_running": _capture_here(f), "new_devices": new, "known_devices": known, "now": time.time()}
 
 
 # ============================================================================
@@ -1256,7 +1733,7 @@ def investigate_single_frequency(frequency_mhz=None, listen_seconds=None, dongle
     _say(f"\n[HW DEEP DIVE] {freq} MHz with {', '.join(_short(s) for s in serials)}...")
     peak = {"peak_id": 1, "frequency_mhz": freq, "center_mhz": freq, "occupied_bw_khz": 25.0,
             "probable_allocation": _classify_frequency_allocation(freq, 25.0)}
-    res = _investigate(peak, serials, listen_s=listen or None)
+    res = _investigate(peak, serials, listen_s=listen or None, report=True)
     try:
         _atomic_write_json(LAST_REPORT, res)
     except OSError:

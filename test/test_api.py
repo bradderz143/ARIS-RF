@@ -396,6 +396,25 @@ class Spectrum(unittest.TestCase):
             self.assertEqual((r.status_code, r.get_json()["error"]), (400, "No receiver here has that name."), url)
             self.assertEqual(c.get(url + "?dongle=dongle%202&start=88&stop=108").status_code, 200, url)
 
+    def test_peaks_carry_green_and_red_marks_from_saved_signals(self):
+        from arisweb.engine import engine as _eng
+        from arisweb import spectrum as S
+        eng = _eng()
+        eng.init_db()
+        eng._log_signal({"frequency_mhz": 150.0}, {"frequency_mhz": 150.0, "evidence": "signal_present",
+                        "final_signal_verdict": "Doubtful: noise", "doubtful": ["one packet, ID 0"], "snr_db": 4.0,
+                        "identified_devices": [], "stage2_rtl433_telemetry": {}}, "00001001")
+        eng._log_signal({"frequency_mhz": 160.0}, {"frequency_mhz": 160.0, "evidence": "confirmed_decode",
+                        "final_signal_verdict": "Identified: a remote", "snr_db": 20.0,
+                        "identified_devices": [{"model": "Generic-Remote"}],
+                        "stage2_rtl433_telemetry": {"identified_models": ["Generic-Remote"]}}, "00001001")
+        merged = [{"frequency_mhz": 150.0, "snr_db": 5.0}, {"frequency_mhz": 160.0, "snr_db": 20.0},
+                  {"frequency_mhz": 170.0, "snr_db": 30.0}]
+        rows = S._peak_list(merged, marks=eng._decode_marks())
+        by = {round(r["mhz"]): r.get("decoded") for r in rows}
+        self.assertEqual(by, {150: "check", 160: "ok", 170: None})
+        self.assertEqual(round(rows[0]["mhz"]), 150)                  # the doubtful one is listed first
+
     def test_levels_have_the_gain_taken_off_so_pieces_at_other_gains_join(self):
         from arisweb.engine import engine as _eng
         from arisweb import spectrum as S
@@ -656,6 +675,55 @@ class DecodeAndCapture(unittest.TestCase):
         self.assertTrue(card["dongles"])
         bad = c.post("/api/decode", json={"freq_mhz": 5000, "seconds": 5}, headers=H)
         self.assertEqual(bad.status_code, 400)
+
+    def test_decode_job_of_a_narrowband_signal(self):
+        """The Decode card of a narrowband signal carries the signal report (v4.21): a headline, a bar per dongle,
+        one next step and the details, all plain JSON (the card goes through Flask as it is), next to every key the
+        card had before."""
+        c = client()
+        keep = os.environ["FAKE_IQ"]
+        os.environ["FAKE_IQ"] = keep + ",172.8364:cw:6"
+        try:
+            # a steady carrier in a voice band: one dongle hears it, the other two watch while the decoders listen
+            r = c.post("/api/decode", json={"freq_mhz": 172.8364, "seconds": 6}, headers=H)
+            self.assertEqual(r.status_code, 200, r.get_json())
+            j = self._wait(c, r.get_json()["job"])
+        finally:
+            os.environ["FAKE_IQ"] = keep
+        self.assertEqual(j["state"], "done", j)
+        card = j["card"]
+        self.assertEqual((card["evidence"], card["listened_seconds"], card["report_v"]), ("signal_present", 9, 1))
+        self.assertTrue(card["verdict"].startswith("Not identified: no decoder recognised it."), card["verdict"])
+        self.assertEqual(card["dongles"], ["Dongle 1: heard it, 16 dB above noise (strongest)",
+                                           "Dongle 2: did not hear it", "Dongle 3: did not hear it"])
+        self.assertEqual((card["tag"], card["tag_kind"], card["confidence"]),
+                         ("NOT IDENTIFIED", "signal_present", "unknown"))
+        self.assertEqual(card["headline"], "Steady carrier on Dongle 1 only. What sends it is not known.")
+        self.assertEqual([(b["dongle"], b["serial"], b["state"], b["text"], b["pct"], b["best"]) for b in card["bars"]],
+                         [("Dongle 1", "00001001", "heard", "16 dB", 40, True),
+                          ("Dongle 2", "00003003", "not_heard", "not heard", None, False),
+                          ("Dongle 3", "00004004", "not_heard", "not heard", None, False)])
+        self.assertEqual(sorted(card["step"]), ["action", "dongle", "label", "mhz", "minutes", "reason", "seconds"])
+        # (the one dongle that hears it ran the decoders, so nobody could watch it: a longer listen would add nothing)
+        self.assertEqual((card["step"]["action"], card["step"]["label"], card["step"]["mhz"]), ("none", "", 172.8364))
+        self.assertTrue(card["step"]["reason"])
+        self.assertEqual(card["carrier"], {"mhz": 172.8364, "text": "172.836 MHz", "note": None})
+        titles = [d["title"] for d in card["details"]]
+        self.assertEqual(titles, ["WHAT IT DID", "MODULATION", "SPUR CHECK", "HISTORY", "COULD NOT TELL", "DECODERS"])
+        for d in card["details"]:
+            self.assertTrue(d["lines"] and all(isinstance(x, str) for x in d["lines"]), d)
+        spur = " ".join(card["details"][2]["lines"])
+        self.assertIn("Only Dongle 1 heard it, so its frequency could not be compared with another dongle's.", spur)
+        self.assertNotIn("real over-the-air", json.dumps(card))
+        self.assertIn("it does not mean the signal is internal", card["antenna_note"])
+        # a signal on a multiple of the dongles' own clock, in a sensor band (rtl_433 only)
+        r = c.post("/api/decode", json={"freq_mhz": 921.6, "seconds": 3}, headers=H)
+        j = self._wait(c, r.get_json()["job"])
+        self.assertEqual(j["state"], "done", j)
+        card = j["card"]
+        self.assertEqual((card["report_v"], card["tag"], card["tag_kind"]), (1, "OWN CLOCK", "own"))
+        self.assertEqual((card["step"]["action"], card["step"]["seconds"]), ("decode", 10))
+        self.assertTrue(all(isinstance(x, str) for x in card["dongles"]))
 
     def test_capture_api_and_activity(self):
         c = client()

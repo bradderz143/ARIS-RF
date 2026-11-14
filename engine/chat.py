@@ -19,6 +19,12 @@ _KEEP_KEYS = {
                                 "bursts_heard", "unknown_signal_fingerprints"),
     "stage3_multimon_direwolf_audio": ("status", "validated_frames", "aprs_frames", "ctcss_tone", "audio_tone"),
     "stage4_plain_english": ("device_identification_and_decode", "note"),
+    # a Decode's report: its sentences say what its number blocks hold (those stay in /raw and the saved file)
+    "signal_report": ("headline", "confidence_text", "sure", "behaviour", "modulation", "checks", "history", "next"),
+    "next": ("label", "say"),            # ("say" is the reason with what to type: the model passes it on)
+    "dongle_comparison[]": ("dongle", "error", "heard", "snr_db", "gain_db", "waveform", "carrier_mhz", "pattern",
+                            "rtl_433", "rtl_433_packets", "rtl_433_bursts", "rtl_433_snr_db", "heard_by_rtl433",
+                            "adsb_messages", "adsb_verified", "aircraft"),
     # band scans: one short entry per signal (the full detail stays in /raw and last_investigation.json)
     "investigated_peaks[]": ("frequency_mhz", "channel_mhz", "snr_db", "pattern", "active_percent_of_sweep",
                              "strongest_dongle", "heard_by", "not_heard_by", "final_signal_verdict", "evidence",
@@ -30,8 +36,8 @@ _LIST_LIMITS = {"decoded_packets": 2, "validated_frames": 4, "aprs_frames": 3, "
                 "decoded_devices": 6, "undecoded_signals": 4, "threat_manifest": 6, "why": 4,
                 "rejected_artifacts": 2, "all_gain_trials": 8, "recent_runs": 6, "investigated_peaks": 8,
                 "top_signals": 12, "unknown_signal_fingerprints": 3, "baselines": 12, "strongest": 5,
-                "earlier_checks_of_this_frequency": 2}
-_STR_LIMITS = {"device_identification_and_decode": 500, "verdict": 120}
+                "earlier_checks_of_this_frequency": 2, "behaviour": 2}
+_STR_LIMITS = {"device_identification_and_decode": 500, "verdict": 120, "sure": 240, "modulation": 400}
 
 
 def _slim(obj, key=None, tight=False):
@@ -62,6 +68,13 @@ def _for_llm(result: str) -> str:
         obj = json.loads(result)
     except ValueError:
         return _clip(result)
+    if isinstance(obj, dict) and isinstance(obj.get("signal_report"), dict):
+        # a Decode's report says these once already (the Checks line, the headline): each fact reaches the model once
+        obj = {k: v for k, v in obj.items() if k not in ("antenna_note", "verdict_core")}
+        rows = obj.get("dongle_comparison")
+        if isinstance(rows, list):
+            obj["dongle_comparison"] = [{k: v for k, v in r.items() if k != "waveform"} if isinstance(r, dict) else r
+                                        for r in rows]
     txt = json.dumps(_slim(obj), separators=(",", ":"), default=_json_default)
     if len(txt) > TOOL_OUTPUT_CLIP:
         txt = json.dumps(_slim(obj, tight=True), separators=(",", ":"), default=_json_default)
@@ -948,7 +961,7 @@ def _investigation_card(res) -> dict:
         rows.append(txt)
     s2 = res.get("stage2_rtl433_telemetry") or {}
     s1 = res.get("stage1_iq_physical_and_bitstream") or {}
-    return {"freq_mhz": res.get("frequency_mhz"), "measured_mhz": res.get("measured_carrier_mhz"),
+    card = {"freq_mhz": res.get("frequency_mhz"), "measured_mhz": res.get("measured_carrier_mhz"),
             "verdict": res.get("verdict_core") or res.get("final_signal_verdict"), "evidence": res.get("evidence"),
             "evidence_text": _EVIDENCE_TEXT.get(res.get("evidence"), ""), "listened_seconds": res.get("listened_seconds"),
             "band": res.get("probable_allocation") or _classify_frequency_allocation(float(res.get("frequency_mhz") or 0), 25.0),
@@ -956,9 +969,39 @@ def _investigation_card(res) -> dict:
             "devices": [_device_line(d) for d in res.get("identified_devices") or []],
             "unknown_signals": [_fp_line(f) for f in s2.get("unknown_signal_fingerprints") or []],
             "saved": bool((res.get("stage4_plain_english") or {}).get("saved_to_signal_list")),
-            "decoders": res.get("decoders_used") or [],
+            "decoders": res.get("decoders_used") or [], "doubtful": res.get("doubtful") or [],
             "station_name": s1.get("rds_station_name") if res.get("broadcast_station_confirmed") else None,
             "station_channel": round(float(s1.get("measured_carrier_mhz") or res.get("frequency_mhz") or 0), 1)}
+    # The report's part of the card (arislib.sigreport words it): the headline and how sure, the history line, one
+    # bar per dongle, the one next step and the details. A result without a report gets the bars only, and the page
+    # draws the card as before.
+    from arislib import sigreport
+    rep = res.get("signal_report")
+    card.update(sigreport.card_fields(rep, res.get("dongle_comparison"), res.get("strongest_dongle"),
+                                      dict(card, saved_note=_saved_line(res), antenna_note=_antenna_short(res))))
+    return card
+
+
+def _antenna_short(res) -> str:
+    """The antenna note beside a report: without its same-frequency sentence when the report's checks say that."""
+    note = str(res.get("antenna_note") or "")
+    rep = res.get("signal_report")
+    if isinstance(rep, dict) and rep.get("checks"):
+        note = note.split(" They measured the same frequency")[0]
+    return note
+
+
+def _saved_line(res) -> str:
+    """'Saved to the Signals list.', why it was not saved, or '' when the result does not say."""
+    s4 = res.get("stage4_plain_english") or {}
+    if s4.get("saved_to_signal_list"):
+        return "Saved to the Signals list."
+    if s4.get("note"):
+        return re.sub(r"^Not saved to the signal list \((.+)\)\.?$", r"Not saved to the Signals list: \1.",
+                      str(s4["note"]))
+    if s4.get("db_error"):           # (the detail is in the log; never a Python class name in a reply)
+        return "Not saved to the Signals list: the Signals database could not be written (see the log)."
+    return ""
 
 
 def _above_noise(snr) -> str:
@@ -1030,10 +1073,15 @@ def _investigation_text(res) -> str:
     """An investigation's result as the chat reply, without the AI round (also /investigate and 'plain_summary' of
     get_last_investigation): the frequency, the band plan, how long it listened and on what, the verdict
     ('Identified: ...' / 'Not identified ...'), each dongle's row, the RDS name, the receiver-clock note, whether it
-    was saved to Signals, and what to do next when nothing was identified. Plain words only: no result field names,
+    was saved to Signals, and what to do next when nothing was identified. A result with a signal report (a Decode,
+    'investigate X') also gets its lines: 'In short' (the headline and how sure), 'What it did', 'History', 'Checks',
+    and 'Next' (the report's one step) in place of the older advice. Plain words only: no result field names,
     no bracket inside a bracket. (v4.8.7 and before: the 7B model wrote this reply in 1-4 min on a test station, at times
     with raw fields.)"""
+    from arislib import sigreport
     c = _investigation_card(res)
+    report = res.get("signal_report") if isinstance(res.get("signal_report"), dict) else None
+    said = sigreport.text_lines(report) if report else {}
     f = float(c["freq_mhz"] or 0)
     ev = res.get("evidence")
     heads = [f"{f:g} MHz, listened {c['listened_seconds'] or 0} s"
@@ -1042,6 +1090,8 @@ def _investigation_text(res) -> str:
     if c["band"]:
         heads.append(f"Band plan: {_sentence(c['band'])}")
     lines = [" ".join(heads)]
+    if said.get("short"):                    # (and where the carrier was found, when not where it was picked)
+        lines.append(" ".join(x for x in ("In short:", said["short"], report.get("carrier_note")) if x))
     verdict = str(c["verdict"] or "").strip()
     if ev == "signal_present" and not verdict.lower().startswith(("not identified", "decoding was not possible")):
         # an FM station heard without a name, an airband or voice transmission: heard, but no decoder named it
@@ -1050,23 +1100,25 @@ def _investigation_text(res) -> str:
     name = c.get("station_name")
     if name and f'"{name}"' not in verdict:
         lines.append(f'RDS station name: "{name}".')
+    lines += [f"{label}: {said[key]}" for label, key in (("What it did", "did"), ("History", "history"),
+                                                         ("Checks", "checks")) if said.get(key)]
     lines += [_sentence(d) for d in c["dongles"]]
-    note = str(c["antenna_note"] or "")
+    note = _antenna_short(res)
     if "not mean" in note or "same frequency" in note:
         lines.append(note)
     ch = res.get("possible_clock_harmonic") or {}
-    if ch.get("meaning"):
+    clock = (((report or {}).get("spur") or {}).get("own_clock") or {}).get("result")
+    if ch.get("meaning") and clock in (None, "not_tested"):      # (the report's Checks line says it otherwise)
         lines.append(_sentence(str(ch["meaning"])[:1].upper() + str(ch["meaning"])[1:])
                      + (f" To check, {_sentence(ch['how_to_check'])}" if ch.get("how_to_check") else ""))
-    s4 = res.get("stage4_plain_english") or {}
-    if s4.get("saved_to_signal_list"):
-        lines.append("Saved to the Signals list.")
-    elif s4.get("note"):
-        lines.append(re.sub(r"^Not saved to the signal list \((.+)\)\.?$", r"Not saved to the Signals list: \1.",
-                            str(s4["note"])))
-    elif s4.get("db_error"):         # (the detail is in the log; never a Python class name in a reply)
-        lines.append("Not saved to the Signals list: the Signals database could not be written (see the log).")
-    if ev != "confirmed_decode":
+    saved = _saved_line(res)
+    if saved:
+        lines.append(saved)
+    step = (report or {}).get("next") or {}
+    if report and said.get("next"):
+        if step.get("action") != "none" or ev != "confirmed_decode":      # (identified: nothing is left to do)
+            lines.append("Next: " + said["next"])
+    elif ev != "confirmed_decode":
         lines.append(_next_step(res, verdict))
     return "\n".join(lines)
 
@@ -1211,6 +1263,11 @@ _RAW_WORDS = {   # raw result fields and values the small model copies into repl
     "channel_snr_db": "level above noise", "snr_db": "level above noise",
     "stage1_iq_physical_and_bitstream": "signal measurement", "stage2_rtl433_telemetry": "rtl_433 results",
     "stage3_multimon_direwolf_audio": "pager and tone decoder results", "stage4_plain_english": "summary",
+    "signal_report": "signal report", "confidence_text": "confidence", "rests_on": "what it rests on",
+    "could_not_tell": "what could not be told", "carrier_mhz": "measured frequency", "carrier_text": "frequency",
+    "carrier_note": "frequency note", "history_tag": "history", "history_more": "history",
+    "dongles_note": "note on the dongles", "freq_history": "history of the frequency", "line_mhz": "measured frequency",
+    "looks_heard": "looks that heard it", "decoders_tuned_mhz": "frequency the decoders listened on",
 }
 _RAW_EVIDENCE = {"confirmed_decode": "a decoder's confirmation", "signal_present": "a signal no decoder identified"}
 _RAW_FLAGS = {   # "broadcast_station_confirmed is true" -> words of its own

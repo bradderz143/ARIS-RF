@@ -2,12 +2,21 @@
 import sys, os, time
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _common import logargs, sigint_hang
+from _common import logargs, sigint_hang, opt, specs, atten, resolve_dev, voice
 logargs("rtl_fm")
 sigint_hang()
 out = sys.argv[-1]
 sr = 22050
 n = sr * 4
 x = 0.12 * np.diff(np.random.default_rng(3).normal(0, 1, n + 1))
+# A voice channel on this frequency (FAKE_IQ kinds nfm / am, see rtl_sdr) that this dongle's antenna hears: its audio,
+# with the CTCSS tone of an nfm channel under it. Anything else stays the hiss of an empty channel.
+a = sys.argv[1:]
+f = float(opt(a, "-f", "0"))
+dev = resolve_dev(opt(a, "-d", "0"))[1] or opt(a, "-d", "0")
+for s in specs("FAKE_IQ"):
+    if s[1] in ("nfm", "am") and abs(float(s[0]) * 1e6 - f) <= 6000 and atten(dev, f) is not None:
+        ct = float(s[3]) if s[1] == "nfm" and len(s) > 3 and s[3].strip() else (100.0 if s[1] == "nfm" else 0.0)
+        x = 0.2 * x + 0.3 * voice(n, sr) + (0.1 * np.sin(2 * np.pi * ct * np.arange(n) / sr) if ct else 0.0)
 (np.clip(x, -1, 1) * 32767).astype(np.int16).tofile(out)
 time.sleep(60)

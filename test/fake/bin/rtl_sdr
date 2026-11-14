@@ -3,6 +3,13 @@
 station name, locked to the pilot), wbfm_unlocked (stereo, RDS coder on its own clock 2.1 Hz low), wbfm_monords
 (mono, RDS on its own clock 3.3 Hz high), wbfm_nords (stereo, no RDS), wbfm_mono (mono, no RDS), fmbug (mono,
 drifting). A name with | scrolls: "LA|MEJOR|97.7".
+Narrow kinds (the fourth field is the kind's option): cwdrift[:Hz per second] a carrier that drifts in a straight line
+from the start of each capture (300), cwkey[:on/off seconds] a carrier keyed on and off by the wall clock (0.5/0.5),
+nfm[:CTCSS Hz] narrow FM voice, 2.5 kHz deviation, with a CTCSS tone (100.0; 0 = none), am[:depth percent] AM voice
+(100: the simulated voice is quiet, and at 60 its modulation is too slight for a look to call it AM), fsk2c[:baud]
+continuous 2-level FSK, tones 4.5 kHz either side (1200), fsk4c[:symbols per second] continuous 4-level FSK, tones at
+-1800 / -600 / +600 / +1800 Hz (4800), pocsag[:baud] a pager channel that sends only its framing: preamble, sync word
+and idle codewords, no address and no message (1200).
 snr_db is per sample over the whole capture ("25"). With "bin" after it ("17bin") it is per FFT bin, the way the
 band capture's detector reads it (arislib.bandwatch: 512-point Hann frames; an on-off remote reads about 1 dB more
 in its snr_db): 25.3 dB more than the same signal per sample. Real remotes on a test station read 15-20 dB per bin, which
@@ -16,7 +23,7 @@ import sys, os
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."))
-from _common import logargs, opt, specs, atten, sigint_hang, resolve_dev
+from _common import logargs, opt, specs, atten, sigint_hang, resolve_dev, voice
 from arislib import rds as _rds
 logargs("rtl_sdr")
 import signal as _sg
@@ -180,6 +187,33 @@ for s in specs("FAKE_IQ"):
             fb = fb + 1500 * np.sin(2 * np.pi * 0.3 * t)        # cheap oscillator drift
         ph = 2 * np.pi * np.cumsum(fb + dev * m) / fs
         z += A * np.exp(1j * ph)
+    elif mode in ("cwdrift", "cwkey", "nfm", "am", "fsk2c", "fsk4c", "pocsag"):
+        o4 = s[3].strip() if len(s) > 3 else ""
+        if mode == "cwdrift":
+            tc = np.arange(n) / fs
+            z += A * np.exp(2j * np.pi * (fb * t + 0.5 * float(o4 or 300) * tc ** 2))
+        elif mode == "cwkey":
+            on_s, off_s = (float(x) for x in (o4 or "0.5/0.5").split("/"))
+            z += A * np.exp(2j * np.pi * fb * t) * ((t % (on_s + off_s)) < on_s)
+        elif mode == "nfm":
+            ct = float(o4 or 100.0)
+            m = 2500 * voice(n, fs) + (600 * np.sin(2 * np.pi * ct * t) if ct else 0.0)
+            z += A * np.exp(2j * np.pi * np.cumsum(fb + m) / fs)
+        elif mode == "am":
+            k = float(o4 or 100) / 100.0
+            z += A * (1 + k * voice(n, fs)) / (1 + k) * np.exp(2j * np.pi * fb * t)
+        else:
+            baud = float(o4 or {"fsk2c": 1200, "fsk4c": 4800, "pocsag": 1200}[mode])
+            srng = np.random.default_rng(int(float(s[0]) * 1000))
+            if mode == "pocsag":        # (a 1 is the lower tone; 0x7CD215D8 is the sync word, 0x7A89C197 the idle word)
+                bits = "10" * 288 + (format(0x7CD215D8, "032b") + format(0x7A89C197, "032b") * 16) * 2
+                lv, dev = np.array([-1.0 if c == "1" else 1.0 for c in bits]), 4500.0
+            elif mode == "fsk2c":
+                lv, dev = 2.0 * srng.integers(0, 2, 4096) - 1.0, 4500.0
+            else:
+                lv, dev = (2.0 * srng.integers(0, 4, 4096) - 3.0) / 3.0, 1800.0
+            sym = lv[(t * baud).astype(np.int64) % len(lv)]
+            z += A * np.exp(2j * np.pi * np.cumsum(fb + dev * sym) / fs)
     elif mode in ("ook", "fsk"):
         period, dur = 0.5, 0.025
         inb = (t % period) < dur

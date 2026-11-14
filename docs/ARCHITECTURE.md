@@ -46,6 +46,15 @@ replies, the AI loop) and `plugins`. Every top-level name is defined in one part
   `-G`). Undecoded packages become fingerprints (modulation, pulse widths, bits per packet); the demodulated bits are
   never kept.
 - "Identified" only from a decoder's own result; everything else starts "Not identified" and gives the measurement.
+- A Decode (one frequency, from the Spectrum tab or the chat) also builds a signal report: `arislib/siglook.py`
+  measures what the signal did during the 3 s look (on and off, its carrier line and drift, width, a modulation kind)
+  and `arislib/sigreport.py` holds the rules and every sentence of the card (headline and confidence, the frequency's
+  history from the saved list and baselines, a check against the receivers' own 28.8 MHz clock multiples, one next
+  step). Receivers with no decoder job repeat the short look while the decoders listen. The rules are deliberately
+  modest: a line on a clock multiple is called the receivers' own with high confidence only when two receivers with
+  different frequency corrections each read it on their own line; a steady frequency is never evidence of a spur;
+  levels are "above each receiver's own noise", never a distance; a tone that is also a mains multiple is not
+  called a voice channel. Band scans, patrol and captures build no report and pay nothing for it.
 - Remote-control and rolling codes are stripped from every log, reply and record (`_safe_packet`); remotes get a
   keyed label (HMAC with a random per-station secret).
 - FM: RDS is decoded by ARIS (subcarrier found and followed, block CRC checked, limited error correction, scrolling

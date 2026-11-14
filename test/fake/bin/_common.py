@@ -141,3 +141,14 @@ def sigint_hang(before=None, sigs=("SIGINT", "SIGTERM")):
     for s in sigs:
         signal.signal(getattr(signal, s), hang)
     return True
+
+
+def voice(n, fs, seed=11):
+    """Speech-like audio for the simulated voice channels (rtl_sdr kinds nfm / am, and rtl_fm's audio of them):
+    noise between 300 and 3000 Hz that comes and goes three times a second, peak 1. Nothing is said in it."""
+    import numpy as np
+    X = np.fft.rfft(np.random.default_rng(seed).standard_normal(n))
+    f = np.fft.rfftfreq(n, 1.0 / fs)
+    X[(f < 300) | (f > 3000)] = 0
+    v = np.fft.irfft(X, n) * (0.5 + 0.5 * np.sin(2 * np.pi * 3.0 * np.arange(n) / fs))
+    return v / (np.abs(v).max() + 1e-12)

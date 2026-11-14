@@ -60,6 +60,7 @@ LIVE_MAX_SPAN_MHZ = 0.8          # one IQ capture: the window sits 0.05-0.85 MHz
 LIVE_TUNE_ABOVE_MHZ = 0.05       # receiver's own centre spike is always just outside it
 LIVE_FS = 2048000                # ... at this sample rate; a receiver that cannot stream it sweeps narrow views instead
 GAIN_EDGES_MHZ = (880.0, 960.0)     # where the dongle's own 915 MHz gain starts and ends (engine _gain_for)
+DECODE_MATCH_MHZ = 0.03             # a saved decode this close to a signal marks it (green: identified, red: doubtful)
 MAX_POINTS = 1600
 COARSE_STEP_KHZ = 200.0          # the widest step the automatic choice uses. A coarser one (the user's own choice)
                                  # leaves a hop only a few points (one point per hop at 1000 kHz), too few to tell a
@@ -297,12 +298,15 @@ def _sweep_fullscale_db(eng, s_mhz, e_mhz, step_khz):
                                   cfg.get("window_fn", "hamming"))
 
 
-def _peak_list(merged):
+def _peak_list(merged, marks=()):
     """Peaks for the page: off-plan FM signals first (a weak FM bug must never be crowded out by strong stations),
     then everything else by SNR."""
     out = []
     flagged = lambda p: bool(p.get("channel_mhz")) and p.get("on_standard_fm_channel") is False
-    for p in sorted(merged, key=lambda x: (not flagged(x), -x["snr_db"]))[:40]:
+    def state(p):                              # what the Saved Signals list says about this frequency (newest first)
+        mhz = float(p.get("channel_mhz") or p["frequency_mhz"])
+        return next((s for f, s in marks if abs(f - mhz) <= DECODE_MATCH_MHZ), None)
+    for p in sorted(merged, key=lambda x: (state(x) != "check", not flagged(x), -x["snr_db"]))[:40]:
         ch, chk = p.get("channel_mhz"), p.get("checked")
         mhz = ch or p["frequency_mhz"]
         if ch and p.get("known_station"):        # its RDS name was decoded here: a known public station
@@ -333,7 +337,7 @@ def _peak_list(merged):
                     "snr_db": p["snr_db"], "label": label, "band": band, "kind": kind,
                     "flag": kind == "fm_offplan", "best": p.get("strongest_dongle"),
                     "heard_by": p.get("heard_by") or {}, "name": p.get("known_station"), "checked": chk,
-                    "checked_epoch": p.get("checked_epoch")})
+                    "checked_epoch": p.get("checked_epoch"), "decoded": state(p)})
     return out
 
 
@@ -465,6 +469,10 @@ def frames(eng, serials, s_mhz, e_mhz, gain_arg, cfg, pl=None, remove_gain=True)
     same = all(len(r["db"]) == len(first["db"]) and r["range_mhz"] == first["range_mhz"] for r in ok.values())
     combined = [max(v) for v in zip(*(r["db"] for r in ok.values()))] if same else first["db"]
     merged = eng._merge_peaks({ser: r["_raw_peaks"] for ser, r in ok.items()})
+    try:
+        marks = eng._decode_marks()
+    except Exception:                                    # the list is a help, never a reason to fail a sweep
+        marks = []
     floors = [r["floor_db"] for r in ok.values() if r["floor_db"] is not None]
     plan_checked = first["step_khz"] <= eng.FM_PLAN_MAX_STEP_KHZ
     warnings = _health(traces, pl["covered_mhz"])
@@ -473,7 +481,7 @@ def frames(eng, serials, s_mhz, e_mhz, gain_arg, cfg, pl=None, remove_gain=True)
     for t in traces:
         t.pop("max_db", None)
     return {"mode": first["mode"], "freqs": first["freqs"], "db": combined, "floor_db": min(floors) if floors else None,
-            "traces": traces, "peaks": _peak_list(merged), "step_khz": first["step_khz"],
+            "traces": traces, "peaks": _peak_list(merged, marks), "step_khz": first["step_khz"],
             "fm_plan_checked": plan_checked, "warnings": warnings,
             "spikes_removed": sum(r["spikes_removed"] for r in ok.values()), "unit": unit,
             "spikes_kept": any(r["spikes_kept"] for r in ok.values()),

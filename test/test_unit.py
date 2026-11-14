@@ -2435,5 +2435,135 @@ src=${*: -2:1}; dst=${*: -1}; mkdir -p "$dst" && cp -a "$src". "$dst"     # only
         self.assertEqual(os.listdir(w["t"]), [])
 
 
+class DoubtfulDecodes(unittest.TestCase):
+    """A decode that looks like noise is not an identification (a utility meter "heard" at 28.8 MHz)."""
+
+    def setUp(self):
+        import harness                                    # noqa: F401
+        import aris as A
+        self.A = A
+
+    def dev(self, **kw):
+        d = {"model": "ERT-SCM", "device": "ERT SCM", "type": "utility meter", "id_label": "4711", "channel": None,
+             "reports": ["meter reading"], "packets": 6, "best_snr_db": 20.0, "freq_mhz": None, "heard_by": []}
+        d.update(kw)
+        return d
+
+    def test_a_real_looking_decode_has_no_doubts(self):
+        self.assertEqual(self.A._decode_doubts(self.dev(), 912.6), [])
+        self.assertEqual(self.A._decode_doubts(self.dev(packets=1, best_snr_db=25.0), 433.92), [])   # one strong packet
+
+    def test_the_28_8_mhz_meter_is_doubtful_three_ways(self):
+        why = self.A._decode_doubts(self.dev(packets=1, id_label="0", best_snr_db=4.0), 28.79)
+        self.assertEqual(len(why), 3)
+        self.assertTrue(any("outside the bands" in w for w in why))
+        self.assertTrue(any("single packet, only 4 dB" in w for w in why))
+        self.assertTrue(any("ID 0" in w for w in why))
+
+    def test_each_rule_alone_is_enough(self):
+        self.assertEqual(len(self.A._decode_doubts(self.dev(), 150.0)), 1)                     # wrong band
+        self.assertEqual(len(self.A._decode_doubts(self.dev(packets=1, best_snr_db=5.0), 433.92)), 1)   # weak and alone
+        self.assertEqual(len(self.A._decode_doubts(self.dev(packets=1, id_label="0"), 433.92)), 1)      # one packet, ID 0
+        self.assertEqual(self.A._decode_doubts(self.dev(packets=2, id_label="0", best_snr_db=5.0), 433.92), [])
+
+    def test_the_sensor_bands_are_not_doubted(self):
+        for f in (27.12, 40.68, 49.86, 315.0, 345.0, 390.0, 418.0, 433.92, 868.3, 915.0):
+            self.assertEqual(self.A._decode_doubts(self.dev(), f), [], f)
+
+    def test_the_verdict_says_doubtful_and_never_identified(self):
+        d = self.dev(packets=1, id_label="0", best_snr_db=4.0)
+        d["doubts"] = self.A._decode_doubts(d, 28.79)
+        t = self.A._doubtful_text([d])
+        self.assertTrue(t.startswith("Doubtful:"))
+        self.assertNotIn("Identified", t)
+        self.assertIn("probably noise", t)
+
+    def test_the_merge_marks_noise_and_keeps_it_out_of_the_models_and_the_history(self):
+        A = self.A
+        noted = []
+        real = A._devices_note
+        A._devices_note = noted.append
+        try:
+            weak = self.dev(packets=1, id_label="0", best_snr_db=4.0)
+            r = {"packets_decoded_count": 1, "devices": [weak], "identified_models": ["ERT-SCM"], "decoded_packets": [],
+                 "history": [{"model": "ERT-SCM", "id": 0, "t": 1.0}], "best_packet_snr_db": 4.0, "status": "ok"}
+            m, _ = A._merge_rtl433({"00001001": r}, {}, 28.79)
+            self.assertEqual(m["identified_models"], [])
+            self.assertTrue(m["devices"][0]["doubts"])
+            self.assertEqual(noted, [])                               # noise never joins the device history
+            good = self.dev(packets=5, id_label="4711", best_snr_db=22.0)
+            r2 = {"packets_decoded_count": 5, "devices": [good], "identified_models": ["ERT-SCM"], "decoded_packets": [],
+                  "history": [{"model": "ERT-SCM", "id": 4711, "t": 2.0}], "best_packet_snr_db": 22.0, "status": "ok"}
+            m2, _ = A._merge_rtl433({"00001001": r2}, {}, 912.6)
+            self.assertEqual(m2["identified_models"], ["ERT-SCM"])
+            self.assertEqual(m2["devices"][0]["doubts"], [])
+            self.assertEqual(len(noted), 1)
+        finally:
+            A._devices_note = real
+
+    def test_noise_is_not_saved_as_confirmed_and_marks_the_list_red(self):
+        A = self.A
+        A.init_db()
+        peak = {"frequency_mhz": 28.79, "probable_allocation": "Test"}
+        bad = {"frequency_mhz": 28.79, "evidence": "signal_present", "final_signal_verdict": "Doubtful: rtl_433 decoded something",
+               "doubtful": ["it is a single packet with ID 0"], "snr_db": 4.0,
+               "identified_devices": [], "stage2_rtl433_telemetry": {"identified_models": ["ERT-SCM"]}}
+        A._log_signal(peak, bad, "00001001")
+        good = {"frequency_mhz": 433.92, "evidence": "confirmed_decode", "final_signal_verdict": "Identified: a remote",
+                "snr_db": 20.0, "identified_devices": [{"model": "Generic-Remote"}],
+                "stage2_rtl433_telemetry": {"identified_models": ["Generic-Remote"]}}
+        A._log_signal({"frequency_mhz": 433.92}, good, "00001001")
+        marks = dict((round(f, 2), s) for f, s in reversed(A._decode_marks()))
+        self.assertEqual(marks.get(28.79), "check")
+        self.assertEqual(marks.get(433.92), "ok")
+        import sqlite3
+        conn = sqlite3.connect(A.DB_PATH)
+        try:
+            row = conn.execute("SELECT urh_analysis FROM peaks WHERE frequency_mhz = 28.79 ORDER BY id DESC").fetchone()
+        finally:
+            conn.close()
+        self.assertNotIn("confirmed decode", row[0])                  # (not "rtl_433 confirmed decode: ERT-SCM")
+
+
+class SavedCarrier(unittest.TestCase):
+    """A saved check keeps where its carrier was measured, as one more line at the end of its text, and the
+    frequency's history reads it back (a row's own frequency is only the one that was asked for). The first line
+    stays as the readers of the Signals list know it."""
+
+    def test_carrier_line_is_saved_and_read_back(self):
+        import harness                                    # noqa: F401
+        import aris as A
+        import sqlite3
+        A.init_db()
+        out = {"frequency_mhz": 149.3125, "evidence": "signal_present", "snr_db": 16.0, "strongest_dongle": "Dongle 2",
+               "final_signal_verdict": "Not identified: a steady carrier", "measured_carrier_mhz": 149.31364,
+               "dongle_comparison": [{"dongle": "Dongle 1", "heard": True, "line_mhz": 149.3136},
+                                     {"dongle": "Dongle 2", "heard": True, "line_mhz": 149.313612}]}
+        saved = lambda o: A._log_signal({"frequency_mhz": 149.3125}, o, "00003003")["device_identification_and_decode"]
+        try:
+            text = saved(out)
+            self.assertTrue(text.startswith("• ARIS verdict (heuristic): Not identified: a steady carrier\n"), text)
+            self.assertEqual(text.splitlines()[-1], "• Carrier measured: 149.31361 MHz on Dongle 2")   # its clear line
+            coarse = dict(out, dongle_comparison=[{"dongle": "Dongle 2", "heard": True}])              # no clear line
+            self.assertEqual(saved(coarse).splitlines()[-1], "• Carrier measured: 149.31364 MHz on Dongle 2")
+            del coarse["measured_carrier_mhz"]                                                         # a capture's row
+            self.assertNotIn("Carrier measured", saved(coarse))
+            self.assertNotIn("Carrier measured", saved(dict(out, strongest_dongle=None)))
+            h = A._freq_history(149.3125, "audio", [])
+            self.assertEqual([r["carrier_mhz"] for r in h["saved"]], [None, None, 149.31364, 149.31361])   # newest first
+            self.assertTrue(all(r["mhz"] == 149.3125 and r["ts"] and r["head"].startswith("• ARIS verdict (heuristic)")
+                                for r in h["saved"]), h["saved"])
+            self.assertEqual(A._freq_history(149.4, "audio", [])["saved"], [])     # 87 kHz away: not this frequency's
+            self.assertFalse([m for m in A._decode_marks() if abs(m[0] - 149.3125) < 0.01])    # no mark from these
+        finally:
+            with A._DB_LOCK:
+                conn = sqlite3.connect(A.DB_PATH)
+                try:
+                    conn.execute("DELETE FROM peaks WHERE frequency_mhz = 149.3125")
+                    conn.commit()
+                finally:
+                    conn.close()
+
+
 if __name__ == "__main__":
     unittest.main()

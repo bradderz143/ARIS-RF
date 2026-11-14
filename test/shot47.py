@@ -16,7 +16,9 @@ async def decode(pg, mhz, secs_button):
     await pg.evaluate(f"specSelect({mhz})")
     await pg.click(f"#sp-dec-t button[data-s='{secs_button}']")
     await pg.click("#sp-dec-go")
-    await pg.wait_for_selector("#sp-result .dec-card .tag", timeout=120000)
+    # an earlier result stays on screen until the server has taken the job: wait for this press's own result
+    await pg.wait_for_function("SP.job !== null", timeout=30000)
+    await pg.wait_for_function("SP.job === null && !!document.querySelector('#sp-result .dec-card .tag')", timeout=120000)
     await pg.wait_for_timeout(300)
     await pg.evaluate("document.getElementById('sp-sel').scrollIntoView({block: 'start'})")
 
@@ -68,8 +70,9 @@ async def main():
         await pg.screenshot(path=f"{OUT}/v47_decode_identified.png", full_page=False)
         await decode(pg, 914.842, 10)
         await pg.screenshot(path=f"{OUT}/v47_decode_not_identified.png", full_page=False)
-        # a capture from the card's button, then its result in the Activity tab and the chat
-        await pg.click("#sp-result button:text-is('Capture until decoded')")
+        # a capture from the panel's button (the card offers one only as its step), then its result in the Activity
+        # tab and the chat
+        await pg.click("#sp-sel .btns > button:text-is('Capture until decoded')")
         await pg.wait_for_function("(() => { const b = document.querySelector('#sp-result .infobox, #sp-result "
                                    ".warnbox'); return b && !b.textContent.startsWith('Starting'); })()",
                                    timeout=60000)

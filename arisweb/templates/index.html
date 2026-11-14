@@ -101,7 +101,13 @@
 <button class="btn-ghost" onclick="specLocate()">Locate</button></div>
 <div id="sp-result"></div></div>
 <div class="peaks" id="sp-peaks"></div>
-<div class="note">Pick any range from 0 to 6000 MHz. A part no receiver here tunes is hatched and never drawn as a level: nothing was measured there. A wide range is swept in pieces, and the picture fills in as each piece comes back. With a mouse, the wheel zooms about the pointer and dragging across the plot zooms into that range. Step is the distance between the points of a sweep: Auto picks one that suits the range. Average smooths the line over several sweeps; Peak hold keeps the highest level seen. Decode listens on every dongle at once for the time you pick and runs the decoders that suit the band (rtl_433, RDS, pager / APRS, ADS-B); "Identified" means a decoder recognised the device. Capture keeps the dongle that hears it best on the frequency in the background until a packet is decoded or demodulated, then reports in the chat. "All dongles" draws one line per dongle, captured at the same time. The antennas differ, so "Above floor" (each line measured from its own dongle's noise floor) compares what each one hears better than raw dB. Ranges up to 0.8 MHz wide refresh several times a second (live IQ); wider ranges are swept every second or two. Amber = FM-band signal off the station channel plan, which is only checked when the range is 30 MHz wide or less (the FM preset).</div>
+<details class="note"><summary>How this tab works</summary>
+<p>Pick any range from 0 to 6000 MHz. A part no receiver here tunes is hatched and never drawn as a level: nothing was measured there. A wide range is swept in pieces, and the picture fills in as each piece comes back. With a mouse, the wheel zooms about the pointer and dragging across the plot zooms into that range.</p>
+<p>Step is the distance between the points of a sweep: Auto picks one that suits the range. Average smooths the line over several sweeps; Peak hold keeps the highest level seen.</p>
+<p>Decode listens on every dongle at once for the time you pick and runs the decoders that suit the band (rtl_433, RDS, pager / APRS, ADS-B); "Identified" means a decoder recognised the device. Capture keeps the dongle that hears it best on the frequency in the background until a packet is decoded or demodulated, then reports in the chat.</p>
+<p>"All dongles" draws one line per dongle, captured at the same time. The antennas differ, so "Above floor" (each line measured from its own dongle's noise floor) compares what each one hears better than raw dB.</p>
+<p>Ranges up to 0.8 MHz wide refresh several times a second (live IQ); wider ranges are swept every second or two. Amber = FM-band signal off the station channel plan, which is only checked when the range is 30 MHz wide or less (the FM preset).</p>
+</details>
 </div>
 
 <div class="view" id="view-map">

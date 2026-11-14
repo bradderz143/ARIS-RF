@@ -37,6 +37,10 @@ off with `"update_check": false` in the data folder's `config.json`). It never t
 - **Investigate and decode**: listen on a frequency for up to 10 minutes on every receiver; rtl_433's 200+ device
   decoders, FM station names (RDS, decoded and checksummed by ARIS itself), pager and APRS metadata, ADS-B aircraft
   (checksum-verified only). Anything a decoder does not recognise is described by what was measured, never guessed.
+  The Decode card answers in one line with how sure that is and what it rests on, then: whether this frequency has
+  been seen here before, what the signal did during the listen (on and off, drift, width), a check against the
+  receivers' own clock lines, a short look at the modulation (kind only: nothing is listened to), a level bar per
+  receiver and one recommended next step. Receivers with no decoder job keep watching the signal meanwhile.
 - **Band capture**: records a whole band (433 MHz, 902-928 MHz, or any range up to 60 MHz), finds every burst in time
   and frequency, cuts it out and decodes it, so devices that transmit for a few milliseconds are not missed.
 - **Devices**: everything decoded, grouped (a car's tyre sensors as one row, passing cars apart from the ones that

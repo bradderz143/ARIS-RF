@@ -216,14 +216,24 @@ def _extract_raw_digital_bursts(env, inst_freq_hz, fs_dec, active_mask):
     }
 
 
-def _stage1_iq_analysis(freq_mhz, serial, gain_db=19.7, bw_khz=25.0, duration_sec=2.5):
+def _stage1_iq_analysis(freq_mhz, serial, gain_db=19.7, bw_khz=25.0, duration_sec=2.5, profile=False):
     """Decide whether anything is actually transmitting, using an empty part of the same capture as
-    the noise reference, then classify it. Pure noise reports 'nothing transmitting'."""
+    the noise reference, then classify it. Pure noise reports 'nothing transmitting'.
+    profile ("full" / "light"): also what the signal did during the look (arislib.siglook: on and off, its line,
+    width, level and modulation; "light" only the first two) as res["look_profile"], for a Decode's report. Numbers
+    only, and the caller takes it out of the result before anything is stored. Off by default: captures, band scans
+    and patrol pay nothing for it."""
     fs, offset, decim = 250000, 40000, 5     # signal sits 40 kHz off the IQ centre (away from the DC spike)
     fsd = fs / decim
+    clip = 0.0
     try:
-        z = _capture_iq(serial, int(round(freq_mhz * 1e6)) - offset, fs, int(fs * duration_sec), gain_db,
-                        timeout=int(duration_sec) + 12)
+        raw = _capture_raw(serial, int(round(freq_mhz * 1e6)) - offset, fs, int(fs * duration_sec), gain_db,
+                           timeout=int(duration_sec) + 12)
+        if profile:                          # (overload shows only in the bytes, and those are not kept)
+            from arislib import siglook
+            clip = siglook.clip_fraction(raw)
+        z = _raw_to_iq(raw)
+        del raw
     except RFError as e:
         return {"status": f"IQ capture failed: {e}", "signal_present_during_capture": False}
     try:
@@ -338,6 +348,16 @@ def _stage1_iq_analysis(freq_mhz, serial, gain_db=19.7, bw_khz=25.0, duration_se
             "envelope_variation_cv": round(cv, 3),
             "narrow_line_fraction": round(line_frac, 2),
         })
+        if profile:
+            try:
+                prof = siglook.profile(y, fsd, noise, hw, "light" if profile == "light" else "full", clip)
+                line = prof.get("line") or {}
+                prof["line_mhz"] = (round(freq_mhz + (fc - offset + float(line["hz"])) / 1e6, 6)
+                                    if line.get("ok") and line.get("hz") is not None else None)
+                prof["clip_frac"] = round(float(clip), 5)
+                res["look_profile"] = prof
+            except Exception as e:           # the look itself stands without it
+                log.warning("look profile not made: %s: %s", type(e).__name__, e)
         if not continuous and wins and _in_sensor_band(freq_mhz):
             res["native_bitstream_extractor"] = _extract_raw_digital_bursts(env, inst - carrier_off, fsd, active)
         return res
@@ -771,6 +791,37 @@ def _devices_from_packets(packets, heard_by=None) -> list:
         if heard_by and heard_by not in d["heard_by"]:
             d["heard_by"].append(heard_by)
     return sorted(out.values(), key=lambda d: (-d["packets"], -(d["best_snr_db"] or 0)))
+
+
+# The bands rtl_433's devices use (MHz): 27 / 40 / 49 MHz toys and remotes, 315 / 345 / 390 / 418 / 433 MHz remotes
+# and sensors, 868 and 900-930 MHz sensors and meters. A decode far outside them is almost always noise that
+# happened to pass a decoder's checks (a utility meter "heard" at 28.8 MHz).
+SENSOR_WINDOWS_MHZ = ((26.9, 27.3), (39.5, 41.0), (49.0, 50.0), (300.0, 320.0), (340.0, 350.0), (385.0, 395.0),
+                      (416.0, 420.0), (430.0, 440.0), (860.0, 880.0), (900.0, 930.0))
+DOUBT_SNR_DB = 8.0                 # a single packet this weak is as likely to be noise as a device
+
+
+def _decode_doubts(d, freq_mhz=None) -> list:
+    """Why a decoded device may be noise, in plain words (empty: nothing speaks against it). A real device repeats
+    its packet, sits in a band these devices use and stands clear of the noise."""
+    why = []
+    f = d.get("freq_mhz") or freq_mhz
+    if f and not any(lo <= float(f) <= hi for lo, hi in SENSOR_WINDOWS_MHZ):
+        why.append(f"{float(f):.3f} MHz is outside the bands these devices use")
+    n, snr = int(d.get("packets") or 0), d.get("best_snr_db")
+    if n <= 1 and snr is not None and snr < DOUBT_SNR_DB:
+        why.append(f"it is a single packet, only {snr:.0f} dB above noise")
+    if n <= 1 and str(d.get("id_label")) in ("0", "00", "000", "0000"):
+        why.append("it is a single packet with ID 0")
+    return why
+
+
+def _doubtful_text(devs) -> str:
+    """The verdict when every decoded device looks like noise: not an identification."""
+    lines = "; ".join(f"{_device_line(d)}: {' and '.join(d['doubts'])}" for d in devs[:2])
+    return ("Doubtful: rtl_433 decoded something, but it is probably noise and not that device (" + lines + "). "
+            "Investigate before trusting it: decode again, capture it until it repeats, and unplug a dongle's antenna "
+            "to see whether the signal comes from the receiver itself")
 
 
 def _device_line(d) -> str:

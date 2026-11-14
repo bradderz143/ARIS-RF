@@ -1717,10 +1717,13 @@ class Routing(unittest.TestCase):
             self.assertFalse(self._nested_brackets(reply), reply)
             self.assertIn("Band plan:", reply)
             self.assertIn("Dongle 1:", reply)
+            self.assertIn("\nIn short: ", reply)                              # the report's headline and how sure (v4.21)
         # 433.92: the simulated remote, decoded by the real rtl_433 when it is installed, else heard and not identified
         reply = self._turn("investigate 433.92")[0]
         if harness.REAL_BIN:
             self.assertIn("Identified: Generic fixed-code remote", reply)
+            self.assertIn("In short: Generic fixed-code remote, ID #", reply)
+            self.assertIn("Confirmed by a decoder: ", reply)
             self.assertIn("Saved to the Signals list.", reply)
             self.assertNotIn('"capture 433.92"', reply)                       # identified: no next step needed
         else:
@@ -1729,13 +1732,16 @@ class Routing(unittest.TestCase):
         # a quiet channel: what to do next, and not saved
         reply = self._turn("what is on 162.55")[0]
         self.assertIn("Nothing transmitted", reply)
+        self.assertIn("In short: Nothing heard in ", reply)
         self.assertIn("Not saved to the Signals list: nothing transmitted during the check.", reply)
-        self.assertIn('"capture 162.55"', reply)
+        self.assertIn('Next: To wait for the next transmission in the background, say "capture 162.55".', reply)
         self.assertIn("Dongle 3: did not hear it.", reply)
         # an FM station: the RDS name, the time asked for, the dongle asked for, not saved (a public station)
         reply = self._turn("investigate 96.9 for 5 seconds on dongle 1")[0]
         self.assertIn('"HITS FM"', reply)
         self.assertIn("Identified: FM broadcast station", reply)
+        self.assertIn('In short: FM radio station "HITS FM". Confirmed by a decoder: ', reply)
+        self.assertNotIn("Next:", reply)                                      # identified: nothing left to do
         self.assertNotIn("Dongle 2", reply)
         self.assertIn("Not saved to the Signals list: confirmed public FM broadcast station.", reply)
         # a time over the limit is refused with the capture to use instead, still without the AI
@@ -3202,6 +3208,538 @@ class DeviceHistory(unittest.TestCase):
             self.assertEqual(r["devices"], 1)
             self.assertFalse(A.DEVICES_FILE.exists())
             self.assertEqual(A.devices_list()["rows"], [])              # (rebuilt from the now-empty log)
+
+
+THREE_ANTENNAS = ("00001001:fm=-8,433=0,915=-25,1090=-20;00003003:fm=0,433=-6,915=-10,1090=-8;"
+                  "00004004:fm=-6,433=3,915=0,1090=0")
+
+
+class _FakeAir:
+    """The simulated air for one test: more signals (FAKE_IQ, FAKE_PEAKS are added to), other antennas, a log of
+    every radio program the engine starts. Put back afterwards."""
+
+    def __init__(self, iq="", peaks="", ant=None, arglog=False):
+        self.add, self.ant, self.arglog = {"FAKE_IQ": iq, "FAKE_PEAKS": peaks}, ant, arglog
+        self.log = None
+
+    def __enter__(self):
+        self.saved = {k: os.environ.get(k) for k in ("FAKE_IQ", "FAKE_PEAKS", "FAKE_ANT", "FAKE_ARGLOG")}
+        for k, more in self.add.items():
+            if more:
+                os.environ[k] = os.environ[k] + "," + more
+        if self.ant:
+            os.environ["FAKE_ANT"] = self.ant
+        if self.arglog:
+            fd, self.log = tempfile.mkstemp(suffix=".jsonl")
+            os.close(fd)
+            os.environ["FAKE_ARGLOG"] = self.log
+        return self
+
+    def tools(self) -> list:
+        with open(self.log) as f:
+            return [json.loads(x) for x in f if x.strip()]
+
+    def __exit__(self, *exc):
+        for k, v in self.saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        if self.log:
+            os.remove(self.log)
+
+
+class DecodeReport(unittest.TestCase):
+    """The Decode's signal report (v4.21): what the looks measured, the dongles that watch while the decoders
+    listen, the frequency's history, the spur check and one next step, on the simulated radios. It never takes
+    more radio time than the listen asked for, and never reaches what is stored as a look."""
+    FIELD = re.compile(r"[A-Za-z]_[A-Za-z]")
+
+    @staticmethod
+    def _fixtures() -> dict:
+        """The cards the page is drawn and tested with (test/fixtures_decode_cards.json): the engine's cards have
+        their shape."""
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures_decode_cards.json")) as f:
+            return json.load(f)
+
+    def _plain(self, text):
+        self.assertFalse(self.FIELD.search(text), text)
+        self.assertFalse(Routing._nested_brackets(text), text)
+        self.assertNotIn("+-", text)
+
+    def _row_ids(self, low, high):
+        import sqlite3
+        conn = sqlite3.connect(A.DB_PATH)
+        try:
+            return conn.execute("SELECT id, urh_analysis FROM peaks WHERE frequency_mhz BETWEEN ? AND ? ORDER BY id",
+                                (low, high)).fetchall()
+        finally:
+            conn.close()
+
+    def _forget(self, low, high):
+        import sqlite3
+        A.init_db()                                      # (a test run on its own may be the first to need the list)
+        with A._DB_LOCK:
+            conn = sqlite3.connect(A.DB_PATH)
+            try:
+                conn.execute("DELETE FROM peaks WHERE frequency_mhz BETWEEN ? AND ?", (low, high))
+                conn.commit()
+            finally:
+                conn.close()
+
+    def test_owners_steady_carrier(self):
+        """172.8364 MHz, a steady carrier heard by three dongles (8 / 16 / 10 dB): the report, the card, the reply,
+        the saved files, and no radio time beyond the listen."""
+        self._forget(172.7, 172.9)
+        with _FakeAir(iq="172.8364:cw:6", ant=THREE_ANTENNAS, arglog=True) as air:
+            t0 = time.time()
+            res = A.investigate_single_frequency(frequency_mhz=172.8364, listen_seconds=10)
+            wall = time.time() - t0
+            tools = air.tools()
+        self.assertEqual(res["listened_seconds"], 13)                    # the 3 s look and the 10 s asked for
+        self.assertLess(wall, 15.0, wall)                                # (10 s of decoders in real time, the look computed)
+        # radio programs: three first looks, one audio decode, and two later looks by each of the two watchers
+        # (10 s, not less: a watcher's last look may begin up to 5.3 s into the listen, so a slow start costs none)
+        self.assertEqual(sorted(a[0] for a in tools if a[0] in ("rtl_sdr", "rtl_fm", "rtl_433", "rtl_power")),
+                         ["rtl_fm"] + ["rtl_sdr"] * 7)
+        rep = res["signal_report"]
+        self.assertEqual((rep["category"], rep["tag"], rep["confidence"]), ("steady_unknown", "NOT IDENTIFIED", "unknown"))
+        self.assertEqual(rep["headline"], "Steady carrier on all 3 dongles. What sends it is not known.")
+        self.assertEqual(rep["mod"]["kind"], "none")
+        self.assertEqual(rep["spur"]["own_clock"]["result"], "no")
+        self.assertEqual((rep["spur"]["same_signal"], rep["spur"]["same_rough"]), ("yes", False))
+        self.assertEqual((rep["profile"]["pattern"], rep["profile"]["scope"]), ("steady", "watch"))
+        self.assertEqual((rep["next"]["action"], rep["next"]["seconds"]), ("decode", 120))
+        self.assertAlmostEqual(rep["carrier_mhz"], 172.8364, places=4)
+        rows = res["dongle_comparison"]
+        self.assertEqual([(r["serial"], r["role"]) for r in rows],
+                         [("00001001", "watch"), ("00003003", "decoder"), ("00004004", "watch")])
+        self.assertEqual([(r.get("looks"), r.get("looks_heard")) for r in rows], [(2, 2), (None, None), (2, 2)])
+        for r in rows:
+            self.assertAlmostEqual(r["line_mhz"], 172.8364, places=4)
+        self.assertEqual(res["antenna_note"], "Heard on all 3 dongles. They measured the same frequency: one signal "
+                         "reaches all of them. Whether through the antennas or the wiring is not known from this.")
+        # nothing changed for the readers of the old keys
+        self.assertEqual(res["evidence"], "signal_present")
+        self.assertTrue(res["verdict_core"].startswith("Not identified: no decoder recognised it. Measured: Steady "
+                                                       "unmodulated carrier"), res["verdict_core"])
+        self.assertNotIn("decoders_tuned_mhz", res)
+        # the card: every old key as it was, the report's keys beside them, plain JSON types
+        card = A._investigation_card(res)
+        json.dumps(card, allow_nan=False)
+        json.dumps(res, allow_nan=False)
+        self.assertEqual(card["dongles"], ["Dongle 1: heard it, 8 dB above noise",
+                                           "Dongle 2: heard it, 16 dB above noise (strongest)",
+                                           "Dongle 3: heard it, 10 dB above noise"])
+        self.assertEqual((card["report_v"], card["tag"], card["tag_kind"]), (1, "NOT IDENTIFIED", "signal_present"))
+        self.assertEqual([(b["dongle"], b["serial"], b["state"], b["text"], b["best"]) for b in card["bars"]],
+                         [("Dongle 1", "00001001", "heard", "8 dB", False),
+                          ("Dongle 2", "00003003", "heard", "16 dB", True),
+                          ("Dongle 3", "00004004", "heard", "10 dB", False)])
+        self.assertEqual(card["bars_note"], "Above each dongle's own noise. Not a distance.")
+        self.assertEqual((card["step"]["action"], card["step"]["label"], card["step"]["mhz"]),
+                         ("decode", "Watch it for 2 min", 172.8364))
+        self.assertEqual([d["title"] for d in card["details"]],
+                         ["WHAT IT DID", "MODULATION", "SPUR CHECK", "HISTORY", "COULD NOT TELL", "DECODERS"])
+        self.assertEqual(card["carrier"]["text"], "172.836 MHz")
+        self.assertLess(len(json.dumps(card)), 6000)
+        page = self._fixtures()["cards"]["1a"]                           # the same check as the page's example draws it
+        self.assertEqual(sorted(card), sorted(page))
+        for part in ("step", "carrier"):
+            self.assertEqual(sorted(card[part]), sorted(page[part]), part)
+        for part in ("bars", "details"):
+            self.assertEqual(sorted(card[part][0]), sorted(page[part][0]), part)
+        self.assertEqual([d["title"] for d in card["details"]], [d["title"] for d in page["details"]])
+        self.assertEqual(sorted(card["details"][0]["strip"]), sorted(page["details"][0]["strip"]))
+        for line in [card["headline"], card["sure"]] + [x for d in card["details"] for x in d["lines"]]:
+            self._plain(line)
+        # the chat's reply: the report's lines among the old ones, one next step
+        text = A._investigation_text(res)
+        self._plain(text)
+        lines = text.split("\n")
+        self.assertTrue(lines[0].startswith("172.836 MHz, listened 13 s on Dongle 1, Dongle 2 and Dongle 3 with"), lines[0])
+        self.assertEqual(lines[1], "In short: Steady carrier on all 3 dongles. What sends it is not known. Source not "
+                         "known: an idle transmitter and an equipment clock look the same in a short look.")
+        self.assertTrue(lines[2].startswith("Not identified: no decoder recognised it."), lines[2])
+        self.assertRegex(text, r"What it did: On for the whole 3 s look on all 3 dongles\. Dongle 1 and Dongle 3 then "
+                               r"looked 2 more times over \d+ s: on every time\.")
+        self.assertIn("Checks: Not the dongles' own clock: 36 kHz from 6 x 28.8 MHz.", text)
+        self.assertIn("History: ", text)
+        self.assertIn("Dongle 2: heard it, 16 dB above noise (strongest).", text)
+        self.assertEqual(text.count("one signal reaches all of them"), 1)      # (the Checks line says it once)
+        self.assertEqual(lines[-2:], ["Saved to the Signals list.",
+                                      'Next: To watch it for longer, say "investigate 172.8364 for 120 seconds".'])
+        self.assertNotIn("To identify it, say", text)
+        # what is stored: no profile in a look, no long list, nothing that looks like data
+        stored = A.LAST_REPORT.read_text()
+        self.assertNotIn("look_profile", stored)
+        self.assertNotIn("look_profile", json.dumps(res))
+        self.assertFalse(re.search(r"0x[0-9A-Fa-f]{12,}", stored))
+        self.assertLess(len(stored), 12000, len(stored))
+
+        def longest(o):
+            if isinstance(o, list):
+                return max([len(o)] + [longest(x) for x in o])
+            return max([0] + [longest(x) for x in o.values()]) if isinstance(o, dict) else 0
+        self.assertLessEqual(longest(json.loads(stored)), 60)
+        saved = self._row_ids(172.83, 172.84)
+        self.assertEqual(len(saved), 1)
+        self.assertTrue(saved[0][1].startswith("• ARIS verdict (heuristic): Not identified"), saved[0][1])
+        self.assertEqual(saved[0][1].splitlines()[-1], "• Carrier measured: 172.8364 MHz on Dongle 2")
+        # the AI's view: the report's sentences, not its number blocks, inside the limit
+        view = A._for_llm(json.dumps(res))
+        self.assertLess(len(view), A.TOOL_OUTPUT_CLIP)
+        seen = json.loads(view)
+        self.assertEqual(seen["signal_report"]["headline"], rep["headline"])
+        self.assertEqual(sorted(seen["signal_report"]["next"]), ["label", "say"])
+        self.assertIn('say "investigate 172.8364 for 120 seconds"', seen["signal_report"]["next"]["say"])
+        self.assertLessEqual(len(seen["signal_report"]["behaviour"]), 3)       # two lines and "... N more omitted"
+        for once in ("antenna_note", "verdict_core", '"waveform"'):            # the report says these already
+            self.assertNotIn(once, view)
+        for gone in ("freq_history", "spur", "profile", "could_not_tell", "line_mhz", "looks_heard", '"serial"'):
+            self.assertNotIn(gone, view)
+        self.assertIn("signal report", A.SYSTEM_PROMPT)
+        # a second check finds the first one on record, and does not count itself
+        with _FakeAir(iq="172.8364:cw:6", ant=THREE_ANTENNAS):
+            again = A.investigate_single_frequency(frequency_mhz=172.8364, listen_seconds=3)
+        hist = again["signal_report"]["freq_history"]
+        self.assertEqual((hist["status"], hist["saved_checks"], hist["days"]), ("seen", 1, 1))
+        self.assertEqual(hist["recent"]["heard"], hist["recent"]["checks"])
+        self.assertGreaterEqual(hist["recent"]["checks"], 1)
+        self.assertEqual(again["signal_report"]["history_tag"], "SEEN BEFORE")
+        self.assertEqual(again["listened_seconds"], 6)
+        self.assertEqual(again["signal_report"]["profile"]["scope"], "look")     # too short a listen for a later look
+        self.assertIn("Only the 3 s look was watched: the other 3 s went to the decoders.",
+                      again["signal_report"]["behaviour"])
+
+    def test_history_of_a_frequency(self):
+        """Saved checks over three weeks and a baseline that had the carrier: a fixed source, counted by days, and
+        the check itself is not on its own record."""
+        import sqlite3
+        f, now = 171.25, time.time()
+        self._forget(171.0, 171.6)
+        stamp = lambda days: time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now - days * 86400.0))
+        head = ("• ARIS verdict (heuristic): Not identified: no decoder recognised it. Measured: Steady unmodulated "
+                "carrier (an idle transmitter carrier or a clock signal from equipment)")
+        days = (21, 19, 17, 15, 13, 11, 9, 7, 5, 3, 2, 2)
+        rows = [(stamp(d), f, head + ("\n• Carrier measured: 171.25002 MHz on Dongle 2" if d < 10 else "")) for d in days]
+        rows += [(stamp(4), 171.2625, head), (stamp(6), 171.2625, head),          # the next channel: not this carrier
+                 (stamp(8), 171.4, head)]                                        # far off: not gathered at all
+        A.init_db()
+        with A._DB_LOCK:
+            conn = sqlite3.connect(A.DB_PATH)
+            try:
+                conn.executemany("INSERT INTO peaks (timestamp, frequency_mhz, urh_analysis) VALUES (?, ?, ?)", rows)
+                conn.commit()
+            finally:
+                conn.close()
+        made = []
+        try:
+            with _FakeAir(iq="171.25:cw:6", peaks="171.25:32:8", ant=THREE_ANTENNAS):
+                base = call("record_baseline", start_mhz=170.0, stop_mhz=172.0, duration_s=2)
+                self.assertEqual(base["status"], "ok", base)
+                made = sorted(A.BASELINE_DIR.glob("170-172MHz_*.json"))
+                self.assertEqual(len(made), 3)
+                for p in made:                                # recorded ten days ago
+                    d = json.loads(p.read_text())
+                    d.update(created_epoch=now - 10 * 86400.0, created=stamp(10))
+                    A._atomic_write_json(p, d)
+                serials = ["00001001", "00003003", "00004004"]
+                h = A._freq_history(f, "audio", serials)
+                self.assertEqual(len(h["saved"]), 14)
+                self.assertEqual(sum(1 for r in h["saved"] if r["carrier_mhz"] == 171.25002), 6)
+                self.assertTrue(all(r["ts"] and not r["confirmed"] and not r["doubtful"] for r in h["saved"]))
+                self.assertLessEqual(h["list_from"], now - 21 * 86400.0 + 5)
+                self.assertTrue(h["baseline_covered"])
+                self.assertEqual([b["dongle"] for b in h["baselines"]], ["Dongle 1", "Dongle 2", "Dongle 3"])
+                self.assertEqual(h["baselines"][1]["state"], "present")       # the dongle that hears it best
+                self.assertTrue(all(abs(b["date"] - (now - 10 * 86400.0)) < 5 for b in h["baselines"]))
+                self.assertEqual((h["fm_name"], h["devices_here"]), (None, None))
+                self.assertEqual(A._freq_history(96.9, "wide", serials)["baselines"], [])     # (not for FM stations)
+                res = A.investigate_single_frequency(frequency_mhz=f, listen_seconds=3)
+        finally:
+            for p in made:
+                p.unlink()
+        rep = res["signal_report"]
+        self.assertEqual((rep["category"], rep["history_tag"], rep["confidence"]), ("steady_fixed", "REGULAR HERE", "medium"))
+        self.assertEqual(rep["headline"], "Steady carrier on all 3 dongles: a fixed source, here for weeks.")
+        hist = rep["freq_history"]
+        self.assertEqual((hist["status"], hist["saved_checks"], hist["days"], hist["next_to"]), ("regular", 12, 11, 2))
+        self.assertTrue(hist["steady_each_time"])
+        # ("at least since" when rows were ever removed from the list, as other tests do)
+        self.assertRegex(rep["history"], r"^Saved on 11 days (at least )?since \d+ \w{3} \(12 checks\)\.$")
+        self.assertIn("baseline", rep["sure"])
+        self.assertEqual(rep["next"]["action"], "none")
+        text = A._investigation_text(res)
+        self.assertIn("History: Saved on 11 days ", text)
+        self.assertIn("Next: It is not new. Nothing to do unless it changes.", text)
+        self.assertNotIn("first appeared", text)
+        # the check's own row is on record afterwards, with the carrier it measured
+        after = A._freq_history(f, "audio", [])
+        self.assertEqual(len(after["saved"]), 15)
+        self.assertAlmostEqual(after["saved"][0]["carrier_mhz"], 171.25, places=4)
+        self.assertIn(171.25, [round(c, 3) for c in after["carriers"]])
+        self._forget(171.0, 171.6)
+        gone = A._freq_history(f, "audio", [])
+        self.assertEqual(gone["saved"], [])
+        # "older entries were removed" is said only when the list's oldest rows are gone, not for any deleted row
+        conn = A.sqlite3.connect(A.DB_PATH)
+        try:
+            first_id = conn.execute("SELECT MIN(id) FROM peaks").fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(gone["list_trimmed"], bool(first_id and first_id > 1))
+        self.assertNotIn("list_unread", gone)
+
+    def test_keyed_and_drifting_carriers(self):
+        with _FakeAir(iq="151.25:cwkey:10,152.6:cwdrift:10", ant=THREE_ANTENNAS):
+            keyed = A.investigate_single_frequency(frequency_mhz=151.25, listen_seconds=3)
+            drift = A.investigate_single_frequency(frequency_mhz=152.6, listen_seconds=3)
+        rep = keyed["signal_report"]
+        self.assertEqual((rep["category"], rep["profile"]["pattern"]), ("keyed", "keyed"))
+        self.assertTrue(40 <= rep["profile"]["on_percent"] <= 60, rep["profile"])
+        self.assertRegex(rep["headline"], r"^Carrier that switches on and off on all 3 dongles: on \d\d % of the 3 s look\.$")
+        self.assertEqual((rep["next"]["action"], rep["next"]["label"]), ("capture", "Capture until decoded"))
+        self.assertTrue(any(x != 1 for x in rep["profile"]["strip"]["slots"]), rep["profile"]["strip"])
+        self.assertIn('Next: To catch the next transmission, say "capture 151.25"', A._investigation_text(keyed))
+        rep = drift["signal_report"]
+        self.assertEqual((rep["category"], rep["confidence"]), ("free_running", "medium"))
+        self.assertEqual((rep["profile"]["drift"]["source"], rep["profile"]["drift"]["dongles"]), ("signal", 3))
+        self.assertTrue(600 <= rep["profile"]["drift"]["hz"] <= 1000, rep["profile"]["drift"])     # 300 Hz a second
+        self.assertIn("the same on all 3 dongles, so the movement is the signal's own", " ".join(rep["behaviour"]))
+        for res in (keyed, drift):
+            self.assertEqual(res["listened_seconds"], 6)
+            self._plain(A._investigation_text(res))
+            json.dumps(A._investigation_card(res), allow_nan=False)
+
+    def test_own_clock_line(self):
+        """921.6 MHz is 32 x 28.8 MHz: every RTL-SDR dongle shows a line there that it makes itself."""
+        res = A.investigate_single_frequency(frequency_mhz=921.6, listen_seconds=3)
+        rep = res["signal_report"]
+        self.assertEqual((rep["category"], rep["tag"]), ("own_clock", "OWN CLOCK"))
+        self.assertEqual(rep["spur"]["own_clock"]["multiple"], 32)
+        # the simulated dongles share one frequency correction, so their own line and a transmitter exactly on
+        # 921.6 MHz read the same on each of them: "most likely", never High, never "not a transmitter"
+        self.assertEqual(rep["confidence"], "medium")
+        self.assertTrue(rep["headline"].startswith("Most likely the receivers' own clock: 32 x 28.8 MHz."))
+        self.assertIn("A transmitter exactly on 921.600 MHz would read the same", rep["sure"])
+        self.assertFalse(rep["spur"]["own_clock"]["apart"])
+        self.assertEqual((rep["next"]["action"], rep["next"]["seconds"]), ("decode", 10))
+        self.assertNotIn("same frequency", res.get("antenna_note") or "")    # each dongle makes it: no "one signal"
+        text = A._investigation_text(res)
+        self.assertIn("Checks: On the dongles' own clock line", text)
+        self.assertNotIn("sits on a multiple", text)                         # (the older sentence: said once)
+        self.assertEqual(A._investigation_card(res)["tag_kind"], "own")
+        self._plain(text)
+        # one dongle: the older note is still in the result for its readers, the reply says it once
+        res = A.investigate_single_frequency(frequency_mhz=921.6, listen_seconds=3, dongle="3")
+        self.assertIn("possible_clock_harmonic", res)
+        text = A._investigation_text(res)
+        self.assertIn("Most likely the receiver's own clock: 32 x 28.8 MHz.", text)
+        self.assertNotIn("sits on a multiple", text)
+        self.assertNotIn("Dongle 1", text)
+        self.assertNotIn("Dongle 2", text)
+
+    def test_voice_channel_and_the_decoders_follow_the_carrier(self):
+        """A voice channel 20 kHz above the frequency picked: the audio decoders listen where the carrier is."""
+        with _FakeAir(iq="155.52:nfm:10:123.0", ant=THREE_ANTENNAS, arglog=True) as air:
+            res = A.investigate_single_frequency(frequency_mhz=155.5, listen_seconds=3)
+            fm = [a for a in air.tools() if a[0] == "rtl_fm"]
+        self.assertEqual(len(fm), 1)
+        self.assertEqual(fm[0][fm[0].index("-f") + 1], "155520000")
+        self.assertEqual(res["decoders_tuned_mhz"], 155.52)
+        self.assertEqual(res["frequency_mhz"], 155.5)                        # the frequency asked stays the result's
+        self.assertIn("CTCSS tone 123.0 Hz", res["final_signal_verdict"])
+        rep = res["signal_report"]
+        self.assertEqual((rep["category"], rep["tag"], rep["mod"]["kind"]), ("voice_channel", "HEARD", "tone"))
+        self.assertEqual(rep["headline"], "Two-way radio voice channel: FM with a 123.0 Hz access tone.")
+        self.assertEqual(rep["carrier_note"], "Found at 155.520 MHz, 20.0 kHz above the frequency picked. The decoders "
+                         "listened there.")
+        self.assertEqual(rep["next"]["action"], "none")
+        text = A._investigation_text(res)
+        self.assertIn("The decoders listened there.", text)
+        self.assertIn("Next: A voice channel. ARIS never records or decodes voice.", text)
+        self._plain(text)
+        self.assertEqual(self._row_ids(155.49, 155.51)[-1][1].splitlines()[-1],
+                         "• Carrier measured: 155.52 MHz on Dongle 2")
+        self._forget(155.4, 155.6)
+
+    def test_a_watcher_finds_what_the_first_look_missed(self):
+        """Nothing on the air during the first look, a carrier during the listen: the dongle that watched heard it,
+        so the check does not say 'nothing transmitted'."""
+        real = A._stage1_iq_analysis
+        # the watchers' looks see the carrier, the first looks an empty channel far from it
+        A._stage1_iq_analysis = lambda freq, ser, gain, bw, secs, profile=False: real(
+            172.8364 if profile == "light" else freq, ser, gain, bw, secs, profile=profile)
+        try:
+            with _FakeAir(iq="172.8364:cw:6", ant=THREE_ANTENNAS):
+                res = A.investigate_single_frequency(frequency_mhz=173.5, listen_seconds=10)
+        finally:
+            A._stage1_iq_analysis = real
+        self.assertEqual(res["evidence"], "signal_present")
+        self.assertEqual(res["listened_seconds"], 13)
+        rows = {r["dongle"]: r for r in res["dongle_comparison"]}
+        watch = [n for n, r in rows.items() if r["role"] == "watch"]
+        self.assertEqual(len(watch), 2)
+        self.assertTrue(all(rows[n]["heard"] and rows[n]["looks_heard"] == 2 for n in watch), rows)
+        self.assertFalse([r for r in rows.values() if r["role"] == "decoder"][0]["heard"])
+        self.assertIn(res["strongest_dongle"], watch)
+        self.assertIn("on in 2 of 3 captures over 13 s", res["final_signal_verdict"])
+        rep = res["signal_report"]
+        self.assertIn("found it in a later look, not in the first 3 s look.", rep["behaviour"][0])
+        self.assertEqual(rep["profile"]["strip"]["slots"][0], 0)
+        self.assertNotEqual(rep["category"], "nothing")
+        self._plain(A._investigation_text(res))
+        self._forget(173.4, 173.6)
+
+    def test_reset_ends_a_watch_within_one_look(self):
+        """Reset Scanner during a timed airband watch: the look loop asks for the stop itself (stage 1 turns a
+        stopped capture into a failed look, so it used to go on until the time was up)."""
+        peak = {"peak_id": 1, "frequency_mhz": 119.5, "center_mhz": 119.5, "occupied_bw_khz": 25.0}
+        with A.job_scope() as stop:
+            timer = threading.Timer(1.0, stop.set)
+            timer.start()
+            t0 = time.time()
+            try:
+                with self.assertRaises(A.RFError) as err:
+                    A._investigate(peak, ["00001001"], listen_s=40)
+            finally:
+                timer.cancel()
+        self.assertLess(time.time() - t0, 8.0)
+        self.assertIn("Stopped by Reset Scanner", str(err.exception))
+
+    def test_stop_during_a_decode_with_watchers(self):
+        """Reset Scanner (or the page's Stop) while the decoders listen and two dongles watch: the Decode ends as
+        stopped within a look, every dongle is free at once, and no result claims the listening time asked for."""
+        self._forget(172.7, 172.9)
+        with _FakeAir(iq="172.8364:cw:6", ant=THREE_ANTENNAS):
+            with A.job_scope() as stop:
+                timer = threading.Timer(5.0, stop.set)        # (the 3 s looks are over, the watch is under way)
+                timer.start()
+                t0 = time.time()
+                try:
+                    with self.assertRaises(A.RFError) as err:
+                        A.investigate_single_frequency(frequency_mhz=172.8364, listen_seconds=40)
+                finally:
+                    timer.cancel()
+            took = time.time() - t0
+            self.assertIn("Stopped by Reset Scanner", str(err.exception))
+            self.assertLess(took, 12.0, took)
+            for ser in ("00001001", "00003003", "00004004"):
+                with A._use_dongle(ser, timeout=2, holder="test"):
+                    pass
+        self.assertEqual(self._row_ids(172.83, 172.84), [])    # nothing saved for a check that was stopped
+
+    def test_the_watch_ends_with_the_decoders(self):
+        """A decoder stage that fails at once must not leave the watchers opening and closing their dongles for
+        the whole time asked: they finish the look in progress and stop."""
+        real = A._stage3_demod_audio
+
+        def broken(*a, **k):
+            raise A.RFError("rtl_fm could not open the dongle")
+        A._stage3_demod_audio = broken
+        try:
+            with _FakeAir(iq="172.8364:cw:6", ant=THREE_ANTENNAS, arglog=True) as air:
+                t0 = time.time()
+                res = A.investigate_single_frequency(frequency_mhz=172.8364, listen_seconds=30)
+                took = time.time() - t0
+                looks = [a for a in air.tools() if a[0] == "rtl_sdr"]
+        finally:
+            A._stage3_demod_audio = real
+        self.assertLess(took, 12.0, took)                     # (it ran 27 s before, with 19 captures)
+        self.assertLessEqual(len(looks), 5, len(looks))        # three first looks, at most one by each watcher
+        self.assertEqual(res["evidence"], "signal_present")
+        self._plain(A._investigation_text(res))
+        self._forget(172.7, 172.9)
+
+    def test_only_a_decode_pays_for_the_report(self):
+        """Captures, band scans and patrol use the same look and the same investigation: without the report they
+        get exactly what they got before."""
+        gain = A._gain_for("00004004", 921.6, 921.6, A._load_config())
+        with A._use_dongle("00004004", timeout=30, holder="test"):
+            plain = A._stage1_iq_analysis(921.6, "00004004", gain, 25.0, 1.0)
+        with A._use_dongle("00004004", timeout=30, holder="test"):
+            full = A._stage1_iq_analysis(921.6, "00004004", gain, 25.0, 1.0, profile="full")
+        with A._use_dongle("00004004", timeout=30, holder="test"):
+            light = A._stage1_iq_analysis(921.6, "00004004", gain, 25.0, 1.0, profile="light")
+        self.assertNotIn("look_profile", plain)
+        self.assertEqual(sorted(k for k in full if k != "look_profile"), sorted(plain))     # the look itself: the same
+        self.assertEqual(full["physical_waveform_classification"], plain["physical_waveform_classification"])
+        prof = full["look_profile"]
+        json.dumps(prof, allow_nan=False)
+        self.assertEqual((prof["key"]["state"], prof["mod"]["kind"], prof["overloaded"]), ("on_whole", "none", False))
+        self.assertAlmostEqual(prof["line_mhz"], 921.6, places=4)
+        self.assertEqual(prof["clip_frac"], 0.0)
+        self.assertNotIn("mod", light["look_profile"])
+        self.assertNotIn("width", light["look_profile"])
+        self.assertTrue(light["look_profile"]["line"]["ok"])
+        peak = {"peak_id": 1, "frequency_mhz": 921.6, "center_mhz": 921.6, "occupied_bw_khz": 25.0,
+                "probable_allocation": "915 MHz ISM"}
+        res = A._investigate(peak, ["00003003", "00004004"], listen_s=3)             # as a band scan or patrol calls it
+        self.assertNotIn("signal_report", res)
+        self.assertNotIn("decoders_tuned_mhz", res)
+        self.assertEqual(sorted(res["dongle_comparison"][0]),
+                         sorted(["dongle", "heard", "snr_db", "gain_db", "waveform", "carrier_mhz", "pattern",
+                                 "rtl_433_packets", "rtl_433_bursts"]))
+        self.assertIn("They measured the same frequency: one signal reaches both of them.", res["antenna_note"])
+        card = A._investigation_card(res)
+        self.assertNotIn("report_v", card)
+        self.assertEqual(sorted(card), sorted(self._fixtures()["old_card"]))         # the card the page draws as before
+        self.assertEqual((card["headline"], card["step"], card["details"]), (None, None, []))
+        self.assertEqual([b["state"] for b in card["bars"]], ["heard", "heard"])
+        self.assertIn("To identify it, say", A._investigation_text(res))            # the older advice, as before
+
+    def test_report_lines_in_built_results(self):
+        """The card and the reply from results put together by hand (old files, captures, other callers): they
+        build from whatever is there."""
+        from arislib import sigreport
+        # no report: the old card with bars beside it
+        card = A._investigation_card({"frequency_mhz": 1090.0, "strongest_dongle": "Dongle 1", "evidence": "confirmed_decode",
+                                      "dongle_comparison": [{"dongle": "Dongle 1", "heard": True, "adsb_verified": 9,
+                                                             "aircraft": 2, "adsb_messages": 14},
+                                                            {"dongle": "Dongle 2", "error": "busy"},
+                                                            {"dongle": "Dongle 3", "heard": False}]})
+        self.assertNotIn("report_v", card)
+        self.assertEqual([(b["state"], b["text"]) for b in card["bars"]],
+                         [("count", "2 aircraft, 9 messages"), ("not_used", "not used"), ("not_heard", "not heard")])
+        self.assertEqual((card["bars_note"], card["tag"], card["details"]), ("", None, []))
+        self.assertEqual(A._investigation_card({})["bars"], [])
+        # a report in the result: its lines in the reply, its step in place of the older advice
+        facts = sigreport.example_facts("1a")
+        res = {"frequency_mhz": 172.8364, "evidence": "signal_present", "listened_seconds": 33, "band_type": "audio",
+               "listened_with": ["Dongle 1", "Dongle 2", "Dongle 3"], "strongest_dongle": "Dongle 2",
+               "verdict_core": facts["verdict"], "signal_report": sigreport.build(facts),
+               "dongle_comparison": [{"dongle": d["dongle"], "serial": d["serial"], "heard": True, "snr_db": d["snr_db"]}
+                                     for d in facts["dongles"]],
+               "possible_clock_harmonic": {"meaning": "this steady carrier sits on a multiple of the dongle's own "
+                                           "28.8 MHz clock, so it may come from the receiver itself"},
+               "antenna_note": A._antenna_note(["a", "b"], ["a", "b"], {"a": {"line_mhz": 172.8364},
+                                                                         "b": {"line_mhz": 172.8365}})}
+        text = A._investigation_text(res)
+        self.assertIn("In short: Steady carrier on all 3 dongles. What sends it is not known.", text)
+        self.assertIn("Dongle 1 and Dongle 3 then looked 7 more times over 28 s: on every time.", text)
+        self.assertIn('Next: To watch it for longer, say "investigate 172.8364 for 120 seconds".', text)
+        self.assertNotIn("To identify it, say", text)
+        self.assertNotIn("sits on a multiple", text)                  # the report tested the clock: it says it
+        self.assertEqual(text.count("same frequency"), 1)
+        self._plain(text)
+        card = A._investigation_card(res)
+        self.assertEqual((card["report_v"], card["confidence"], card["step"]["seconds"]), (1, "unknown", 120))
+        self.assertEqual(card["details"][-1]["lines"][-1], "Not saved to the Signals list.")
+        res["signal_report"] = "broken"                               # not a report: the reply as it was before
+        self.assertIn("To identify it, say", A._investigation_text(res))
+        self.assertNotIn("report_v", A._investigation_card(res))
+        # the same-frequency sentence: with a clear line on every dongle within 0.5 kHz or 20 ppm, else the look's
+        # coarser carrier within 3 kHz
+        note = lambda table, **kw: A._antenna_note(list(table), list(table), table, **kw) or ""
+        self.assertIn("one signal reaches both of them", note({"a": {"line_mhz": 172.8364}, "b": {"line_mhz": 172.8368}}))
+        self.assertNotIn("same frequency", note({"a": {"line_mhz": 172.8364}, "b": {"line_mhz": 172.8404}}))   # 4 kHz
+        self.assertNotIn("same frequency", note({"a": {"line_mhz": 28.4, "carrier_mhz": 28.4},               # 1 kHz at
+                                                 "b": {"line_mhz": 28.401, "carrier_mhz": 28.401}}))        # 28 MHz
+        self.assertIn("one signal reaches all of them", note({"a": {"carrier_mhz": 28.4}, "b": {"carrier_mhz": 28.401},
+                                                              "c": {"line_mhz": 28.4005, "carrier_mhz": 28.4005}}))
+        self.assertNotIn("same frequency", note({"a": {"line_mhz": 172.8}, "b": {"line_mhz": 172.8}}, own_clock=True))
+        self.assertNotIn("real over-the-air", note({"a": {"carrier_mhz": 172.8364}, "b": {"carrier_mhz": 172.8364}}))
 
 
 class UpdateCheck(unittest.TestCase):

@@ -90,3 +90,31 @@ pkg = ("Detected OOK package\t@0.1s\n" + '{"model" : "Acurite-Tower", "id" : 42,
        + "Use a flex decoder with -X 'n=name,m=OOK_PWM,s=400,l=1200,r=10404,g=1204,t=320,y=0'\n")
 big = pkg * 600
 t("parse rtl_433 output (600 packages)", lambda: A._parse_rtl433(big))
+
+# v4.21: the Decode's report. A look's profile (per dongle and look: full for the first look, light for the watch
+# looks), the frequency history's lookups (5000 saved rows, 60 recent checks, 3 baselines), the report and the card.
+import sqlite3  # noqa: E402
+from arislib import siglook as SL, sigreport as SR  # noqa: E402
+nch = 149975                                                   # 3 s of the 50 kS/s channel
+ych = ((rng.standard_normal(nch) + 1j * rng.standard_normal(nch)) / np.sqrt(2.0)
+       + 6.3 * np.exp(2j * np.pi * 37.0 * np.arange(nch) / 50000.0)).astype(np.complex64)      # a carrier, 16 dB up
+t("look profile, full (3 s of channel IQ)", lambda: SL.profile(ych, 50000.0, 1.0, 12500.0, "full"))
+t("look profile, light (a watch look)", lambda: SL.profile(ych, 50000.0, 1.0, 12500.0, "light"))
+A.init_db()
+now = time.time()
+stamp = lambda ago: time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(now - ago))
+conn = sqlite3.connect(A.DB_PATH)
+conn.executemany("INSERT INTO peaks (timestamp, frequency_mhz, snr_db, urh_analysis) VALUES (?, ?, ?, ?)",
+                 [(stamp(i * 600.0), 902.0 + (i % 2600) * 0.01, 10.0,
+                   "• ARIS verdict (heuristic): Not identified: no decoder recognised it. Measured: Steady unmodulated "
+                   f"carrier\n• Carrier measured: {902.0 + (i % 2600) * 0.01:.5f} MHz on Dongle 2") for i in range(5000)])
+conn.commit()
+conn.close()
+A._atomic_write_json(A.RECENT_CHECKS, [{"time": stamp(i * 60.0), "epoch": now - i * 60.0, "frequency_mhz": 915.0,
+                                         "evidence": "signal_present", "measured_carrier_mhz": 915.00002}
+                                        for i in range(60)])
+sers = list(A.DONGLE_NAMES)
+t("frequency history (5000 rows, 3 baselines)", lambda: A._freq_history(915.0, "other", sers))
+facts = SR.example_facts("2")
+t("signal report and card from the facts x100",
+  lambda: [SR.card_fields(SR.build(facts), facts["dongles"], "Dongle 2") for _ in range(100)])

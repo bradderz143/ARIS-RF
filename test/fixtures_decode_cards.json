@@ -1,0 +1,1843 @@
+{
+ "about": "Decode cards for the page (arisweb/static/js/spectrum.js, decResult) and for the engine's tests: the eleven example cases of the Decode card design, each a whole card as /api/decode/<job> gives it in job.card (the keys the card has had so far plus the signal report's keys). 'extra' holds three more for what the examples do not reach (every step action, a dongle not used, a level at the noise, a failed decoder). 'old_card' has no report_v: the page draws it as before the signal report. Every new key may be missing or null in a real card. The 'cards' section is written by test/make_decode_fixtures.py from the rules in arislib/sigreport.py (old keys by hand, new keys from the rules: never edit those here); 'extra' and 'old_card' are written by hand. Example words, not measurements: simulation only.",
+ "new_keys": [
+  "report_v",
+  "tag",
+  "tag_kind",
+  "history_tag",
+  "history_kind",
+  "carrier",
+  "headline",
+  "sure",
+  "confidence",
+  "history_line",
+  "bars",
+  "bars_note",
+  "step",
+  "details"
+ ],
+ "titles": {
+  "1a": "Steady carrier on all 3 dongles, land-mobile band, no earlier record (30 s)",
+  "1b": "The same press, the carrier found on the dongles' own clock line",
+  "2": "The same carrier, saved 12 times over 3 weeks, in a baseline",
+  "3": "A remote identified by rtl_433",
+  "4": "A doubtful decode",
+  "5": "Nothing heard",
+  "6": "FM station named by RDS",
+  "7": "Unknown bursty sensor at 433.92",
+  "8": "A keyed carrier whose frequency moves",
+  "9": "An airband transmission",
+  "10": "ADS-B",
+  "decoder_failed": "The decoder could not run; one dongle busy, one at the noise level",
+  "capture_running": "A capture is already listening on this frequency",
+  "locate": "An FM transmitter off the station channels, with the Map ready"
+ },
+ "cards": {
+  "1a": {
+   "freq_mhz": 172.8364,
+   "measured_mhz": 172.83641,
+   "verdict": "Not identified: no decoder recognised it. Measured: Steady unmodulated carrier (an idle transmitter carrier or a clock signal from equipment)",
+   "evidence": "signal_present",
+   "evidence_text": "Heard, but no decoder identified it",
+   "listened_seconds": 33,
+   "band": "VHF High-Band Land Mobile / Public Safety / Pager / SCADA",
+   "dongles": [
+    "Dongle 1: heard it, 8 dB above noise",
+    "Dongle 2: heard it, 16 dB above noise (strongest)",
+    "Dongle 3: heard it, 10 dB above noise"
+   ],
+   "antenna_note": "Heard on all 3 dongles. They measured the same frequency: one signal reaches all of them. Whether through the antennas or the wiring is not known from this.",
+   "devices": [],
+   "unknown_signals": [],
+   "saved": true,
+   "decoders": [
+    "multimon-ng",
+    "atest"
+   ],
+   "doubtful": [],
+   "station_name": null,
+   "station_channel": 172.8,
+   "report_v": 1,
+   "tag": "NOT IDENTIFIED",
+   "tag_kind": "signal_present",
+   "history_tag": "NO EARLIER RECORD",
+   "history_kind": "new",
+   "carrier": {
+    "mhz": 172.836412,
+    "text": "172.836 MHz",
+    "note": null
+   },
+   "headline": "Steady carrier on all 3 dongles. What sends it is not known.",
+   "sure": "Source not known: an idle transmitter and an equipment clock look the same in a short look.",
+   "confidence": "unknown",
+   "history_line": "No earlier record here (list from 5 Oct).",
+   "bars": [
+    {
+     "dongle": "Dongle 1",
+     "serial": "00001001",
+     "state": "heard",
+     "db": 8.0,
+     "pct": 20,
+     "best": false,
+     "text": "8 dB"
+    },
+    {
+     "dongle": "Dongle 2",
+     "serial": "00003003",
+     "state": "heard",
+     "db": 16.0,
+     "pct": 40,
+     "best": true,
+     "text": "16 dB"
+    },
+    {
+     "dongle": "Dongle 3",
+     "serial": "00004004",
+     "state": "heard",
+     "db": 10.0,
+     "pct": 25,
+     "best": false,
+     "text": "10 dB"
+    }
+   ],
+   "bars_note": "Above each dongle's own noise. Not a distance.",
+   "step": {
+    "action": "decode",
+    "label": "Watch it for 2 min",
+    "reason": "To see whether it ever switches off, drifts or carries anything.",
+    "mhz": 172.8364,
+    "seconds": 120,
+    "minutes": null,
+    "dongle": null
+   },
+   "details": [
+    {
+     "title": "WHAT IT DID",
+     "lines": [
+      "On for the whole 3 s look on all 3 dongles.",
+      "Dongle 1 and Dongle 3 then looked 7 more times over 28 s: on every time. The gaps between looks were not watched.",
+      "Held its frequency: moved less than 0.1 kHz in 27 s, on Dongle 1 and Dongle 3 alike. A crystal-controlled source: that fits a licensed transmitter and an equipment clock equally.",
+      "Very narrow: under 0.1 kHz wide. Level steady."
+     ],
+     "strip": {
+      "slots": [
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null,
+       null,
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null
+      ],
+      "slot_s": 1.0,
+      "label": "The 33 s of the check, start to end. Gaps were not watched."
+     }
+    },
+    {
+     "title": "MODULATION",
+     "lines": [
+      "No modulation during the 3 s look: a bare carrier. The pager, APRS and tone decoders read nothing in 30 s on Dongle 2."
+     ],
+     "strip": null
+    },
+    {
+     "title": "SPUR CHECK",
+     "lines": [
+      "Not the dongles' own clock: 36 kHz from 6 x 28.8 MHz.",
+      "No match with 13 common equipment clocks.",
+      "All 3 dongles read the same frequency within 0.2 kHz: one signal reaches all of them. Whether through the antennas or the wiring is not known from this."
+     ],
+     "strip": null
+    },
+    {
+     "title": "HISTORY",
+     "lines": [
+      "No saved check within 6 kHz. The saved list goes back to 5 Oct.",
+      "No baseline covers 172.84 MHz, so there is no normal day to compare with."
+     ],
+     "strip": null
+    },
+    {
+     "title": "COULD NOT TELL",
+     "lines": [
+      "Whether it reaches the dongles through the antennas or the wiring.",
+      "What it did between the looks and outside these 33 s."
+     ],
+     "strip": null
+    },
+    {
+     "title": "DECODERS",
+     "lines": [
+      "Not identified: no decoder recognised it.",
+      "Band plan: VHF High-Band Land Mobile / Public Safety / Pager / SCADA.",
+      "Heard on all 3 dongles. They measured the same frequency: one signal reaches all of them. Whether through the antennas or the wiring is not known from this.",
+      "Saved to the Signals list."
+     ],
+     "strip": null
+    }
+   ]
+  },
+  "1b": {
+   "freq_mhz": 172.8364,
+   "measured_mhz": 172.80001,
+   "verdict": "Not identified: no decoder recognised it. Measured: Steady unmodulated carrier (an idle transmitter carrier or a clock signal from equipment)",
+   "evidence": "signal_present",
+   "evidence_text": "Heard, but no decoder identified it",
+   "listened_seconds": 33,
+   "band": "VHF High-Band Land Mobile / Public Safety / Pager / SCADA",
+   "dongles": [
+    "Dongle 1: heard it, 8 dB above noise",
+    "Dongle 2: heard it, 16 dB above noise (strongest)",
+    "Dongle 3: heard it, 10 dB above noise"
+   ],
+   "antenna_note": "Heard on all 3 dongles.",
+   "devices": [],
+   "unknown_signals": [],
+   "saved": true,
+   "decoders": [
+    "multimon-ng",
+    "atest"
+   ],
+   "doubtful": [],
+   "station_name": null,
+   "station_channel": 172.8,
+   "report_v": 1,
+   "tag": "OWN CLOCK",
+   "tag_kind": "own",
+   "history_tag": "SEEN BEFORE",
+   "history_kind": "seen",
+   "carrier": {
+    "mhz": 172.800352,
+    "text": "172.800 MHz",
+    "note": "Found at 172.800 MHz, 36.0 kHz below the frequency picked. The decoders listened there."
+   },
+   "headline": "The receivers' own clock, not a transmitter: 6 x 28.8 MHz.",
+   "sure": "High confidence. Rests on: all 3 dongles within 0.3 kHz of their own 6 x 28.8 MHz line; no drift; no modulation. A transmitter exactly on 172.800 MHz would hide behind this line.",
+   "confidence": "high",
+   "history_line": "Saved on 4 days since 9 Nov (4 checks).",
+   "bars": [
+    {
+     "dongle": "Dongle 1",
+     "serial": "00001001",
+     "state": "heard",
+     "db": 8.0,
+     "pct": 20,
+     "best": false,
+     "text": "8 dB"
+    },
+    {
+     "dongle": "Dongle 2",
+     "serial": "00003003",
+     "state": "heard",
+     "db": 16.0,
+     "pct": 40,
+     "best": true,
+     "text": "16 dB"
+    },
+    {
+     "dongle": "Dongle 3",
+     "serial": "00004004",
+     "state": "heard",
+     "db": 10.0,
+     "pct": 25,
+     "best": false,
+     "text": "10 dB"
+    }
+   ],
+   "bars_note": "Each dongle makes this line itself, so all 3 hear it.",
+   "step": {
+    "action": "decode",
+    "label": "Decode again (10 s)",
+    "reason": "To be sure, unplug Dongle 2's antenna first. If the level stays, it is the receiver.",
+    "mhz": 172.8004,
+    "seconds": 10,
+    "minutes": null,
+    "dongle": null
+   },
+   "details": [
+    {
+     "title": "WHAT IT DID",
+     "lines": [
+      "On for the whole 3 s look on all 3 dongles.",
+      "Dongle 1 and Dongle 3 then looked 7 more times over 28 s: on every time. The gaps between looks were not watched.",
+      "Held its frequency: moved less than 0.1 kHz in 27 s, on Dongle 1 and Dongle 3 alike. A crystal-controlled source: that fits a licensed transmitter and an equipment clock equally.",
+      "Very narrow: under 0.1 kHz wide. Level steady."
+     ],
+     "strip": {
+      "slots": [
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null,
+       null,
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null
+      ],
+      "slot_s": 1.0,
+      "label": "The 33 s of the check, start to end. Gaps were not watched."
+     }
+    },
+    {
+     "title": "MODULATION",
+     "lines": [
+      "No modulation during the 3 s look: a bare carrier. The pager, APRS and tone decoders read nothing in 30 s on Dongle 2."
+     ],
+     "strip": null
+    },
+    {
+     "title": "SPUR CHECK",
+     "lines": [
+      "On the dongles' own clock line: all 3 dongles within 0.3 kHz of where their own 6 x 28.8 MHz line reads.",
+      "Each dongle makes this line itself, so hearing it on all of them is expected."
+     ],
+     "strip": null
+    },
+    {
+     "title": "HISTORY",
+     "lines": [
+      "4 saved checks within 6 kHz, the last on 13 Nov. Each time a steady carrier. The saved list goes back to 5 Oct.",
+      "No baseline covers 172.8 MHz, so there is no normal day to compare with."
+     ],
+     "strip": null
+    },
+    {
+     "title": "COULD NOT TELL",
+     "lines": [
+      "What it did between the looks and outside these 33 s."
+     ],
+     "strip": null
+    },
+    {
+     "title": "DECODERS",
+     "lines": [
+      "Not identified: no decoder recognised it.",
+      "Band plan: VHF High-Band Land Mobile / Public Safety / Pager / SCADA.",
+      "Heard on all 3 dongles.",
+      "Saved to the Signals list."
+     ],
+     "strip": null
+    }
+   ]
+  },
+  "2": {
+   "freq_mhz": 172.8364,
+   "measured_mhz": 172.83641,
+   "verdict": "Not identified: no decoder recognised it. Measured: Steady unmodulated carrier (an idle transmitter carrier or a clock signal from equipment)",
+   "evidence": "signal_present",
+   "evidence_text": "Heard, but no decoder identified it",
+   "listened_seconds": 33,
+   "band": "VHF High-Band Land Mobile / Public Safety / Pager / SCADA",
+   "dongles": [
+    "Dongle 1: heard it, 8 dB above noise",
+    "Dongle 2: heard it, 16 dB above noise (strongest)",
+    "Dongle 3: heard it, 10 dB above noise"
+   ],
+   "antenna_note": "Heard on all 3 dongles. They measured the same frequency: one signal reaches all of them. Whether through the antennas or the wiring is not known from this.",
+   "devices": [],
+   "unknown_signals": [],
+   "saved": true,
+   "decoders": [
+    "multimon-ng",
+    "atest"
+   ],
+   "doubtful": [],
+   "station_name": null,
+   "station_channel": 172.8,
+   "report_v": 1,
+   "tag": "NOT IDENTIFIED",
+   "tag_kind": "signal_present",
+   "history_tag": "REGULAR HERE",
+   "history_kind": "regular",
+   "carrier": {
+    "mhz": 172.836412,
+    "text": "172.836 MHz",
+    "note": null
+   },
+   "headline": "Steady carrier on all 3 dongles: a fixed source, here for weeks.",
+   "sure": "Medium confidence. Rests on: saved on 9 days since 24 Oct, a steady carrier each time; in Dongle 2's baseline of 3 Nov. What sends it is still not known.",
+   "confidence": "medium",
+   "history_line": "Saved on 9 days since 24 Oct (12 checks).",
+   "bars": [
+    {
+     "dongle": "Dongle 1",
+     "serial": "00001001",
+     "state": "heard",
+     "db": 8.0,
+     "pct": 20,
+     "best": false,
+     "text": "8 dB"
+    },
+    {
+     "dongle": "Dongle 2",
+     "serial": "00003003",
+     "state": "heard",
+     "db": 16.0,
+     "pct": 40,
+     "best": true,
+     "text": "16 dB"
+    },
+    {
+     "dongle": "Dongle 3",
+     "serial": "00004004",
+     "state": "heard",
+     "db": 10.0,
+     "pct": 25,
+     "best": false,
+     "text": "10 dB"
+    }
+   ],
+   "bars_note": "Above each dongle's own noise. Not a distance.",
+   "step": {
+    "action": "none",
+    "label": "",
+    "reason": "It is not new. Nothing to do unless it changes.",
+    "mhz": 172.8364,
+    "seconds": null,
+    "minutes": null,
+    "dongle": null
+   },
+   "details": [
+    {
+     "title": "WHAT IT DID",
+     "lines": [
+      "On for the whole 3 s look on all 3 dongles.",
+      "Dongle 1 and Dongle 3 then looked 7 more times over 28 s: on every time. The gaps between looks were not watched.",
+      "Held its frequency: moved less than 0.1 kHz in 27 s, on Dongle 1 and Dongle 3 alike. A crystal-controlled source: that fits a licensed transmitter and an equipment clock equally.",
+      "Very narrow: under 0.1 kHz wide. Level steady."
+     ],
+     "strip": {
+      "slots": [
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null,
+       null,
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null
+      ],
+      "slot_s": 1.0,
+      "label": "The 33 s of the check, start to end. Gaps were not watched."
+     }
+    },
+    {
+     "title": "MODULATION",
+     "lines": [
+      "No modulation during the 3 s look: a bare carrier. The pager, APRS and tone decoders read nothing in 30 s on Dongle 2."
+     ],
+     "strip": null
+    },
+    {
+     "title": "SPUR CHECK",
+     "lines": [
+      "Not the dongles' own clock: 36 kHz from 6 x 28.8 MHz.",
+      "No match with 13 common equipment clocks.",
+      "All 3 dongles read the same frequency within 0.2 kHz: one signal reaches all of them. Whether through the antennas or the wiring is not known from this."
+     ],
+     "strip": null
+    },
+    {
+     "title": "HISTORY",
+     "lines": [
+      "12 saved checks within 6 kHz, the last on 13 Nov. Each time a steady carrier. The saved list goes back to 5 Oct.",
+      "Dongle 2's baseline of 3 Nov already had a signal at or next to this frequency; Dongle 1's and Dongle 3's baselines of 3 Nov are not clear here.",
+      "Checked 2 times in the last 6 hours: heard every time."
+     ],
+     "strip": null
+    },
+    {
+     "title": "COULD NOT TELL",
+     "lines": [
+      "Whether it reaches the dongles through the antennas or the wiring.",
+      "What it did between the looks and outside these 33 s."
+     ],
+     "strip": null
+    },
+    {
+     "title": "DECODERS",
+     "lines": [
+      "Not identified: no decoder recognised it.",
+      "Band plan: VHF High-Band Land Mobile / Public Safety / Pager / SCADA.",
+      "Heard on all 3 dongles. They measured the same frequency: one signal reaches all of them. Whether through the antennas or the wiring is not known from this.",
+      "Saved to the Signals list."
+     ],
+     "strip": null
+    }
+   ]
+  },
+  "3": {
+   "freq_mhz": 433.92,
+   "measured_mhz": 433.9187,
+   "verdict": "Identified: Generic fixed-code remote, a remote control (6 packets; ID #3fa2c1)",
+   "evidence": "confirmed_decode",
+   "evidence_text": "Identified by a decoder",
+   "listened_seconds": 13,
+   "band": "433.92 MHz ISM Band (IoT Telemetry, Weather Sensors, TPMS, Keyfobs, LoRa)",
+   "dongles": [
+    "Dongle 1: heard it, 14 dB above noise, 6 packets decoded (strongest)",
+    "Dongle 2: did not hear it",
+    "Dongle 3: heard it, 9 dB above noise, 4 packets decoded"
+   ],
+   "antenna_note": "Heard on Dongle 1 and Dongle 3, not on Dongle 2. The dongles have different antennas, so this usually means the antennas on Dongle 1 and Dongle 3 suit this band better; it does not mean the signal is internal.",
+   "devices": [
+    "Generic fixed-code remote, a remote control (6 packets; ID #3fa2c1)"
+   ],
+   "unknown_signals": [],
+   "saved": true,
+   "decoders": [
+    "rtl_433"
+   ],
+   "doubtful": [],
+   "station_name": null,
+   "station_channel": 433.9,
+   "report_v": 1,
+   "tag": "IDENTIFIED",
+   "tag_kind": "confirmed_decode",
+   "history_tag": "NEW DEVICE",
+   "history_kind": "device",
+   "carrier": {
+    "mhz": 433.92,
+    "text": "433.920 MHz",
+    "note": null
+   },
+   "headline": "Generic fixed-code remote, ID #3fa2c1.",
+   "sure": "Confirmed by a decoder: 6 packets matched rtl_433's decoder for this device.",
+   "confidence": "confirmed",
+   "history_line": "This device was not in the Devices list before.",
+   "bars": [
+    {
+     "dongle": "Dongle 1",
+     "serial": "00001001",
+     "state": "heard",
+     "db": 14.0,
+     "pct": 35,
+     "best": true,
+     "text": "14 dB"
+    },
+    {
+     "dongle": "Dongle 2",
+     "serial": "00003003",
+     "state": "not_heard",
+     "db": null,
+     "pct": null,
+     "best": false,
+     "text": "not heard"
+    },
+    {
+     "dongle": "Dongle 3",
+     "serial": "00004004",
+     "state": "heard",
+     "db": 9.0,
+     "pct": 22,
+     "best": false,
+     "text": "9 dB"
+    }
+   ],
+   "bars_note": "Above each dongle's own noise. Not a distance.",
+   "step": {
+    "action": "devices",
+    "label": "See it in Devices",
+    "reason": "It is in the Devices list now.",
+    "mhz": 433.92,
+    "seconds": null,
+    "minutes": null,
+    "dongle": null
+   },
+   "details": [
+    {
+     "title": "WHAT IT DID",
+     "lines": [
+      "Short bursts: 5 in the 3 s look, each under 30 ms, about every 0.5 s.",
+      "rtl_433 then counted 6 bursts in 10 s."
+     ],
+     "strip": {
+      "slots": [
+       0.5,
+       0.5,
+       0.5,
+       0.5,
+       0.5,
+       0.5
+      ],
+      "slot_s": 0.5,
+      "label": "The 3 s look on Dongle 1, start to end."
+     }
+    },
+    {
+     "title": "SPUR CHECK",
+     "lines": [
+      "Dongle 1 and Dongle 3 found it within 0.2 kHz of each other. A rough comparison: there was no single clear line to read."
+     ],
+     "strip": null
+    },
+    {
+     "title": "HISTORY",
+     "lines": [
+      "4 saved checks within 60 kHz, the last on 12 Nov. The saved list goes back to 5 Oct.",
+      "No baseline covers 433.92 MHz, so there is no normal day to compare with.",
+      "Devices decoded here before: Nexus-TH weather station and 3 others."
+     ],
+     "strip": null
+    },
+    {
+     "title": "DECODERS",
+     "lines": [
+      "Identified: Generic fixed-code remote, a remote control (6 packets; ID #3fa2c1).",
+      "Band plan: 433.92 MHz ISM Band (IoT Telemetry, Weather Sensors, TPMS, Keyfobs, LoRa).",
+      "Heard on Dongle 1 and Dongle 3, not on Dongle 2. The dongles have different antennas, so this usually means the antennas on Dongle 1 and Dongle 3 suit this band better; it does not mean the signal is internal.",
+      "Saved to the Signals list."
+     ],
+     "strip": null
+    }
+   ]
+  },
+  "4": {
+   "freq_mhz": 28.79,
+   "measured_mhz": null,
+   "verdict": "Doubtful: rtl_433 decoded something, but it is probably noise and not that device",
+   "evidence": "signal_present",
+   "evidence_text": "Heard, but no decoder identified it",
+   "listened_seconds": 33,
+   "band": "Narrowband Utility / Telemetry Carrier",
+   "dongles": [
+    "Dongle 1: heard it, 4 dB above noise, 1 packet decoded (strongest)",
+    "Dongle 2: did not hear it",
+    "Dongle 3: did not hear it"
+   ],
+   "antenna_note": "Heard on Dongle 1, not on Dongle 2 and Dongle 3. The dongles have different antennas, so this usually means the antenna on Dongle 1 suits this band better; it does not mean the signal is internal.",
+   "devices": [],
+   "unknown_signals": [],
+   "saved": true,
+   "decoders": [
+    "rtl_433"
+   ],
+   "doubtful": [
+    "28.790 MHz is outside the bands these devices use",
+    "it is a single packet, only 4 dB above noise",
+    "it is a single packet with ID 0"
+   ],
+   "station_name": null,
+   "station_channel": 28.8,
+   "report_v": 1,
+   "tag": "CHECK FIRST",
+   "tag_kind": "doubtful",
+   "history_tag": null,
+   "history_kind": null,
+   "carrier": {
+    "mhz": 28.79,
+    "text": "28.790 MHz",
+    "note": null
+   },
+   "headline": "Probably noise, not a real device.",
+   "sure": "A decoder named \"ERT-SCM\", but 28.790 MHz is outside the bands these devices use; it is a single packet with ID 0; it is a single packet, only 4 dB above noise.",
+   "confidence": "check",
+   "history_line": null,
+   "bars": [
+    {
+     "dongle": "Dongle 1",
+     "serial": "00001001",
+     "state": "heard",
+     "db": 4.0,
+     "pct": 10,
+     "best": true,
+     "text": "4 dB"
+    },
+    {
+     "dongle": "Dongle 2",
+     "serial": "00003003",
+     "state": "not_heard",
+     "db": null,
+     "pct": null,
+     "best": false,
+     "text": "not heard"
+    },
+    {
+     "dongle": "Dongle 3",
+     "serial": "00004004",
+     "state": "not_heard",
+     "db": null,
+     "pct": null,
+     "best": false,
+     "text": "not heard"
+    }
+   ],
+   "bars_note": "Above each dongle's own noise. Not a distance.",
+   "step": {
+    "action": "decode",
+    "label": "Decode again for 1 min",
+    "reason": "One weak packet is not proof. A real device decodes again.",
+    "mhz": 28.79,
+    "seconds": 60,
+    "minutes": null,
+    "dongle": null
+   },
+   "details": [
+    {
+     "title": "WHAT IT DID",
+     "lines": [
+      "rtl_433 then counted 1 burst in 30 s."
+     ],
+     "strip": null
+    },
+    {
+     "title": "SPUR CHECK",
+     "lines": [
+      "Only Dongle 1 heard it, so its frequency could not be compared with another dongle's."
+     ],
+     "strip": null
+    },
+    {
+     "title": "HISTORY",
+     "lines": [
+      "No saved check within 6 kHz. The saved list goes back to 5 Oct.",
+      "No baseline covers 28.79 MHz, so there is no normal day to compare with."
+     ],
+     "strip": null
+    },
+    {
+     "title": "COULD NOT TELL",
+     "lines": [
+      "What it did outside the 3 s look."
+     ],
+     "strip": null
+    },
+    {
+     "title": "DECODERS",
+     "lines": [
+      "Doubtful: rtl_433 decoded something, but it is probably noise and not that device.",
+      "Band plan: Narrowband Utility / Telemetry Carrier.",
+      "Heard on Dongle 1, not on Dongle 2 and Dongle 3. The dongles have different antennas, so this usually means the antenna on Dongle 1 suits this band better; it does not mean the signal is internal.",
+      "Saved to the Signals list."
+     ],
+     "strip": null
+    }
+   ]
+  },
+  "5": {
+   "freq_mhz": 162.55,
+   "measured_mhz": null,
+   "verdict": "Nothing transmitted during this 13 s check on any dongle",
+   "evidence": "none",
+   "evidence_text": "Nothing transmitted during the check",
+   "listened_seconds": 13,
+   "band": "VHF High-Band Land Mobile / Public Safety / Pager / SCADA",
+   "dongles": [
+    "Dongle 1: did not hear it",
+    "Dongle 2: did not hear it",
+    "Dongle 3: did not hear it"
+   ],
+   "antenna_note": "No dongle heard it (Dongle 1, Dongle 2 and Dongle 3 all listened).",
+   "devices": [],
+   "unknown_signals": [],
+   "saved": false,
+   "decoders": [
+    "multimon-ng",
+    "atest"
+   ],
+   "doubtful": [],
+   "station_name": null,
+   "station_channel": 162.6,
+   "report_v": 1,
+   "tag": "NOTHING HEARD",
+   "tag_kind": "none",
+   "history_tag": null,
+   "history_kind": null,
+   "carrier": {
+    "mhz": 162.55,
+    "text": "162.550 MHz",
+    "note": null
+   },
+   "headline": "Nothing heard in 13 s on any of the 3 dongles.",
+   "sure": "This covers these 13 s only: a transmitter that was silent just now looks the same.",
+   "confidence": "unknown",
+   "history_line": null,
+   "bars": [],
+   "bars_note": "",
+   "step": {
+    "action": "capture",
+    "label": "Wait for a transmission",
+    "reason": "A capture listens in the background until something transmits.",
+    "mhz": 162.55,
+    "seconds": null,
+    "minutes": null,
+    "dongle": null
+   },
+   "details": [
+    {
+     "title": "HISTORY",
+     "lines": [
+      "No saved check within 6 kHz. The saved list goes back to 5 Oct.",
+      "No baseline covers 162.55 MHz, so there is no normal day to compare with."
+     ],
+     "strip": null
+    },
+    {
+     "title": "COULD NOT TELL",
+     "lines": [
+      "Whether anything transmits here at other times."
+     ],
+     "strip": null
+    },
+    {
+     "title": "DECODERS",
+     "lines": [
+      "Nothing transmitted during this 13 s check on any dongle.",
+      "Band plan: VHF High-Band Land Mobile / Public Safety / Pager / SCADA.",
+      "No dongle heard it (Dongle 1, Dongle 2 and Dongle 3 all listened).",
+      "Not saved to the Signals list."
+     ],
+     "strip": null
+    }
+   ]
+  },
+  "6": {
+   "freq_mhz": 96.9,
+   "measured_mhz": 96.9003,
+   "verdict": "Identified: FM broadcast station on 96.9 MHz, RDS station name \"HITS FM\". It sends its own name, so this is a public radio station",
+   "evidence": "confirmed_decode",
+   "evidence_text": "Identified by a decoder",
+   "listened_seconds": 10,
+   "band": "Commercial FM Broadcast (Wideband FM, ~200 kHz)",
+   "dongles": [
+    "Dongle 1: heard it, 28 dB above noise (strongest)",
+    "Dongle 2: heard it, 10 dB above noise",
+    "Dongle 3: did not hear it"
+   ],
+   "antenna_note": "Heard on Dongle 1 and Dongle 2, not on Dongle 3. The dongles have different antennas, so this usually means the antennas on Dongle 1 and Dongle 2 suit this band better; it does not mean the signal is internal.",
+   "devices": [],
+   "unknown_signals": [],
+   "saved": false,
+   "decoders": [],
+   "doubtful": [],
+   "station_name": "HITS FM",
+   "station_channel": 96.9,
+   "report_v": 1,
+   "tag": "IDENTIFIED",
+   "tag_kind": "confirmed_decode",
+   "history_tag": null,
+   "history_kind": null,
+   "carrier": {
+    "mhz": 96.9,
+    "text": "96.9 MHz",
+    "note": null
+   },
+   "headline": "FM radio station \"HITS FM\".",
+   "sure": "Confirmed by a decoder: its own RDS name, read with checksums.",
+   "confidence": "confirmed",
+   "history_line": null,
+   "bars": [
+    {
+     "dongle": "Dongle 1",
+     "serial": "00001001",
+     "state": "heard",
+     "db": 28.0,
+     "pct": 70,
+     "best": true,
+     "text": "28 dB"
+    },
+    {
+     "dongle": "Dongle 2",
+     "serial": "00003003",
+     "state": "heard",
+     "db": 10.0,
+     "pct": 25,
+     "best": false,
+     "text": "10 dB"
+    },
+    {
+     "dongle": "Dongle 3",
+     "serial": "00004004",
+     "state": "not_heard",
+     "db": null,
+     "pct": null,
+     "best": false,
+     "text": "not heard"
+    }
+   ],
+   "bars_note": "Above each dongle's own noise. Not a distance.",
+   "step": {
+    "action": "none",
+    "label": "",
+    "reason": "Nothing to do: identified.",
+    "mhz": 96.9,
+    "seconds": null,
+    "minutes": null,
+    "dongle": null
+   },
+   "details": [
+    {
+     "title": "WHAT IT DID",
+     "lines": [
+      "Looked 3 times over 10 s: heard every time."
+     ],
+     "strip": null
+    },
+    {
+     "title": "MODULATION",
+     "lines": [
+      "Wideband FM with a stereo pilot and RDS."
+     ],
+     "strip": null
+    },
+    {
+     "title": "HISTORY",
+     "lines": [
+      "Its name \"HITS FM\" was read here before, last on 12 Nov."
+     ],
+     "strip": null
+    },
+    {
+     "title": "DECODERS",
+     "lines": [
+      "Identified: FM broadcast station on 96.9 MHz, RDS station name \"HITS FM\". It sends its own name, so this is a public radio station.",
+      "Band plan: Commercial FM Broadcast (Wideband FM, ~200 kHz).",
+      "Heard on Dongle 1 and Dongle 2, not on Dongle 3. The dongles have different antennas, so this usually means the antennas on Dongle 1 and Dongle 2 suit this band better; it does not mean the signal is internal.",
+      "Not saved to the Signals list."
+     ],
+     "strip": null
+    }
+   ]
+  },
+  "7": {
+   "freq_mhz": 433.92,
+   "measured_mhz": 433.9211,
+   "verdict": "Not identified: rtl_433 demodulated its packets, but none of its decoders knows this device. Its signal: OOK pulse-width modulation, 300/900 us pulses, 28-bit packets sent 4 times",
+   "evidence": "signal_present",
+   "evidence_text": "Heard, but no decoder identified it",
+   "listened_seconds": 13,
+   "band": "433.92 MHz ISM Band (IoT Telemetry, Weather Sensors, TPMS, Keyfobs, LoRa)",
+   "dongles": [
+    "Dongle 1: heard it, 15 dB above noise (strongest)",
+    "Dongle 2: heard it, 6 dB above noise",
+    "Dongle 3: heard it, 11 dB above noise"
+   ],
+   "antenna_note": "Heard on all 3 dongles.",
+   "devices": [],
+   "unknown_signals": [
+    "OOK pulse-width modulation, 300/900 us pulses, 28-bit packets sent 4 times, SNR 15.0 dB (this pattern is used by remotes and simple sensors: a pattern match, not an identification)"
+   ],
+   "saved": true,
+   "decoders": [
+    "rtl_433"
+   ],
+   "doubtful": [],
+   "station_name": null,
+   "station_channel": 433.9,
+   "report_v": 1,
+   "tag": "NOT IDENTIFIED",
+   "tag_kind": "signal_present",
+   "history_tag": null,
+   "history_kind": null,
+   "carrier": {
+    "mhz": 433.92,
+    "text": "433.920 MHz",
+    "note": null
+   },
+   "headline": "Short bursts on all 3 dongles, not decoded.",
+   "sure": "Sensors and remotes send bursts like these in this band. Which device this is, is not known.",
+   "confidence": "unknown",
+   "history_line": "A busy frequency: saved here on 14 days.",
+   "bars": [
+    {
+     "dongle": "Dongle 1",
+     "serial": "00001001",
+     "state": "heard",
+     "db": 15.0,
+     "pct": 38,
+     "best": true,
+     "text": "15 dB"
+    },
+    {
+     "dongle": "Dongle 2",
+     "serial": "00003003",
+     "state": "heard",
+     "db": 6.0,
+     "pct": 15,
+     "best": false,
+     "text": "6 dB"
+    },
+    {
+     "dongle": "Dongle 3",
+     "serial": "00004004",
+     "state": "heard",
+     "db": 11.0,
+     "pct": 28,
+     "best": false,
+     "text": "11 dB"
+    }
+   ],
+   "bars_note": "Above each dongle's own noise. Not a distance.",
+   "step": {
+    "action": "capture",
+    "label": "Capture until decoded",
+    "reason": "The dongle that hears it best keeps listening until a packet decodes.",
+    "mhz": 433.92,
+    "seconds": null,
+    "minutes": null,
+    "dongle": null
+   },
+   "details": [
+    {
+     "title": "WHAT IT DID",
+     "lines": [
+      "Short bursts: 6 in the 3 s look, each under 30 ms, about every 0.5 s.",
+      "rtl_433 then counted 9 bursts in 10 s."
+     ],
+     "strip": {
+      "slots": [
+       0.5,
+       0.5,
+       0.5,
+       0.5,
+       0.5,
+       0.5
+      ],
+      "slot_s": 0.5,
+      "label": "The 3 s look on Dongle 1, start to end."
+     }
+    },
+    {
+     "title": "MODULATION",
+     "lines": [
+      "rtl_433 read its bursts but none of its decoders knows them: OOK, pulses 300 / 900 us, 28-bit packets. A pattern, not an identification."
+     ],
+     "strip": null
+    },
+    {
+     "title": "SPUR CHECK",
+     "lines": [
+      "All 3 dongles found it within 0.4 kHz of each other. A rough comparison: there was no single clear line to read."
+     ],
+     "strip": null
+    },
+    {
+     "title": "HISTORY",
+     "lines": [
+      "14 saved checks within 60 kHz, the last on 13 Nov. The saved list goes back to 5 Oct.",
+      "No baseline covers 433.92 MHz, so there is no normal day to compare with.",
+      "Devices decoded here before: Nexus-TH weather station and 3 others."
+     ],
+     "strip": null
+    },
+    {
+     "title": "COULD NOT TELL",
+     "lines": [
+      "What it did outside the 3 s look.",
+      "Its modulation: it was on too briefly."
+     ],
+     "strip": null
+    },
+    {
+     "title": "DECODERS",
+     "lines": [
+      "Not identified: rtl_433 demodulated its packets, but none of its decoders knows this device. Its signal: OOK pulse-width modulation, 300/900 us pulses, 28-bit packets sent 4 times.",
+      "Band plan: 433.92 MHz ISM Band (IoT Telemetry, Weather Sensors, TPMS, Keyfobs, LoRa).",
+      "Heard on all 3 dongles.",
+      "Saved to the Signals list."
+     ],
+     "strip": null
+    }
+   ]
+  },
+  "8": {
+   "freq_mhz": 151.25,
+   "measured_mhz": 151.25102,
+   "verdict": "Not identified: no decoder recognised it. Measured: Intermittent carrier (keyed on and off)",
+   "evidence": "signal_present",
+   "evidence_text": "Heard, but no decoder identified it",
+   "listened_seconds": 33,
+   "band": "VHF High-Band Land Mobile / Public Safety / Pager / SCADA",
+   "dongles": [
+    "Dongle 1: heard it, 14 dB above noise (strongest)",
+    "Dongle 2: heard it, 11 dB above noise"
+   ],
+   "antenna_note": "Heard on both dongles. They measured the same frequency: one signal reaches all of them. Whether through the antennas or the wiring is not known from this.",
+   "devices": [],
+   "unknown_signals": [],
+   "saved": true,
+   "decoders": [
+    "multimon-ng",
+    "atest"
+   ],
+   "doubtful": [],
+   "station_name": null,
+   "station_channel": 151.3,
+   "report_v": 1,
+   "tag": "NOT IDENTIFIED",
+   "tag_kind": "signal_present",
+   "history_tag": "NO EARLIER RECORD",
+   "history_kind": "new",
+   "carrier": {
+    "mhz": 151.251055,
+    "text": "151.251 MHz",
+    "note": null
+   },
+   "headline": "Carrier that switches on and off on both dongles: on 50 % of the 3 s look.",
+   "sure": "Source not known: a short look shows that it switches, not what sends it.",
+   "confidence": "unknown",
+   "history_line": "No earlier record here (list from 5 Oct).",
+   "bars": [
+    {
+     "dongle": "Dongle 1",
+     "serial": "00001001",
+     "state": "heard",
+     "db": 14.0,
+     "pct": 35,
+     "best": true,
+     "text": "14 dB"
+    },
+    {
+     "dongle": "Dongle 2",
+     "serial": "00003003",
+     "state": "heard",
+     "db": 11.0,
+     "pct": 28,
+     "best": false,
+     "text": "11 dB"
+    }
+   ],
+   "bars_note": "Above each dongle's own noise. Not a distance.",
+   "step": {
+    "action": "capture",
+    "label": "Capture until decoded",
+    "reason": "A capture waits for the next transmission and runs the pager and tone decoders on it.",
+    "mhz": 151.25,
+    "seconds": null,
+    "minutes": null,
+    "dongle": null
+   },
+   "details": [
+    {
+     "title": "WHAT IT DID",
+     "lines": [
+      "Switched on and off: on 3 times in the 3 s look, about 0.5 s each. It was on at the start of the look, so it may stay on longer than that.",
+      "Dongle 2 then looked 7 more times over 28 s: heard in 4 of them. The gaps between looks were not watched.",
+      "Its frequency moved 0.8 kHz in 2.5 s, the same on both dongles, so the movement is the signal's own. Keyed transmitters often slide as they switch on, so this does not say what kind it is.",
+      "Very narrow: under 0.1 kHz wide. Level steady while on."
+     ],
+     "strip": {
+      "slots": [
+       0.5,
+       0.5,
+       0.5,
+       null,
+       1,
+       1,
+       1,
+       null,
+       0,
+       0,
+       0,
+       null,
+       1,
+       1,
+       1,
+       null,
+       1,
+       1,
+       1,
+       null,
+       0,
+       0,
+       0,
+       null,
+       null,
+       1,
+       1,
+       1,
+       null,
+       0,
+       0,
+       0,
+       null
+      ],
+      "slot_s": 1.0,
+      "label": "The 33 s of the check, start to end. Gaps were not watched."
+     }
+    },
+    {
+     "title": "MODULATION",
+     "lines": [
+      "No modulation while it was on in the 3 s look: a bare carrier, switched on and off. The pager, APRS and tone decoders read nothing in 30 s on Dongle 1."
+     ],
+     "strip": null
+    },
+    {
+     "title": "SPUR CHECK",
+     "lines": [
+      "Not the dongles' own clock: 7.3 MHz from 5 x 28.8 MHz.",
+      "Both dongles read the same frequency within 0.1 kHz: one signal reaches both of them. Whether through the antennas or the wiring is not known from this."
+     ],
+     "strip": null
+    },
+    {
+     "title": "HISTORY",
+     "lines": [
+      "No saved check within 6 kHz. The saved list goes back to 5 Oct.",
+      "No baseline covers 151.25 MHz, so there is no normal day to compare with."
+     ],
+     "strip": null
+    },
+    {
+     "title": "COULD NOT TELL",
+     "lines": [
+      "Whether it reaches the dongles through the antennas or the wiring.",
+      "What it did between the looks and outside these 33 s."
+     ],
+     "strip": null
+    },
+    {
+     "title": "DECODERS",
+     "lines": [
+      "Not identified: no decoder recognised it.",
+      "Band plan: VHF High-Band Land Mobile / Public Safety / Pager / SCADA.",
+      "Heard on both dongles. They measured the same frequency: one signal reaches all of them. Whether through the antennas or the wiring is not known from this.",
+      "Saved to the Signals list."
+     ],
+     "strip": null
+    }
+   ]
+  },
+  "9": {
+   "freq_mhz": 118.1,
+   "measured_mhz": 118.10004,
+   "verdict": "Aviation-band transmission (AM voice or data; content not recorded)",
+   "evidence": "signal_present",
+   "evidence_text": "Heard, but no decoder identified it",
+   "listened_seconds": 30,
+   "band": "Civil Aviation Airband (VHF AM Voice / ACARS Data)",
+   "dongles": [
+    "Dongle 1: heard it, 15 dB above noise (strongest)",
+    "Dongle 2: heard it, 9 dB above noise",
+    "Dongle 3: did not hear it"
+   ],
+   "antenna_note": "Heard on Dongle 1 and Dongle 2, not on Dongle 3. The dongles have different antennas, so this usually means the antennas on Dongle 1 and Dongle 2 suit this band better; it does not mean the signal is internal. They measured the same frequency: one signal reaches all of them. Whether through the antennas or the wiring is not known from this.",
+   "devices": [],
+   "unknown_signals": [],
+   "saved": true,
+   "decoders": [],
+   "doubtful": [],
+   "station_name": null,
+   "station_channel": 118.1,
+   "report_v": 1,
+   "tag": "HEARD",
+   "tag_kind": "signal_present",
+   "history_tag": "NO EARLIER RECORD",
+   "history_kind": "new",
+   "carrier": {
+    "mhz": 118.100075,
+    "text": "118.100 MHz",
+    "note": null
+   },
+   "headline": "Aviation-band transmission: AM, on in 3 of 8 looks.",
+   "sure": "Medium confidence. Rests on: AM measured on Dongle 1; a frequency in the aircraft voice band.",
+   "confidence": "medium",
+   "history_line": "No earlier record here (list from 5 Oct).",
+   "bars": [
+    {
+     "dongle": "Dongle 1",
+     "serial": "00001001",
+     "state": "heard",
+     "db": 15.0,
+     "pct": 38,
+     "best": true,
+     "text": "15 dB"
+    },
+    {
+     "dongle": "Dongle 2",
+     "serial": "00003003",
+     "state": "heard",
+     "db": 9.0,
+     "pct": 22,
+     "best": false,
+     "text": "9 dB"
+    },
+    {
+     "dongle": "Dongle 3",
+     "serial": "00004004",
+     "state": "not_heard",
+     "db": null,
+     "pct": null,
+     "best": false,
+     "text": "not heard"
+    }
+   ],
+   "bars_note": "Above each dongle's own noise. Not a distance.",
+   "step": {
+    "action": "none",
+    "label": "",
+    "reason": "Aircraft voice is not decoded and never recorded.",
+    "mhz": 118.1,
+    "seconds": null,
+    "minutes": null,
+    "dongle": null
+   },
+   "details": [
+    {
+     "title": "WHAT IT DID",
+     "lines": [
+      "On for the whole 3 s look on Dongle 1 and Dongle 2.",
+      "Looked 8 times over 30 s: on in 3 of them.",
+      "Held its frequency: moved less than 0.1 kHz in 2.8 s, the same on both dongles.",
+      "About 5.6 kHz wide. Level varied by 4 dB."
+     ],
+     "strip": {
+      "slots": [
+       1,
+       1,
+       1,
+       1,
+       1,
+       1
+      ],
+      "slot_s": 0.5,
+      "label": "The 3 s look on Dongle 1, start to end."
+     }
+    },
+    {
+     "title": "MODULATION",
+     "lines": [
+      "AM, measured on Dongle 1. Nothing is listened to or recorded."
+     ],
+     "strip": null
+    },
+    {
+     "title": "SPUR CHECK",
+     "lines": [
+      "Not the dongles' own clock: 2.9 MHz from 4 x 28.8 MHz.",
+      "Dongle 1 and Dongle 2 read the same frequency within 0.1 kHz: one signal reaches both of them. Whether through the antennas or the wiring is not known from this."
+     ],
+     "strip": null
+    },
+    {
+     "title": "HISTORY",
+     "lines": [
+      "No saved check within 6 kHz. The saved list goes back to 5 Oct.",
+      "No baseline covers 118.1 MHz, so there is no normal day to compare with."
+     ],
+     "strip": null
+    },
+    {
+     "title": "COULD NOT TELL",
+     "lines": [
+      "Whether it reaches the dongles through the antennas or the wiring.",
+      "What it did between the looks and outside these 30 s."
+     ],
+     "strip": null
+    },
+    {
+     "title": "DECODERS",
+     "lines": [
+      "Aviation-band transmission (AM voice or data; content not recorded).",
+      "Band plan: Civil Aviation Airband (VHF AM Voice / ACARS Data).",
+      "Heard on Dongle 1 and Dongle 2, not on Dongle 3. The dongles have different antennas, so this usually means the antennas on Dongle 1 and Dongle 2 suit this band better; it does not mean the signal is internal. They measured the same frequency: one signal reaches all of them. Whether through the antennas or the wiring is not known from this.",
+      "Saved to the Signals list."
+     ],
+     "strip": null
+    }
+   ]
+  },
+  "10": {
+   "freq_mhz": 1090.0,
+   "measured_mhz": null,
+   "verdict": "Identified: aircraft ADS-B transponders, 2 aircraft (9 checksum-verified position or identity messages, public broadcast)",
+   "evidence": "confirmed_decode",
+   "evidence_text": "Identified by a decoder",
+   "listened_seconds": 10,
+   "band": "Aircraft transponders (ADS-B / Mode S replies, 1090 MHz)",
+   "dongles": [
+    "Dongle 1: heard it, 2 aircraft from 9 verified messages (strongest)",
+    "Dongle 2: did not hear it (3 unverified replies or noise)"
+   ],
+   "antenna_note": "Heard on Dongle 1, not on Dongle 2. The dongles have different antennas, so this usually means the antenna on Dongle 1 suits this band better; it does not mean the signal is internal.",
+   "devices": [],
+   "unknown_signals": [],
+   "saved": true,
+   "decoders": [
+    "rtl_adsb"
+   ],
+   "doubtful": [],
+   "station_name": null,
+   "station_channel": 1090.0,
+   "report_v": 1,
+   "tag": "IDENTIFIED",
+   "tag_kind": "confirmed_decode",
+   "history_tag": null,
+   "history_kind": null,
+   "carrier": {
+    "mhz": 1090.0,
+    "text": "1090 MHz",
+    "note": null
+   },
+   "headline": "Aircraft transponders: 2 aircraft.",
+   "sure": "Confirmed by a decoder: 9 checksum-verified messages.",
+   "confidence": "confirmed",
+   "history_line": null,
+   "bars": [
+    {
+     "dongle": "Dongle 1",
+     "serial": "00001001",
+     "state": "count",
+     "db": null,
+     "pct": null,
+     "best": true,
+     "text": "2 aircraft, 9 messages"
+    },
+    {
+     "dongle": "Dongle 2",
+     "serial": "00003003",
+     "state": "not_heard",
+     "db": null,
+     "pct": null,
+     "best": false,
+     "text": "not heard"
+    }
+   ],
+   "bars_note": "",
+   "step": {
+    "action": "none",
+    "label": "",
+    "reason": "Nothing to do: identified.",
+    "mhz": 1090.0,
+    "seconds": null,
+    "minutes": null,
+    "dongle": null
+   },
+   "details": [
+    {
+     "title": "WHAT IT DID",
+     "lines": [
+      "Not measured: the ADS-B decoder reports messages, not the signal's shape."
+     ],
+     "strip": null
+    },
+    {
+     "title": "DECODERS",
+     "lines": [
+      "Identified: aircraft ADS-B transponders, 2 aircraft (9 checksum-verified position or identity messages, public broadcast).",
+      "Band plan: Aircraft transponders (ADS-B / Mode S replies, 1090 MHz).",
+      "Heard on Dongle 1, not on Dongle 2. The dongles have different antennas, so this usually means the antenna on Dongle 1 suits this band better; it does not mean the signal is internal.",
+      "Saved to the Signals list."
+     ],
+     "strip": null
+    }
+   ]
+  }
+ },
+ "extra": {
+  "decoder_failed": {
+   "freq_mhz": 433.92,
+   "measured_mhz": null,
+   "verdict": "Decoding was not possible: rtl_433 could not open the dongle (it is in use by another program)",
+   "evidence": "signal_present",
+   "evidence_text": "Heard, but no decoder identified it",
+   "listened_seconds": 3,
+   "band": "433.92 MHz ISM Band (IoT Telemetry, Weather Sensors, TPMS, Keyfobs, LoRa)",
+   "dongles": [
+    "Dongle 1: not used: Dongle 1 is busy (a capture on 433.92 MHz)",
+    "Dongle 2: heard it, at the noise level",
+    "Dongle 3: heard it, 12 dB above noise (strongest)"
+   ],
+   "antenna_note": "Heard on both dongles.",
+   "devices": [],
+   "unknown_signals": [],
+   "saved": false,
+   "decoders": [
+    "rtl_433"
+   ],
+   "doubtful": [],
+   "station_name": null,
+   "station_channel": 433.9,
+   "report_v": 1,
+   "tag": "DECODER FAILED",
+   "tag_kind": "failed",
+   "history_tag": null,
+   "history_kind": null,
+   "carrier": {
+    "mhz": 433.92,
+    "text": "433.920 MHz",
+    "note": null
+   },
+   "headline": "The decoder could not run, so this check proves nothing.",
+   "sure": "A signal was there, but nothing tried to decode it.",
+   "confidence": "unknown",
+   "history_line": "A busy frequency: saved here on 14 days.",
+   "bars": [
+    {
+     "dongle": "Dongle 1",
+     "serial": "00001001",
+     "state": "not_used",
+     "db": null,
+     "pct": null,
+     "best": false,
+     "text": "not used"
+    },
+    {
+     "dongle": "Dongle 2",
+     "serial": "00003003",
+     "state": "heard",
+     "db": 0.2,
+     "pct": 4,
+     "best": false,
+     "text": "at noise"
+    },
+    {
+     "dongle": "Dongle 3",
+     "serial": "00004004",
+     "state": "heard",
+     "db": 12.0,
+     "pct": 30,
+     "best": true,
+     "text": "12 dB"
+    }
+   ],
+   "bars_note": "Above each dongle's own noise. Not a distance.",
+   "step": {
+    "action": "check",
+    "label": "Check the system",
+    "reason": "The decoder could not run. The system check says why.",
+    "mhz": 433.92,
+    "seconds": null,
+    "minutes": null,
+    "dongle": null
+   },
+   "details": [
+    {
+     "title": "DECODERS",
+     "lines": [
+      "Decoding was not possible: rtl_433 could not open the dongle (it is in use by another program).",
+      "Band plan: 433.92 MHz ISM Band (IoT Telemetry, Weather Sensors, TPMS, Keyfobs, LoRa).",
+      "Heard on both dongles.",
+      "Not saved to the Signals list: the decoder could not run."
+     ],
+     "strip": null
+    }
+   ]
+  },
+  "capture_running": {
+   "freq_mhz": 914.842,
+   "measured_mhz": 914.8421,
+   "verdict": "Not identified: rtl_433 demodulated its packets, but none of its decoders knows this device",
+   "evidence": "signal_present",
+   "evidence_text": "Heard, but no decoder identified it",
+   "listened_seconds": 13,
+   "band": "902-928 MHz ISM Band (LoRa, Smart Meters, Sensors, Cordless Devices)",
+   "dongles": [
+    "Dongle 1: heard it, 12 dB above noise",
+    "Dongle 2: heard it, 9 dB above noise",
+    "Dongle 3: heard it, 21 dB above noise (strongest)"
+   ],
+   "antenna_note": "Heard on all 3 dongles.",
+   "devices": [],
+   "unknown_signals": [],
+   "saved": true,
+   "decoders": [
+    "rtl_433"
+   ],
+   "doubtful": [],
+   "station_name": null,
+   "station_channel": 914.8,
+   "report_v": 1,
+   "tag": "NOT IDENTIFIED",
+   "tag_kind": "signal_present",
+   "history_tag": "KNOWN DEVICE",
+   "history_kind": "device",
+   "carrier": {
+    "mhz": 914.842,
+    "text": "914.842 MHz",
+    "note": null
+   },
+   "headline": "Short bursts on all 3 dongles, not decoded.",
+   "sure": "Source not known: no decoder knows these bursts.",
+   "confidence": "unknown",
+   "history_line": "A device known here was decoded on this frequency before.",
+   "bars": [
+    {
+     "dongle": "Dongle 1",
+     "serial": "00001001",
+     "state": "heard",
+     "db": 12.0,
+     "pct": 30,
+     "best": false,
+     "text": "12 dB"
+    },
+    {
+     "dongle": "Dongle 2",
+     "serial": "00003003",
+     "state": "heard",
+     "db": 9.0,
+     "pct": 22,
+     "best": false,
+     "text": "9 dB"
+    },
+    {
+     "dongle": "Dongle 3",
+     "serial": "00004004",
+     "state": "heard",
+     "db": 21.0,
+     "pct": 52,
+     "best": true,
+     "text": "21 dB"
+    }
+   ],
+   "bars_note": "Above each dongle's own noise. Not a distance.",
+   "step": {
+    "action": "activity",
+    "label": "See the capture",
+    "reason": "A capture is already listening here on Dongle 3.",
+    "mhz": 914.842,
+    "seconds": null,
+    "minutes": null,
+    "dongle": "Dongle 3"
+   },
+   "details": [
+    {
+     "title": "DECODERS",
+     "lines": [
+      "Not identified: rtl_433 demodulated its packets, but none of its decoders knows this device.",
+      "Band plan: 902-928 MHz ISM Band (LoRa, Smart Meters, Sensors, Cordless Devices).",
+      "Heard on all 3 dongles.",
+      "Saved to the Signals list."
+     ],
+     "strip": null
+    }
+   ]
+  },
+  "locate": {
+   "freq_mhz": 94.8,
+   "measured_mhz": 94.8,
+   "verdict": "Heard, not identified by a decoder: wideband FM transmitter on 94.8 MHz, off the station channels",
+   "evidence": "signal_present",
+   "evidence_text": "Heard, but no decoder identified it",
+   "listened_seconds": 13,
+   "band": "Commercial FM Broadcast (Wideband FM, ~200 kHz)",
+   "dongles": [
+    "Dongle 1: heard it, 22 dB above noise (strongest)",
+    "Dongle 2: heard it, 14 dB above noise",
+    "Dongle 3: heard it, 17 dB above noise"
+   ],
+   "antenna_note": "Heard on all 3 dongles.",
+   "devices": [],
+   "unknown_signals": [],
+   "saved": true,
+   "decoders": [],
+   "doubtful": [],
+   "station_name": null,
+   "station_channel": 94.8,
+   "report_v": 1,
+   "tag": "NOT IDENTIFIED",
+   "tag_kind": "signal_present",
+   "history_tag": "SEEN BEFORE",
+   "history_kind": "seen",
+   "carrier": {
+    "mhz": 94.8,
+    "text": "94.800 MHz",
+    "note": null
+   },
+   "headline": "FM transmitter at 94.8 MHz, between the station channels. Not a normal station.",
+   "sure": "Medium confidence. Rests on: wideband FM measured; a carrier on an even tenth, where no station belongs.",
+   "confidence": "medium",
+   "history_line": "Saved on 2 days since 11 Nov (2 checks).",
+   "bars": [
+    {
+     "dongle": "Dongle 1",
+     "serial": "00001001",
+     "state": "heard",
+     "db": 22.0,
+     "pct": 55,
+     "best": true,
+     "text": "22 dB"
+    },
+    {
+     "dongle": "Dongle 2",
+     "serial": "00003003",
+     "state": "heard",
+     "db": 14.0,
+     "pct": 35,
+     "best": false,
+     "text": "14 dB"
+    },
+    {
+     "dongle": "Dongle 3",
+     "serial": "00004004",
+     "state": "heard",
+     "db": 17.0,
+     "pct": 42,
+     "best": false,
+     "text": "17 dB"
+    }
+   ],
+   "bars_note": "Above each dongle's own noise. Not a distance.",
+   "step": {
+    "action": "locate",
+    "label": "Find where it is",
+    "reason": "Not a normal station. The Map shows roughly where it comes from.",
+    "mhz": 94.8,
+    "seconds": null,
+    "minutes": null,
+    "dongle": null
+   },
+   "details": [
+    {
+     "title": "MODULATION",
+     "lines": [
+      "Wideband FM, mono, no RDS."
+     ],
+     "strip": null
+    },
+    {
+     "title": "DECODERS",
+     "lines": [
+      "Heard, not identified by a decoder: wideband FM transmitter on 94.8 MHz, off the station channels.",
+      "Band plan: Commercial FM Broadcast (Wideband FM, ~200 kHz).",
+      "Heard on all 3 dongles.",
+      "Saved to the Signals list."
+     ],
+     "strip": null
+    }
+   ]
+  }
+ },
+ "old_card": {
+  "freq_mhz": 921.6,
+  "measured_mhz": 921.60003,
+  "verdict": "Not identified: no decoder recognised it. Measured: Steady unmodulated carrier (an idle transmitter carrier or a clock signal from equipment)",
+  "evidence": "signal_present",
+  "evidence_text": "Heard, but no decoder identified it",
+  "listened_seconds": 13,
+  "band": "902-928 MHz ISM Band (LoRa, Smart Meters, Sensors, Cordless Devices)",
+  "dongles": [
+   "Dongle 1: heard it, at the noise level",
+   "Dongle 2: heard it, 15 dB above noise",
+   "Dongle 3: heard it, 25 dB above noise (strongest)"
+  ],
+  "antenna_note": "Heard on all 3 dongles. They measured the same frequency, so it is a real over-the-air signal.",
+  "devices": [],
+  "unknown_signals": [],
+  "saved": true,
+  "decoders": [
+   "rtl_433"
+  ],
+  "doubtful": [],
+  "station_name": null,
+  "station_channel": 921.6,
+  "tag": null,
+  "tag_kind": null,
+  "history_tag": null,
+  "history_kind": null,
+  "carrier": null,
+  "headline": null,
+  "sure": null,
+  "confidence": null,
+  "history_line": null,
+  "step": null,
+  "bars": [
+   {
+    "dongle": "Dongle 1",
+    "serial": "00001001",
+    "state": "heard",
+    "db": 0.2,
+    "pct": 4,
+    "best": false,
+    "text": "at noise"
+   },
+   {
+    "dongle": "Dongle 2",
+    "serial": "00003003",
+    "state": "heard",
+    "db": 15.0,
+    "pct": 38,
+    "best": false,
+    "text": "15 dB"
+   },
+   {
+    "dongle": "Dongle 3",
+    "serial": "00004004",
+    "state": "heard",
+    "db": 25.0,
+    "pct": 62,
+    "best": true,
+    "text": "25 dB"
+   }
+  ],
+  "bars_note": "Above each dongle's own noise. Not a distance.",
+  "details": []
+ }
+}

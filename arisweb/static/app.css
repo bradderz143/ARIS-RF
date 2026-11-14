@@ -75,6 +75,7 @@ pre{background:#000;color:#34d399;padding:8px;border-radius:6px;overflow-x:auto;
 .sel-panel{display:none;background:var(--panel);border:1px solid #1e3a5f;border-radius:10px;padding:10px;margin-top:8px}
 .sel-panel .f{font-weight:700;color:var(--blue);font-size:1rem}
 .sel-panel .btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.sel-panel .btns button{min-height:40px}
 .peaks{margin-top:10px}
 .pk{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 10px;margin-bottom:6px;cursor:pointer;font-size:.84rem}
 .pk.flag{border-color:#b45309}
@@ -150,15 +151,75 @@ pre{background:#000;color:#34d399;padding:8px;border-radius:6px;overflow-x:auto;
 .dec-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
 .dec-v{margin:4px 0 6px}
 .tag{font-size:.7rem;font-weight:800;letter-spacing:.04em;padding:2px 8px;border-radius:999px;color:#fff;background:#475569}
-.tag.confirmed_decode{background:#047857}.tag.signal_present{background:#b45309}
+.tag.confirmed_decode{background:#047857}.tag.signal_present{background:#b45309}.tag.doubtful{background:#b91c1c}
 .bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:4px 0}
 .bar i{display:block;height:100%;background:var(--accent);transition:width .8s linear}
 .lvl.RUN{background:#2563eb}.lvl.IDENTIFIED{background:#047857}.lvl.CAPTURED{background:#b45309}
 .lvl.NOTHING,.lvl.STOPPED{background:#475569}.lvl.FAILED{background:#dc2626}.lvl.RECORDED{background:#0e7490}
 pre.chatpre{background:#0b1220;color:#e2e8f0;border:1px solid var(--line2);margin:6px 0;white-space:pre-wrap;word-break:break-word}
 .name-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 8px}
+.pk.dec-ok{border-color:#16a34a}.pk.dec-ok .f{color:#4ade80}
+.pk.dec-check{border-color:#dc2626;background:#2a1215}.pk.dec-check .f{color:#f87171}
+.pk .dec-note{font-size:.74rem;font-weight:600}.pk.dec-ok .dec-note{color:#4ade80}.pk.dec-check .dec-note{color:#f87171}
+.dec-card.doubtful{border-color:#dc2626}
 .pk.named{border-color:#065f46}
 .pk.named .f{color:#6ee7b7}
+/* The Decode card with a signal report (.rep): the answer and how sure, a bar per dongle, ONE highlighted next step,
+   the rest closed under Details. Colours mean what they mean elsewhere: green = a decoder identified it, amber =
+   heard and not identified, red = check first or failed, grey = nothing, blue = the receivers' own (information). */
+.dec-card.none{border-color:#475569}
+.dec-card.own{border-color:#2563eb}
+.dec-card.failed{border-color:#dc2626}
+/* names heard over the air reach the card: a word of any length wraps inside it, in every slot (the pills and the
+   frequency too: they stay on one line whenever they fit, because the row wraps before anything in it is squeezed).
+   On a wide screen the card stays a column of text, not a banner */
+.dec-card.rep{max-width:46rem;overflow-wrap:anywhere}
+/* a pill that has to wrap is a rounded box, not an oval; a card or message brought into view keeps a little air */
+.dec-card.rep .tag{border-radius:12px}
+#sp-result > *{scroll-margin:10px 0}
+.tag.own{background:#1d4ed8}
+.tag.failed{background:#b91c1c}
+/* the frequency's record is a second, quieter pill: an outline, so the result's pill stays the one that shouts */
+.tag.hist{background:none;border:1px solid #475569;color:#cbd5e1;font-weight:700;padding:1px 7px}
+.tag.hist.new{border-color:#b45309;color:#fbbf24}
+.dec-card.rep .dec-top{gap:6px;margin-bottom:6px}
+.dec-meta{margin-left:auto;color:var(--muted);font-size:.78rem}
+.dec-head{font-size:.95rem;font-weight:700;line-height:1.3;margin-bottom:4px;overflow-wrap:anywhere}
+.dec-sub{color:var(--muted);font-size:.8rem;margin-top:3px;overflow-wrap:anywhere}
+.dec-sub b{color:#e2e8f0}
+/* the name and the level take what they need up to a share of the row; the bar never shrinks to nothing */
+.dec-bars{display:grid;grid-template-columns:fit-content(45%) minmax(60px,1fr) fit-content(40%) auto;column-gap:8px;row-gap:4px;align-items:center;margin-top:9px;font-size:.8rem;line-height:1.2;color:#cbd5e1}
+.dec-bars .trk{height:8px;background:var(--line);border-radius:4px;overflow:hidden}
+.dec-bars .trk i{display:block;height:100%;border-radius:4px}
+.dec-bars .val{text-align:right;font-variant-numeric:tabular-nums}
+.dec-bars .off{color:var(--muted)}
+.dec-bars .wide{grid-column:2 / 4}
+.dec-bars .best{color:var(--muted);font-size:.74rem}
+.dec-cap{color:var(--muted);font-size:.74rem;margin-top:4px}
+.dec-next{border-top:1px solid var(--line2);margin-top:9px;padding-top:8px}
+.dec-why{font-size:.84rem;color:#e2e8f0}
+/* everything that is pressed is about 40 px high (a thumb), with a few px between the rows */
+.dec-acts{display:flex;align-items:center;flex-wrap:wrap;gap:6px 16px;margin-top:8px}
+.dec-acts button{max-width:100%;min-height:40px;overflow-wrap:anywhere}
+.dec-link{background:none;border:none;color:var(--blue);padding:0 6px;margin:0 -6px;font-size:.82rem;cursor:pointer;text-align:left}
+.dec-link:disabled{opacity:.5}
+.dec-more{margin-top:6px}
+.dec-more summary{padding:11px 0}
+.dec-sec{font-size:.68rem;font-weight:700;letter-spacing:.06em;color:var(--muted);margin-top:10px}
+.dec-ln{color:#cbd5e1;margin-top:3px;overflow-wrap:anywhere}
+.dec-strip svg{display:block;width:100%;height:14px;margin-top:7px}
+.dec-strip .on{fill:var(--accent)}
+.dec-strip .off{fill:#475569}
+.dec-card + .infobox,.dec-card + .warnbox{margin:8px 0 0}
+#sp-result > .infobox:first-child,#sp-result > .warnbox:first-child{margin-top:10px}
+/* Spectrum: the Signals heading with its help, and the tab's own notes, both closed until asked for */
+.sp-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:6px 2px 0}
+.sp-head .h{margin:0}
+.sp-help{background:none;border:none;color:var(--blue);font-size:.78rem;min-height:40px;padding:0 0 0 12px;cursor:pointer}
+.sp-help-text{color:var(--muted);font-size:.8rem;line-height:1.45;margin:0 2px 8px}
+.sp-help-text div + div{margin-top:4px}
+details.note summary{font-size:.8rem;padding:11px 0}
+details.note p{margin:6px 0 0;color:var(--muted)}
 
 .chip.chip-danger{border-color:#b33;color:#f88}
 

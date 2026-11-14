@@ -4,7 +4,7 @@
 // gain, "Above floor" plots every line relative to its own receiver's noise floor.
 const SP = {running: false, busy: false, timer: null, data: null, holdOn: false, hold: {}, holdSince: null, holdN: 0,
             holdMax: -1e9, key: '', sel: null, yMin: null, yMax: null, meta: null, retry: false, geom: null,
-            scale: 'abs', preset: null, fmOpen: false, labelBoxes: [],
+            scale: 'abs', preset: null, fmOpen: false, helpOpen: false, labelBoxes: [],
             view: {s: 88, e: 108}, hist: [], histAt: 0,          // the view in MHz, and the views before it (Back)
             gain: 'auto', lvl: 'input',                          // receiver gain (auto = the best for each dongle); levels with the gain taken off
             rbw: 'auto', top: null, range: 'auto',               // step between points; level axis (null / auto = automatic)
@@ -22,7 +22,8 @@ function spColor(serial){
   return DONGLE_COLORS[k < 0 ? 3 : k % DONGLE_COLORS.length];
 }
 function spSave(){ try { localStorage.setItem('aris_spec', JSON.stringify({p: SP.preset, d: document.getElementById('sp-dongle').value,
-  s: String(SP.view.s), e: String(SP.view.e), sc: SP.scale, rbw: SP.rbw, top: SP.top, rng: SP.range, avg: SP.avgN, gain: SP.gain, lvl: SP.lvl})); } catch (e) {} }
+  s: String(SP.view.s), e: String(SP.view.e), sc: SP.scale, rbw: SP.rbw, top: SP.top, rng: SP.range, avg: SP.avgN, gain: SP.gain, lvl: SP.lvl,
+  help: SP.helpOpen})); } catch (e) {} }
 function spLoad(){ try { return JSON.parse(localStorage.getItem('aris_spec') || 'null'); } catch (e) { return null; } }
 
 // ---- the view: start, stop, centre and span, always inside 0-6000 MHz ----
@@ -148,6 +149,7 @@ async function specInit(){
   const rb = document.getElementById('sp-rbw');
   (m.steps_khz || []).forEach(k => { const o = el('option', '', k + ' kHz'); o.value = String(k); rb.appendChild(o); });
   const saved = spLoad() || {};
+  SP.helpOpen = !!saved.help;
   ds.value = saved.d ? saved.d : (m.default || 'all'); if (!ds.value) ds.value = 'all';
   if (saved.sc) specScale(saved.sc, true);
   if (saved.rbw && [...rb.options].some(o => o.value === String(saved.rbw))){ rb.value = String(saved.rbw); SP.rbw = rb.value; }
@@ -392,7 +394,7 @@ function spJoinPeaks(parts, stepKhz){
     if (ext(o) && ext(m)){ const a = Math.min(o.lo_mhz, m.lo_mhz), b = Math.max(o.hi_mhz, m.hi_mhz); keep.lo_mhz = a; keep.hi_mhz = b; }
     pk[k] = {m: keep, pi: pi};
   }));
-  return pk.map(x => x.m).sort((a, b) => (b.flag - a.flag) || (b.snr_db - a.snr_db)).slice(0, 60);
+  return pk.map(x => x.m).sort((a, b) => ((b.decoded === 'check') - (a.decoded === 'check')) || (b.flag - a.flag) || (b.snr_db - a.snr_db)).slice(0, 60);
 }
 function spRestartLoop(delay){ clearTimeout(SP.timer); const id = ++SP.loopId; SP.timer = setTimeout(() => specLoop(id), delay || 0); }
 function specToggle(){
@@ -657,7 +659,7 @@ function specDraw(){
   // Every marker's triangle is reserved first, so a label never covers another signal's marker.
   const pos = []; order.forEach(m => { const v = spTopAt(lines, m.mhz); if (v !== null) pos.push({m: m, x: X(m.mhz), y: Y(v)}); });
   const boxes = pos.map(q => ({x0: q.x - 5, x1: q.x + 5, y0: q.y - 11, y1: q.y - 2}));
-  pos.forEach(q => { ctx.fillStyle = q.m.name ? '#34d399' : (q.m.flag ? '#f59e0b' : (q.m.kind === 'fm' ? '#94a3b8' : '#e2e8f0'));
+  pos.forEach(q => { const dq = pkDec(q.m); ctx.fillStyle = dq === 'check' ? '#ef4444' : (dq === 'ok' || q.m.name ? '#22c55e' : (q.m.flag ? '#f59e0b' : (q.m.kind === 'fm' ? '#94a3b8' : '#e2e8f0')));
     ctx.beginPath(); ctx.moveTo(q.x, q.y - 3); ctx.lineTo(q.x - 4, q.y - 10); ctx.lineTo(q.x + 4, q.y - 10); ctx.closePath(); ctx.fill(); });
   let labelled = 0; ctx.font = '600 10.5px system-ui, sans-serif'; ctx.textAlign = 'center';
   pos.forEach(q => {
@@ -672,7 +674,7 @@ function specDraw(){
       const cx = Math.min(Math.max(q.x + dx, L + tw / 2), w - R - tw / 2);   // keep the label inside the plot
       const bx = {x0: cx - tw / 2, x1: cx + tw / 2, y0: ty - 11, y1: ty + 2};
       if (boxes.some(b => bx.x0 < b.x1 && bx.x1 > b.x0 && bx.y0 < b.y1 && bx.y1 > b.y0)) continue;
-      boxes.push(bx); labelled += 1; ctx.fillStyle = m.name ? '#6ee7b7' : (m.flag ? '#f59e0b' : '#e2e8f0'); ctx.fillText(txt, cx, ty);
+      boxes.push(bx); labelled += 1; const dl = pkDec(m); ctx.fillStyle = dl === 'check' ? '#f87171' : (dl === 'ok' || m.name ? '#6ee7b7' : (m.flag ? '#f59e0b' : '#e2e8f0')); ctx.fillText(txt, cx, ty);
       return;
     }
   });
@@ -770,11 +772,20 @@ function specWaterfall(){
 // FM entries are named by their channel (one decimal); a carrier the IQ check measured off the channels, and
 // anything outside the FM band, by its own frequency.
 function pkMhz(m){ return (m.kind === 'signal' || m.checked === 'off_channel') ? m.mhz.toFixed(3) : m.mhz.toFixed(1); }
+// What a Decode or the Saved Signals list says about a signal: 'ok' (a decoder identified it: green), 'check' (an
+// identification that looks like noise: red, investigate it first) or null.
+function pkDec(m){
+  const d = (SP.decNow || []).find(x => Math.abs(x.mhz - m.mhz) <= 0.03);
+  return d ? d.state : (m.decoded || null);
+}
 function pkRow(m){
-  const r = el('div', 'pk' + (m.flag ? ' flag' : '') + (SP.sel !== null && Math.abs(SP.sel - m.mhz) < 1e-6 ? ' sel' : ''));
+  const dec = pkDec(m);
+  const r = el('div', 'pk' + (m.flag ? ' flag' : '') + (dec ? ' dec-' + dec : '') + (SP.sel !== null && Math.abs(SP.sel - m.mhz) < 1e-6 ? ' sel' : ''));
   const left = el('div'); left.appendChild(el('div', 'f', pkMhz(m) + ' MHz' + (m.name ? '  ' + m.name : (m.flag ? '  off-plan' : ''))));
   if (m.name) r.classList.add('named');
   left.appendChild(el('div', 'b', m.band));
+  if (dec) left.appendChild(el('div', 'dec-note', dec === 'ok' ? 'Decoded: identified by a decoder'
+                                                             : 'Doubtful decode, probably noise: investigate first'));
   // dB above the dongle's own noise floor (signal-to-noise), not a signal strength: bigger is clearer
   const hb = Object.entries(m.heard_by || {}).map(([n, s]) => n.replace('Dongle ', 'D') + ' ' + Number(s).toFixed(0)).join(' · ');
   const right = el('div', 's'); right.appendChild(el('div', '', Number(m.snr_db).toFixed(0) + ' dB above noise'));
@@ -789,8 +800,20 @@ function specPeaks(){
   const pk = j.peaks || [];
   if (!pk.length){ box.appendChild(el('div', 'muted', 'No signals above the noise floor in this range.')); return; }
   const fm = pk.filter(m => m.kind === 'fm'), rest = pk.filter(m => m.kind !== 'fm');
-  box.appendChild(el('div', 'h', 'Signals (' + pk.length + ')'));
-  box.appendChild(el('div', 'muted', 'dB above noise: how far each signal rises over the dongle\'s own noise floor (bigger is clearer; D1, D2 = each dongle). The plot\'s dBFS is relative to the dongle\'s full scale (0 = the strongest level an 8-bit dongle can read). Neither is a calibrated strength (a Signal Hound\'s sweeps are: those show in dBm).'));
+  // the heading, and what the list's numbers mean: closed until asked for (the list is rebuilt every sweep, so
+  // whether it is open is kept in SP and saved)
+  const head = el('div', 'sp-head'); head.appendChild(el('div', 'h', 'Signals (' + pk.length + ')'));
+  const help = el('button', 'sp-help', 'What do the numbers mean?'); help.setAttribute('aria-expanded', SP.helpOpen ? 'true' : 'false');
+  help.onclick = () => { SP.helpOpen = !SP.helpOpen; spSave(); specPeaks(); };
+  head.appendChild(help); box.appendChild(head);
+  if (SP.helpOpen){
+    const t = el('div', 'sp-help-text');
+    ['dB above noise: how far a signal rises over that dongle\'s own noise. Bigger is clearer, not closer.',
+     'D1 8 \u00b7 D2 16: the same, per dongle.',
+     'The plot\'s dBFS: 0 is the strongest level an 8-bit dongle can read. Neither is a calibrated strength (a Signal Hound\'s sweeps are: those show in dBm).'
+    ].forEach(x => t.appendChild(el('div', '', x)));
+    box.appendChild(t);
+  }
   const fmAll = pk.filter(m => m.kind === 'fm' || m.kind === 'fm_offplan'), unnamed = fmAll.filter(m => !m.name);
   // Stations already checked (on their channel with no name, or off the channels) are only read again on request,
   // except a channel where no name was read more than a day ago (one look is not proof that it sends none).
@@ -887,12 +910,34 @@ function specAsk(){
 SP.decT = 30; SP.job = null;
 function specDecodeTime(s){ SP.decT = s; document.querySelectorAll('#sp-dec-t button').forEach(b => b.classList.toggle('on', Number(b.dataset.s) === s)); }
 function decBox(){ return document.getElementById('sp-result'); }
-async function specDecode(){
-  if (SP.sel === null) return; if (SP.running) specToggle();
-  const f = SP.sel, box = decBox(); box.innerHTML = '';
-  let j; try { j = await post('/api/decode', {freq_mhz: f, seconds: SP.decT}); }
-  catch (e){ box.appendChild(el('div', 'warnbox', 'Could not start: ' + e.message)); return; }
-  SP.job = j.job; specDecodePoll();
+// A frequency a card can show or act on: a real number above 0, else null (a missing one is never "0.0000 MHz").
+function decMhz(v){ const f = (v === null || v === undefined || v === '') ? NaN : Number(v); return isFinite(f) && f > 0 ? f : null; }
+// While a Decode is being started or runs, the panel's buttons and the card's are off: a capture or a second start
+// would wipe its progress or be refused for the dongles it holds.
+function decButtons(off){ document.querySelectorAll('#sp-sel .btns button, #sp-result button').forEach(b => { b.disabled = off; }); }
+// Is any of this on the screen now (the tab open, not scrolled away)?
+function decSeen(node){
+  const r = node.getBoundingClientRect(), v = document.getElementById('view-spectrum').getBoundingClientRect();
+  return r.width > 0 && r.top < Math.min(innerHeight, v.bottom) && r.bottom > Math.max(0, v.top);
+}
+// One press is one start. What is on screen stays until the server has taken the job (a refusal goes under it), and
+// the result box keeps its height for the whole run, so nothing below slides up under the finger. secs: a time for
+// this one press (a card's step); the "Decode for" setting stays as it was left.
+async function specDecode(secs){
+  if (SP.sel === null || SP.decBusy || SP.job) return; if (SP.running) specToggle();
+  const f = SP.sel, box = decBox(), t = Number(secs) > 0 ? Number(secs) : SP.decT;
+  SP.decBusy = true; decButtons(true); box.style.minHeight = box.offsetHeight + 'px';
+  let j; try { j = await post('/api/decode', {freq_mhz: f, seconds: t}); }
+  catch (e){
+    box.style.minHeight = ''; decButtons(false);
+    box.querySelectorAll('.infobox, .warnbox').forEach(x => x.remove());
+    const m = el('div', 'warnbox', 'Could not start: ' + e.message); box.appendChild(m); m.scrollIntoView({block: 'nearest'});
+    return;
+  } finally { SP.decBusy = false; }
+  SP.job = j.job;
+  decProgress({freq_mhz: f, seconds: t, elapsed: 0, expected: t, progress: 'Starting...'});
+  box.firstChild.scrollIntoView({block: 'nearest'});       // the press may have been made with the box below the screen
+  specDecodePoll();
 }
 function decProgress(j){
   const box = decBox(); box.innerHTML = '';
@@ -901,29 +946,172 @@ function decProgress(j){
   const bar = el('div', 'bar'); const fill = el('i'); fill.style.width = Math.min(100, Math.round(100 * j.elapsed / Math.max(1, j.expected))) + '%';
   bar.appendChild(fill); c.appendChild(bar); c.appendChild(el('div', 'act-sub', j.progress || ''));
   box.appendChild(c);
-  document.getElementById('sp-dec-go').disabled = true;
+  decButtons(true);
 }
 function decResult(j){
-  const box = decBox(); box.innerHTML = ''; document.getElementById('sp-dec-go').disabled = false;
-  if (j.state === 'error'){ box.appendChild(el('div', 'warnbox', 'Decode failed: ' + j.error)); return; }
-  const k = j.card || {}; const ev = k.evidence || 'none';
-  const c = el('div', 'dec-card ' + ev);
+  const box = decBox(), at = decSeen(document.getElementById('sp-sel'));     // still at the panel: the result is brought into view
+  box.innerHTML = ''; box.style.minHeight = ''; decButtons(false);
+  const show = node => { box.appendChild(node); if (at) node.scrollIntoView({block: 'nearest'}); };
+  if (j.state === 'error'){ show(el('div', 'warnbox', 'Decode failed: ' + j.error)); return; }
+  const k = j.card && typeof j.card === 'object' ? j.card : {}; const ev = k.evidence || 'none';
+  const doubt = (k.doubtful || []).length > 0;
+  // a card in a form this page does not expect is drawn as the plain card, never as an empty panel
+  let card; try { card = k.report_v ? decReport(k, j) : decPlain(k, j); }
+  catch (e){
+    try { card = decPlain(k, j); }
+    catch (e2){ card = el('div', 'warnbox', 'The result arrived, but this page could not draw it. If it was saved, it is in the Signals list.'); }
+  }
+  show(card);
+  const state = doubt ? 'check' : (ev === 'confirmed_decode' ? 'ok' : null);        // green / red on the plot and in the list now
+  const mhz = decMhz(k.measured_mhz) || decMhz(k.freq_mhz);
+  if (mhz){
+    SP.decNow = (SP.decNow || []).filter(x => Math.abs(x.mhz - mhz) > 0.03);
+    if (state) SP.decNow.unshift({mhz: mhz, state: state});
+  }
+  specDraw(); specPeaks();
+  if (k.station_name) specMarkNamed({[Number(k.station_channel).toFixed(1)]: {name: k.station_name}});
+  if (typeof loadSignals === 'function') loadSignals();
+}
+// The card of a result that has no signal report: the verdict, a line per dongle, three equal buttons.
+function decPlain(k, j){
+  const ev = k.evidence || 'none', doubt = (k.doubtful || []).length > 0;
+  const c = el('div', 'dec-card ' + (doubt ? 'doubtful' : ev));
   const top = el('div', 'dec-top');
-  top.appendChild(el('span', 'tag ' + ev, ev === 'confirmed_decode' ? 'IDENTIFIED' : (ev === 'signal_present' ? 'NOT IDENTIFIED' : 'NOTHING HEARD')));
-  top.appendChild(el('span', 'act-sub', Number(k.freq_mhz).toFixed(4) + ' MHz | ' + (k.listened_seconds || j.seconds) + ' s | ' + (k.band || '')));
+  top.appendChild(el('span', 'tag ' + (doubt ? 'doubtful' : ev), doubt ? 'CHECK FIRST' : (ev === 'confirmed_decode' ? 'IDENTIFIED' : (ev === 'signal_present' ? 'NOT IDENTIFIED' : 'NOTHING HEARD'))));
+  const fm = decMhz(k.freq_mhz), f = decMhz(k.measured_mhz) || fm;
+  top.appendChild(el('span', 'act-sub', (fm ? fm.toFixed(4) + ' MHz' : 'frequency not given') + ' | ' + (k.listened_seconds || j.seconds) + ' s | ' + (k.band || '')));
   c.appendChild(top);
-  const v = el('div', 'dec-v'); renderText(v, k.verdict || ''); c.appendChild(v);
-  (k.dongles || []).forEach(d => c.appendChild(el('div', 'act-sub', d)));
+  const v = el('div', 'dec-v'); renderText(v, String(k.verdict || '')); c.appendChild(v);
+  (Array.isArray(k.dongles) ? k.dongles : []).forEach(d => c.appendChild(el('div', 'act-sub', d)));
   if (k.antenna_note) c.appendChild(el('div', 'act-sub', k.antenna_note));
   if (k.saved) c.appendChild(el('div', 'act-sub', 'Saved to the Signals list.'));
   const b = el('div', 'act-btns');
   const add = (label, fn) => { const x = el('button', '', label); x.onclick = fn; b.appendChild(x); };
-  if (ev !== 'confirmed_decode') add('Capture until decoded', () => specCapture(k.measured_mhz || k.freq_mhz));
-  add('Ask AI about it', () => sendQuick('Explain the last investigation of ' + Number(k.freq_mhz).toFixed(4) + ' MHz in plain English: what is it and is it normal?'));
-  add('Locate', () => mapLocateFreq(Number(k.measured_mhz || k.freq_mhz)));
-  c.appendChild(b); box.appendChild(c);
-  if (k.station_name) specMarkNamed({[Number(k.station_channel).toFixed(1)]: {name: k.station_name}});
-  if (typeof loadSignals === 'function') loadSignals();
+  if (ev !== 'confirmed_decode') add('Capture until decoded', () => specCapture(f));
+  add('Ask AI about it', () => decAsk(k));
+  if (f) add('Locate', () => mapLocateFreq(f));
+  c.appendChild(b);
+  return c;
+}
+// Asks the AI about the result on screen (the panel's own "Ask AI" starts a new investigation instead).
+function decAsk(k){
+  const f = decMhz(k.freq_mhz);
+  sendQuick('Explain the last investigation' + (f ? ' of ' + f.toFixed(4) + ' MHz' : '') + ' in plain English: what is it and is it normal?');
+}
+// The card of a result with a signal report (card.report_v), top to bottom in the order a phone is read: what it is
+// and how sure, the record of this frequency, a bar per dongle, the ONE next step as the only highlighted button,
+// and everything else closed under Details. Every key of the report may be missing: the card then says less, never
+// something else. All of it is set as text (names heard over the air reach these fields).
+const DEC_TAG = {doubtful: 'CHECK FIRST', confirmed_decode: 'IDENTIFIED', signal_present: 'NOT IDENTIFIED', none: 'NOTHING HEARD'};
+const DEC_SURE = {high: 'High confidence', medium: 'Medium confidence', low: 'Low confidence', confirmed: 'Confirmed by a decoder'};
+// A number stays with its unit and a dongle with its number where a line breaks ("33 s", "0.2 kHz", "Dongle 2").
+function decNb(t){ return String(t).replace(/(\d) (?=(?:[kMG]?Hz|dB|ms|s|min|ppm|%)(?![A-Za-z]))|(Dongle) (?=\d)/g, '$1$2\u00a0'); }
+function decReport(k, j){
+  const ev = k.evidence || 'none', was = (k.doubtful || []).length ? 'doubtful' : ev, kind = k.tag_kind || was;
+  const obj = x => x && typeof x === 'object' && !Array.isArray(x) ? x : {};
+  const car = obj(k.carrier), step = obj(k.step), bars = (Array.isArray(k.bars) ? k.bars : []).filter(b => b && typeof b === 'object');
+  const c = el('div', 'dec-card rep ' + kind);
+  const line = t => { if (t) c.appendChild(el('div', 'dec-sub', decNb(t))); };
+  const top = el('div', 'dec-top');
+  top.appendChild(el('span', 'tag ' + kind, k.tag || DEC_TAG[was] || DEC_TAG.signal_present));
+  if (k.history_tag) top.appendChild(el('span', 'tag hist ' + (k.history_kind || 'seen'), k.history_tag));
+  const secs = k.listened_seconds || j.seconds, fm = decMhz(k.freq_mhz);
+  top.appendChild(el('span', 'dec-meta', [car.text || (fm ? fm.toFixed(4) + ' MHz' : ''),
+                                           secs ? secs + ' s' : ''].filter(Boolean).join(' · ')));
+  c.appendChild(top);
+  c.appendChild(el('div', 'dec-head', decNb(k.headline || k.verdict || '')));
+  // how sure: the confidence in its own words first, then what it rests on
+  const sure = decNb(k.sure || ''), word = DEC_SURE[k.confidence], graded = word && k.confidence !== 'confirmed';
+  if (word && sure.indexOf(word) === 0){
+    const s = el('div', 'dec-sub'); s.appendChild(el('b', '', word)); s.appendChild(document.createTextNode(sure.slice(word.length))); c.appendChild(s);
+  } else if (graded){
+    const s = el('div', 'dec-sub'); s.appendChild(el('b', '', word + '.')); s.appendChild(document.createTextNode(sure ? ' ' + sure : '')); c.appendChild(s);
+  } else line(sure);
+  line(car.note); line(k.history_line);
+  if (bars.length){ c.appendChild(decBars(bars)); if (k.bars_note) c.appendChild(el('div', 'dec-cap', decNb(k.bars_note))); }
+  const run = decRun(step, k);
+  const next = el('div', 'dec-next');
+  if (step.reason){
+    const r = el('div', 'dec-why'); if (run) r.appendChild(el('b', '', 'Next: '));
+    r.appendChild(document.createTextNode(decNb(step.reason))); next.appendChild(r);
+  }
+  // The step's button, and beside it (below it when they do not fit) the card's one quiet link: the AI's words on
+  // this result. Capturing and locating are the panel's buttons above, or the step when the engine picks them: a
+  // card that says there is nothing to do does not offer them again.
+  const acts = el('div', 'dec-acts');
+  if (run){ const b = el('button', 'btn', step.label); b.onclick = run; acts.appendChild(b); }
+  const ask = el('button', 'dec-link', 'Explain this result'); ask.onclick = () => decAsk(k); acts.appendChild(ask);
+  next.appendChild(acts); c.appendChild(next);
+  const more = decDetails(k.details); if (more) c.appendChild(more);
+  return c;
+}
+// One row per dongle: its name, a bar in that dongle's colour on the plot, the level over its own noise, and the
+// word "best" on the strongest. The bars share one scale (the engine gives the width); a dongle that did not hear
+// it has an empty track and one that was not used has none. Where no row has a level (aircraft are counted, not
+// measured) the rows are text only.
+function decBars(bars){
+  const g = el('div', 'dec-bars'), ds = SP.meta && Array.isArray(SP.meta.dongles) ? SP.meta.dongles : [];
+  const levels = bars.some(b => b.state === 'heard' && b.pct);
+  bars.forEach(b => {
+    const d = ds.find(x => x.serial === b.serial) || ds.find(x => x.name === b.dongle);
+    const heard = b.state === 'heard' || b.state === 'count';
+    g.appendChild(el('span', 'nm', b.dongle || ''));
+    if (b.state === 'count' || !levels) g.appendChild(el('span', 'wide' + (heard ? '' : ' off'), b.text || ''));
+    else {
+      const t = el('span', b.state === 'not_used' ? '' : 'trk');
+      if (b.state === 'heard' && b.pct){
+        const i = el('i'); i.style.width = Math.min(100, Math.max(0, Number(b.pct))) + '%'; i.style.background = d ? spColor(d.serial) : '#94a3b8';
+        t.appendChild(i);
+      }
+      g.appendChild(t); g.appendChild(el('span', 'val' + (heard ? '' : ' off'), decNb(b.text || '')));
+    }
+    g.appendChild(el('span', 'best', b.best ? 'best' : ''));
+  });
+  return g;
+}
+// What the card's one button does, or null for no button (nothing to do, an action this page does not know, or a
+// radio step on a card that names no frequency). A decode step's time is for that one press.
+function decRun(step, k){
+  const f = decMhz(step.mhz) || decMhz(k.measured_mhz) || decMhz(k.freq_mhz);
+  const runs = {
+    decode: f && (() => { specSelect(f); specDecode(Number(step.seconds)); }),
+    capture: f && (() => specCapture(f, true, step.minutes)),
+    locate: f && (() => mapLocateFreq(f)),
+    check: () => sendQuick('/check'),
+    activity: () => switchTab('activity'),
+    devices: () => switchTab('devices')};
+  return (step.label && Object.prototype.hasOwnProperty.call(runs, step.action) && runs[step.action]) || null;
+}
+// The rest of the report, closed until asked for: a small title per section, its lines, and where the engine gives
+// one the on / off record of the listen.
+function decDetails(list){
+  const secs = (Array.isArray(list) ? list : []).filter(s => s && Array.isArray(s.lines) && s.lines.length);
+  if (!secs.length) return null;
+  const d = el('details', 'dec-more'); d.appendChild(el('summary', '', 'Details: what it did, checks, history'));
+  secs.forEach(s => {
+    d.appendChild(el('div', 'dec-sec', s.title || ''));
+    s.lines.forEach(t => d.appendChild(el('div', 'dec-ln', decNb(t))));
+    const st = decStrip(s.strip); if (st) d.appendChild(st);
+  });
+  return d;
+}
+// The on / off record as a row of marks, one per slot of the listen: tall = on, half = on for part of it, a low grey
+// mark = off, a gap = nobody looked then. Never finer than the slots the engine gives.
+function decStrip(st){
+  const h = st && Array.isArray(st.slots) ? st.slots : [], seen = v => v !== null && v !== undefined;
+  if (!h.some(seen)) return null;
+  const NS = 'http://www.w3.org/2000/svg', W = 10, H = 14;
+  const box = el('div', 'dec-strip'), svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 ' + (h.length * W) + ' ' + H); svg.setAttribute('preserveAspectRatio', 'none');
+  h.forEach((v, i) => {
+    if (!seen(v)) return;
+    const rc = document.createElementNS(NS, 'rect'), ht = v >= 1 ? H : (v > 0 ? H / 2 : 3);
+    rc.setAttribute('x', i * W + 0.5); rc.setAttribute('width', W - 1); rc.setAttribute('y', H - ht); rc.setAttribute('height', ht);
+    rc.setAttribute('class', v > 0 ? 'on' : 'off'); svg.appendChild(rc);
+  });
+  box.appendChild(svg);
+  box.appendChild(el('div', 'dec-cap', decNb((st.label ? st.label + ' ' : '') + 'Tall: on. Half: on part of the time. Low: off.')));
+  return box;
 }
 // A station whose RDS name was read: green in the plot and the list, never "off-plan" (the server remembers it
 // too, so later sweeps show it the same way).
@@ -1007,13 +1195,22 @@ async function specDecodePoll(){
   if (j.state === 'running'){ decProgress(j); setTimeout(specDecodePoll, 1000); return; }
   SP.job = null; decResult(j);
 }
-async function specCapture(f){
-  if (f === undefined || f === null) f = SP.sel; if (f === null) return; if (SP.running) specToggle();
-  const box = decBox(); box.innerHTML = '';
-  box.appendChild(el('div', 'infobox', 'Starting a capture on ' + Number(f).toFixed(4) + ' MHz (comparing the dongles first)...'));
-  let r; try { r = await post('/api/capture/start', {freq_mhz: Number(f)}); }
-  catch (e){ box.innerHTML = ''; box.appendChild(el('div', 'warnbox', 'Capture not started: ' + e.message)); return; }
-  box.innerHTML = ''; box.appendChild(el('div', 'infobox', r.message || 'Capture started.'));
+// A capture's message takes the place of an old result, or (keep) goes below the card whose button started it.
+async function specCapture(f, keep, minutes){
+  if (f === undefined || f === null) f = SP.sel; if (f === null || SP.capBusy) return; if (SP.running) specToggle();
+  SP.capBusy = true;                // one press is one start: the answer can take seconds (the dongles are compared first)
+  const box = decBox();
+  const say = (cls, text) => {
+    if (keep) box.querySelectorAll('.infobox, .warnbox').forEach(x => x.remove()); else box.innerHTML = '';
+    const m = el('div', cls, text); box.appendChild(m);
+    if (keep && m.scrollIntoView) m.scrollIntoView({block: 'nearest'});     // below a tall card it would be off the screen
+  };
+  say('infobox', 'Starting a capture on ' + Number(f).toFixed(4) + ' MHz (comparing the dongles first)...');
+  const ask = {freq_mhz: Number(f)}; if (Number(minutes) > 0) ask.minutes = Number(minutes);
+  let r; try { r = await post('/api/capture/start', ask); }
+  catch (e){ say('warnbox', 'Capture not started: ' + e.message); return; }
+  finally { SP.capBusy = false; }
+  say('infobox', r.message || 'Capture started.');
 }
 function specWatch(){ specCapture(); }
 function specLocate(){ if (SP.sel === null) return; if (SP.running) specToggle(); mapLocateFreq(SP.sel); }

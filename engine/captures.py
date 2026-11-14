@@ -363,6 +363,14 @@ class Watchdog:
         now = time.time()
         if self._decoded_at is not None:
             if now - self._decoded_at >= 3.0:          # devices repeat a packet several times: wait for them
+                devs = _devices_from_packets(self._pk)
+                for d in devs:
+                    d["doubts"] = _decode_doubts(d, self.freq_mhz)
+                if devs and all(d["doubts"] for d in devs):    # noise does not repeat: keep listening
+                    self._doubt = sorted({w for d in devs for w in d["doubts"]})
+                    self._decoded_at, self._pk = None, []
+                    self._set_status("rtl_433 decoded something that looks like noise: still listening for a real repeat")
+                    return
                 self._finish("identified")
             return
         for u in self._unknown.values():
@@ -408,6 +416,9 @@ class Watchdog:
             verdict = (f"Nothing came in that it could decode or demodulate{heard}. The device may be quiet, or this "
                        f"antenna may not suit it: 'investigate {f:g}' compares the dongles"
                        if self.mode == "capture" else self._logged_line())
+            if getattr(self, "_doubt", None) and self.mode == "capture":
+                verdict += (". rtl_433 did decode something, but it looked like noise (" + "; ".join(self._doubt)
+                            + ") and it never repeated")
         elif outcome == "stopped" and verdict is None:
             verdict = "Stopped" + (f": {self._logged_line()}" if self.engine == "rtl_433" else "")
         elif outcome == "error" and verdict is None:
