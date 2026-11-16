@@ -82,7 +82,7 @@ for p in range(passes):
                 lin += floor_lin * 2
             vals.append(f"{10 * math.log10(lin) + rnd.gauss(0, 0.35):.2f}")
         vals.append(vals[-1])                                  # rtl_power prints its last bin twice
-        rows.append(f"2026-10-31, 12:00:{p:02d}, {c - hop['bw2']}, {c + hop['bw2']}, {hstep:.2f}, 1000, "
+        rows.append(f"2026-03-01, 12:00:{p:02d}, {c - hop['bw2']}, {c + hop['bw2']}, {hstep:.2f}, 1000, "
                     + ", ".join(vals))
 time.sleep(0.05)
 text = "\n".join(rows) + "\n"

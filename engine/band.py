@@ -18,18 +18,18 @@ BAND_BLOCK_S = 0.25          # IQ handed to the detector at a time
 BAND_RING_S = 4.0            # IQ kept to cut bursts out of
 BAND_PAD_S = (0.04, 0.03)    # noise kept before and after each burst (rtl_433 measures its level from it)
 BAND_QUEUE = 200             # bursts waiting for rtl_433 at most; beyond that a burst is logged undecoded
-BAND_BATCH = 16              # bursts decoded by one rtl_433 run (v4.9.2): the cuts waiting in the queue are
+BAND_BATCH = 16              # bursts decoded by one rtl_433 run: the cuts waiting in the queue are
                              # joined into one recording, so a busy band costs one process per batch, not per burst
 BAND_BATCH_BUF = 65536       # rtl_433 reads a recording in blocks (262144 bytes: 32768 .cf32 samples, or 65536 if
                              # it reads that many floats): every cut is padded with quiet noise to whole blocks of
                              # 65536 samples (a multiple of both), so a package's reported position ("@1.23s", at
                              # worst the block's end) always falls inside its own cut
 BAND_BATCH_GAP_S = 0.05      # at least this much quiet between two cuts (rtl_433 closes a package in a gap)
-# Measured on a test station (Dongle 1, 433.87, 2026-11-02, three 3-minute runs through the real rtl_433): no burst under
-# 12 dB per FFT bin was ever decoded or even fingerprinted (0 of about 4,900), nor anything wider than 150 kHz
-# (0 of 1,800: LoRa-like wideband digital signals, 50-350 kHz wide, 40-200 ms long); at the dongle's 33.8 dB gain
-# the band gave 36 such bursts a second (6,506 in 3 min, the decode queue overflowed and the log filled), at 19.7 dB
-# 3 a second, with the same tyre-sensor decodes (they sit at 28-39 dB per bin). The 0 Hz bins showed no DC spike.
+# Measured on a test station (three 3-minute runs through the real rtl_433): no burst under 12 dB per FFT bin was
+# ever decoded or even fingerprinted, nor anything wider than 150 kHz (LoRa-like wideband digital signals, 50-350 kHz
+# wide, 40-200 ms long); at a high gain a busy 433 band gives dozens of such faint bursts a second, enough to
+# overflow the decode queue and fill the log, while a moderate gain gives a few a second and the same tyre-sensor
+# decodes (they sit well above 20 dB per bin). An R820T's 0 Hz bins showed no DC spike.
 BAND_DECODE_MIN_DB = 12.0    # a burst under this per FFT bin is counted as faint, not sent to rtl_433
 BAND_WIDE_HZ = 150e3         # wider than this: a wideband digital signal, counted, not sent to rtl_433
 BAND_CELL_TRY = 10           # unread bursts in a row at one frequency: after that only one in BAND_CELL_SKIP is tried
@@ -63,7 +63,7 @@ def _band_args(band):
         key = (s if s in bandwatch.BANDS else _plugin_band_key(s) or
                ("915" if re.search(r"9(?:15|02|28|00)", s) else "315" if "315" in s else
                 "433" if re.search(r"43[34]|ism", s) else None))
-        if key is None:                       # never the 433 band by default ('1090' became one before v4.8.2)
+        if key is None:                       # never the 433 band by default ('1090' must not become one)
             raise RFError(f"I don't know which band '{band}' is. A band capture covers the 433, 315 or 915 MHz band, "
                           "or a range such as 902-928.")
         lo, hi, label = bandwatch.BANDS[key]
@@ -105,8 +105,8 @@ class BandWatch(Watchdog):
 
     def _tunings(self, fs) -> list:
         """The tunings that cover the band at sample rate fs (one capture, or slices). Worked out again when the
-        rate drops to BAND_FS_SAFE: v4.8.6 kept the 2.4 MS/s tuning and no longer heard 433.05-433.10 and
-        434.64-434.79 MHz."""
+        rate drops to BAND_FS_SAFE: keeping the 2.4 MS/s tuning would leave 433.05-433.10 and 434.64-434.79 MHz
+        unheard."""
         from arislib import bandwatch
         one = BAND_EDGE * fs / 1e6
         usable = min(BAND_USABLE_MHZ, one - 0.1)      # room for the move away from a crowded frequency
@@ -231,7 +231,7 @@ class BandWatch(Watchdog):
 
     def _end_visit(self, tune, det, buf, ring, pos) -> int:
         """The end of a visit: the whole frames still waiting go to the detector, then the bursts still open go to
-        the decoder (v4.8.6 dropped both: a burst in the last 30 ms of each visit of a sliced band was never logged).
+        the decoder (else a burst in the last 30 ms of each visit of a sliced band is never logged).
         Returns how many bursts that gave."""
         n, whole = 0, len(buf) - len(buf) % (2 * det.nfft)
         if whole:
@@ -247,9 +247,9 @@ class BandWatch(Watchdog):
         return n
 
     def _rtl_sdr_cmd(self, tune) -> list:
-        """rtl_sdr for one tuning. The gain is the dongle's own for the band, capped at BAND_MAX_GAIN_DB: at the
-        33.8 dB /setup left Dongle 1 with, the 433 band is a flood of faint wideband signals (36 bursts a second
-        on a test station, nothing decodable among them) and the real devices decode just as well at 20-25 dB."""
+        """rtl_sdr for one tuning. The gain is the dongle's own for the band, capped at BAND_MAX_GAIN_DB: at a high
+        /setup gain a busy 433 band floods the capture with faint wideband signals (dozens of bursts a second,
+        nothing decodable among them) and real devices decode just as well at 20-25 dB."""
         gain = min(float(_gain_for(self.serial, self.lo, self.hi)), BAND_MAX_GAIN_DB)
         return (["rtl_sdr", "-d", self.serial, "-f", str(int(round(tune * 1e6))), "-s", str(self.fs), "-g",
                  f"{gain:g}"] + _ppm_args(self.serial) + ["-"])
@@ -292,8 +292,8 @@ class BandWatch(Watchdog):
 
     # -- decoding ---------------------------------------------------------------------------------------------------
     def _decode_loop(self) -> None:
-        """Takes the bursts waiting in the queue in batches of up to BAND_BATCH (one rtl_433 run each; v4.8.8 ran
-        one per burst: 37 bursts a second on the live station, 622 skipped with the queue full)."""
+        """Takes the bursts waiting in the queue in batches of up to BAND_BATCH (one rtl_433 run each: one run per
+        burst could not keep up with a busy band, and many bursts were skipped with the queue full)."""
         import queue
         td = tempfile.mkdtemp(prefix=_tmp_owned_prefix("band"), dir=_AUDIO_TMP)   # (memory; swept if we die)
         try:
@@ -339,7 +339,7 @@ class BandWatch(Watchdog):
         y = _mix_filter_decimate(z, fs, b["offset_hz"], 120e3, 8, taps=129)
         rate = int(round(fs / 8))
         # then down to the burst's own width: a 9 kHz remote in the whole 240 kHz kept only 2-3 dB over the noise
-        # and rtl_433 found no pulses (real PC, a remote at 17 dB in one FFT bin); FSK tones are joined by then
+        # and rtl_433 found no pulses (a remote at 17 dB in one FFT bin); FSK tones are joined by then
         cut = _band_cutoff_hz(b["width_hz"])
         if cut < 120e3:
             y = _mix_filter_decimate(y, rate, 0.0, cut, 1, taps=129)
@@ -427,7 +427,7 @@ class BandWatch(Watchdog):
 
     def _faint_burst(self, f, b, kind) -> None:
         """A burst counted without decoding: gathered per 10 kHz cell and logged as one line with its count every
-        BAND_FAINT_LOG_S (v4.8.7 logged each one: 36 lines a second at the dongle's full gain)."""
+        BAND_FAINT_LOG_S (one line per burst gave dozens of lines a second at a high gain)."""
         key = (kind, round(f, 2))
         now = time.time()
         with self._flock:
@@ -477,8 +477,8 @@ class BandWatch(Watchdog):
         self._group(("unread", why), f, False, why, n=int(count), kind=kind)
 
     def _group(self, what, f, decoded, line, packets=0, n=1, kind=None) -> None:
-        """An undecoded burst: with the others of the same kind within 15 kHz of the group's first one (v4.8.6 used
-        fixed 10 kHz cells: one signal jittering over a cell edge was two)."""
+        """An undecoded burst: with the others of the same kind within 15 kHz of the group's first one (with
+        fixed 10 kHz cells one signal jittering over a cell edge was two)."""
         g = next((g for (w, _f0), g in self._groups.items() if w == what and abs(g["f"] - f) <= 0.015), None)
         if g is None:
             g = self._groups[(what, round(f, 3))] = {"n": 0, "packets": 0, "decoded": decoded, "line": line,
@@ -489,8 +489,8 @@ class BandWatch(Watchdog):
 
     def _device(self, model, f, t, ids, packets, kind=None) -> None:
         """A decoded burst of `model`: its IDs (codes already stripped), packets, time and frequency. The result
-        counts transmissions from the burst times and tells sensors apart by ID (v4.8.6 called 4 Renault tyre
-        sensors one 'Renault, 6 transmissions', each repeat counted as a transmission)."""
+        counts transmissions from the burst times and tells sensors apart by ID (else four tyre sensors of one
+        make read as one device with each repeat counted as a transmission)."""
         d = self._devs.setdefault(model, {"ids": Counter(), "packets": 0, "times": [], "fmin": f, "fmax": f,
                                           "kind": kind, "id_times": {}})
         d["kind"] = d.get("kind") or kind
@@ -558,7 +558,7 @@ class BandWatch(Watchdog):
             why, hints = {}, []                     # each reason once, with the frequencies that gave it
             for g in unk:
                 # fingerprints of one kind differ only in their bit count and repeat the pattern note: one entry,
-                # the bit counts as a range, the note once at the end (live, v4.8.8: three near-identical lines)
+                # the bit counts as a range, the note once at the end (not three near-identical lines)
                 line, bits = g["line"], re.findall(r"(\d+)-bit packets", g["line"])
                 hint = re.search(r" \((this pattern is used by[^)]*)\)", line)
                 if hint and hint.group(1) not in hints:
@@ -593,7 +593,7 @@ class BandWatch(Watchdog):
 
     def _notice_text(self, outcome, dur, verdict, saved) -> str:
         """'The 433 MHz band capture (433.05-434.79) on Dongle 1 finished after 2 min 2 s: 96 bursts recorded. ...'
-        (v4.8.0: "Watchdog on 433.92 MHz (Dongle 1) finished after 2 min 2 s. Recorded 96 bursts in the 433 MHz band
+        (not "Watchdog on 433.92 MHz (Dongle 1) finished after 2 min 2 s. Recorded 96 bursts in the 433 MHz band
         (433.05-434.79) over 2 min 2 s.")"""
         d = _short(self.serial)
         head = f"The {_band_capture_name(self.label)} on {d}"
@@ -669,7 +669,7 @@ def _batch_decoding_works() -> bool:
     """Once per process: does this rtl_433 report where in a recording each package sat? Four synthetic cuts (the
     self-test's remote, its unknown sensor, the remote again placed so that it ends in its cut's last block, the
     sensor again) go through _rtl433_cuts; batches are used only if the remote comes back in cuts 1 and 3 only
-    and the unknown sensor in cuts 2 and 4 only. Otherwise every burst gets its own run, as before v4.9.2."""
+    and the unknown sensor in cuts 2 and 4 only. Otherwise every burst gets its own run."""
     if _BATCH_OK["ok"] is None:
         ok = False
         try:
@@ -697,8 +697,8 @@ _CONTINUOUS_RX = re.compile(r"\b(continuous\w*|keep\s+(?:logging|recording|watch
 
 def _one_reading(pk):
     """The packets rtl_433 decoded from one recorded burst, with a second decoder's reading of the same bits
-    dropped: two models whose IDs are the same digits shifted by one ('Citroen 5b2c7e14' and 'Truck 75b2c7e1' on the
-    PC) are one device read twice, so the first is kept. Returns (packets, {kept model: the other model})."""
+    dropped: two models whose IDs are the same digits shifted by one ('BMW 5b2c7e14' and 'Truck 75b2c7e1') are one
+    device read twice, so the first is kept. Returns (packets, {kept model: the other model})."""
     models = list(dict.fromkeys(str(x.get("model")) for x in pk))
     if len(models) < 2:
         return pk, {}
@@ -800,7 +800,7 @@ def start_background_watchdog(freq_mhz=None, dongle=None, mode=None, max_minutes
 
 def _others_working(serial) -> str:
     """'the other dongle keeps working' / 'the other dongles keep working' by how many others there are ('' for
-    none). v4.8.0 always said 'the other dongles' for a capture and 'the other dongle' for a band capture."""
+    none), for a capture and a band capture alike."""
     cfg = _load_config()
     n = sum(1 for s in DONGLE_NAMES if s != str(serial) and _dongle_cfg(s, cfg).get("present") is not False
             and _dongle_cfg(s, cfg).get("usb_ok") is not False)
@@ -922,7 +922,7 @@ def stop_background_watchdog(dongle=None, freq_mhz=None, band=None):
 
 def _stopped_text(gone) -> str:
     """The reply to 'stop the capture': what was stopped, after how long, what it got, and the dongles freed.
-    v4.8.0 said 'Those dongles are free again.' after one band capture."""
+    Never 'Those dongles are free again.' after one band capture."""
     items = []
     for w in gone:
         res = w.get("result") or {}
@@ -1050,8 +1050,8 @@ def _watchdog_summary(freq_mhz=None, model_filter=None, max_events=8) -> dict:
                   round((b.get("long_pulse_us") or 0) / 50.0)))
         if b.get("aris_band") and isinstance(f, (int, float)):
             # A band capture logs each burst at its own measured frequency (1 kHz steps, a few kHz of jitter):
-            # bursts of the same shape within 15 kHz of a group's first one are that group (v4.8.6 listed one
-            # undecoded signal as six rows at 433.917-433.933 MHz, which filled the list)
+            # bursts of the same shape within 15 kHz of a group's first one are that group (else one undecoded
+            # signal can fill the list as six rows a few kHz apart)
             cells = near.setdefault(shape, [])
             f = next((g0 for g0 in cells if abs(float(f) - g0) <= 0.015), float(f))
             if f not in cells:
@@ -1129,14 +1129,13 @@ def read_background_watchdog(max_events=None, model_filter=None, freq_mhz=None):
 
 
 def _plain_time(t) -> str:
-    """A logged time for a reply: rtl_433 writes '2026-11-01T18:19:04', ARIS '2026-11-02 15:23:29'; shown alike."""
+    """A logged time for a reply: rtl_433 writes '2026-03-14T12:00:00', ARIS '2026-03-14 12:00:00'; shown alike."""
     return str(t or "?").replace("T", " ", 1)[:19]
 
 
 def _logs_reply(rep) -> str:
-    """'check the logs (for Truck)' answered without the AI round. On the live station (v4.8.6) the 7B model took
-    about 4 minutes, pasted raw packet fields, was cut off, and called Schrader and Citroen tyre sensors 'the Truck
-    device' (the route had dropped the filter)."""
+    """'check the logs (for Truck)' answered without the AI round. A small model can take minutes, paste raw
+    packet fields, get cut off, and call every tyre sensor 'the Truck device' (when the route drops the filter)."""
     lines = []
     for w in rep.get("watchdogs_running") or []:
         lines.append(f"Running now: {_capture_doing(w)} on {w.get('dongle')}"
@@ -1182,7 +1181,7 @@ def _logs_reply(rep) -> str:
     "remotes, meters; newest first, with how often and where each was heard. Use for 'what devices have you "
     "seen', 'list devices', 'which cars'. NOT for undecoded signals (read_background_watchdog).",
     {"filter": {"type": "string", "description": "Only devices whose make, ID, kind or frequency contains this "
-                "text (e.g. 'Citroen', 'tpms', '433.9')"},
+                "text (e.g. 'BMW', 'tpms', '433.9')"},
      "limit": {"type": "integer", "description": "Rows to list (default 10)"}},
 )
 def list_devices(filter=None, limit=None):          # (the dongle list is _list_devices: a different thing)
@@ -1238,7 +1237,7 @@ def _devices_reply(rep) -> str:
     {"question": {"type": "string", "description": "The user's question, in their words"}},
 )
 def wifi_networks(question=None):
-    """v4.13.0: read the GUI's Wi-Fi list (DATA_DIR/wifi.json; the GUI folds the helper's scans in every
+    """Read the GUI's Wi-Fi list (DATA_DIR/wifi.json; the GUI folds the helper's scans in every
     minute) and answer from it in plain words (arislib.wireless.answer). Reads only: ARIS never scans Wi-Fi itself."""
     from arislib import wireless
     try:

@@ -17,7 +17,7 @@ def show(label, r):
     for k in ("adsb", "possible_clock_harmonic", "earlier_checks_of_this_frequency", "broadcast_station_confirmed"):
         if k in r: print(f"  {k}: {r[k]}")
     print("  saved:", (r.get("stage4_plain_english") or {}).get("saved_to_signal_list", (r.get("stage4_plain_english") or {}).get("note")))
-cases = sys.argv[1:] or ["914.842", "433.92", "96.9", "1090", "921.6@3", "101.0"]
+cases = sys.argv[1:] or ["914.842", "433.92", "97.1", "1090", "921.6@3", "101.0"]
 for c in cases:
     f, _, d = c.partition("@")
     t = time.time()

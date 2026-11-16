@@ -50,7 +50,7 @@ def _read_baseline(p: Path):
 
 def _baseline_bins(base: dict) -> dict:
     """{grid index: [mean, max, std]} of a baseline (converted once per file, then cached with it). Baselines
-    recorded before v4.7.2 stored rtl_power's bins up to one bin too high: they are moved to the true frequencies
+    recorded by older versions stored rtl_power's bins up to one bin too high: they are moved to the true frequencies
     here, so audits do not see every strong signal's edges as new."""
     bm = base.get("_bmap")
     if bm is None:
@@ -568,11 +568,11 @@ _OLD_LEVELS = {"CRITICAL": "HIGH", "SEVERE": "HIGH", "MODERATE": "MEDIUM", "ELEV
 
 
 def _patrol_rounds(maxlen=20) -> list:
-    """The last flagged patrol rounds from the log, oldest first, in today's terms. Rounds from versions before git
-    (the live station, 2026-10-31) say CRITICAL / MODERATE and used other score limits: every level is worked out
-    again from its score (HIGH 25+, MEDIUM 15+), else the old word is mapped. Their dongle names follow the
-    numbering of that day ('Dongle 2' was the removed 00002002): newer rounds carry the serials and get today's
-    names, older ones are marked 'names_then'. Each round gets 't' (epoch seconds)."""
+    """The last flagged patrol rounds from the log, oldest first, in today's terms. Rounds from very old versions say
+    CRITICAL / MODERATE and used other score limits: every level is worked out again from its score (HIGH 25+,
+    MEDIUM 15+), else the old word is mapped. Their dongle names follow the numbering of that day (a dongle may
+    have been forgotten since): newer rounds carry the serials and get today's names, older ones are marked
+    'names_then'. Each round gets 't' (epoch seconds)."""
     out = []
     try:
         with open(PATROL_LOG, errors="replace") as f:
@@ -633,8 +633,8 @@ def patrol_status():
 
 
 def _patrol_reply(rep) -> str:
-    """'patrol status' answered without the AI round. The live station's AI (v4.8.6) pasted two-day-old rounds
-    with raw fields and old levels for 5 minutes, was cut off mid-word, and never said patrol was off."""
+    """'patrol status' answered without the AI round. A small model can paste old rounds with raw fields and
+    old levels for minutes, get cut off mid-word, and never say that patrol is off."""
     if rep.get("running"):
         lines = [f"Patrol is running on {', '.join(rep.get('bands') or [])} with {', '.join(rep.get('dongles') or [])}"
                  f" every {rep.get('interval_min')} min: {rep.get('audits_done', 0)} band checks done, "

@@ -177,8 +177,8 @@ def authed() -> bool:
 
 
 def role() -> str:
-    """'admin' or 'viewer' for the logged-in session. Sessions from before v4.9.4 carry no role (the cookie
-    outlives an update): it is worked out from the user name then (v4.9.5 review)."""
+    """'admin' or 'viewer' for the logged-in session. Sessions made before roles existed carry no role (the
+    cookie outlives an update): it is worked out from the user name then."""
     from flask import session
     r = session.get("role")
     if r not in ("admin", "viewer"):
@@ -200,7 +200,7 @@ def api_login_required(fn):
 
 def api_admin_required(fn):
     """Changing or deleting (Clear data, Clear logs, Forget devices, floorplans and nodes): the admin account only.
-    An extra account gets 403 with a plain message (the review: extra accounts had every admin power)."""
+    An extra account gets 403 with a plain message (otherwise it would hold every admin power)."""
     @wraps(fn)
     def wrapper(*a, **kw):
         from flask import jsonify, session

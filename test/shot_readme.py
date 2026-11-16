@@ -1,6 +1,10 @@
 """The README's screenshots, from the simulator: phone-width Chat, Spectrum, Devices and Activity, and a desktop-width
-Spectrum. Needs serve.py running with ARIS_SEED_DEVICES=1 (run_all.sh --shots starts it).
-python3 shot_readme.py [port] [outdir]   (default outdir: docs/screenshots)
+Spectrum. Needs serve.py running with the example devices, every dongle hearing the FM band and the clock in UTC (the
+pages are opened in UTC too, so the pictures show no local time). From the test folder:
+  export TZ=UTC FAKE_WD_PERIOD=1 ARIS_SEED_DEVICES=1
+  export SERVE_FAKE_ANT="00017350:fm=0,433=0,915=-25;00026410:fm=-3,433=-6,915=-10;00035720:fm=-6,433=3,915=0"
+  python3 serve.py 5097 &
+  python3 shot_readme.py [port] [outdir]   (default outdir: docs/screenshots), then stop serve.py
 The phone page is opened as a touch screen and the desktop page with a mouse: a row of chips is one line that scrolls
 under a finger and wraps onto more lines for a mouse (app.css). Both are measured after the screenshots, and the
 script ends with status 1 when a chip is cut off on the desktop page or the phone's row is no longer one line."""
@@ -71,7 +75,8 @@ async def main():
         br = await p.chromium.launch()
         errors = []
 
-        ph = await br.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=2, has_touch=True)
+        ph = await br.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=2, has_touch=True,
+                                timezone_id="UTC")
         ph.on("pageerror", lambda e: errors.append(str(e)))
         await login(ph)
         await fm_sweep(ph)                                   # every dongle free: the three traces together
@@ -91,7 +96,7 @@ async def main():
         await ph.screenshot(path=f"{OUT}/phone-activity.png", full_page=False)
 
         # 800 high: the presets take a second line at this width, and the plot keeps its place in the picture
-        dt = await br.new_page(viewport={"width": 1280, "height": 800}, device_scale_factor=1)
+        dt = await br.new_page(viewport={"width": 1280, "height": 800}, device_scale_factor=1, timezone_id="UTC")
         dt.on("pageerror", lambda e: errors.append(str(e)))
         await login(dt)
         await dt.wait_for_timeout(5000)                      # the band capture's dongle is free again

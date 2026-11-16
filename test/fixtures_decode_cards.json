@@ -34,8 +34,8 @@
  },
  "cards": {
   "1a": {
-   "freq_mhz": 172.8364,
-   "measured_mhz": 172.83641,
+   "freq_mhz": 172.8231,
+   "measured_mhz": 172.82312,
    "verdict": "Not identified: no decoder recognised it. Measured: Steady unmodulated carrier (an idle transmitter carrier or a clock signal from equipment)",
    "evidence": "signal_present",
    "evidence_text": "Heard, but no decoder identified it",
@@ -63,18 +63,18 @@
    "history_tag": "NO EARLIER RECORD",
    "history_kind": "new",
    "carrier": {
-    "mhz": 172.836412,
-    "text": "172.836 MHz",
+    "mhz": 172.823112,
+    "text": "172.823 MHz",
     "note": null
    },
    "headline": "Steady carrier on all 3 dongles. What sends it is not known.",
    "sure": "Source not known: an idle transmitter and an equipment clock look the same in a short look.",
    "confidence": "unknown",
-   "history_line": "No earlier record here (list from 5 Oct).",
+   "history_line": "No earlier record here (list from 2 Feb).",
    "bars": [
     {
      "dongle": "Dongle 1",
-     "serial": "00001001",
+     "serial": "00017350",
      "state": "heard",
      "db": 8.0,
      "pct": 20,
@@ -83,7 +83,7 @@
     },
     {
      "dongle": "Dongle 2",
-     "serial": "00003003",
+     "serial": "00026410",
      "state": "heard",
      "db": 16.0,
      "pct": 40,
@@ -92,7 +92,7 @@
     },
     {
      "dongle": "Dongle 3",
-     "serial": "00004004",
+     "serial": "00035720",
      "state": "heard",
      "db": 10.0,
      "pct": 25,
@@ -105,7 +105,7 @@
     "action": "decode",
     "label": "Watch it for 2 min",
     "reason": "To see whether it ever switches off, drifts or carries anything.",
-    "mhz": 172.8364,
+    "mhz": 172.8231,
     "seconds": 120,
     "minutes": null,
     "dongle": null
@@ -169,7 +169,7 @@
     {
      "title": "SPUR CHECK",
      "lines": [
-      "Not the dongles' own clock: 36 kHz from 6 x 28.8 MHz.",
+      "Not the dongles' own clock: 23 kHz from 6 x 28.8 MHz.",
       "No match with 13 common equipment clocks.",
       "All 3 dongles read the same frequency within 0.2 kHz: one signal reaches all of them. Whether through the antennas or the wiring is not known from this."
      ],
@@ -178,8 +178,8 @@
     {
      "title": "HISTORY",
      "lines": [
-      "No saved check within 6 kHz. The saved list goes back to 5 Oct.",
-      "No baseline covers 172.84 MHz, so there is no normal day to compare with."
+      "No saved check within 6 kHz. The saved list goes back to 2 Feb.",
+      "No baseline covers 172.82 MHz, so there is no normal day to compare with."
      ],
      "strip": null
     },
@@ -204,7 +204,7 @@
    ]
   },
   "1b": {
-   "freq_mhz": 172.8364,
+   "freq_mhz": 172.8231,
    "measured_mhz": 172.80001,
    "verdict": "Not identified: no decoder recognised it. Measured: Steady unmodulated carrier (an idle transmitter carrier or a clock signal from equipment)",
    "evidence": "signal_present",
@@ -233,18 +233,18 @@
    "history_tag": "SEEN BEFORE",
    "history_kind": "seen",
    "carrier": {
-    "mhz": 172.800352,
+    "mhz": 172.80001,
     "text": "172.800 MHz",
-    "note": "Found at 172.800 MHz, 36.0 kHz below the frequency picked. The decoders listened there."
+    "note": "Found at 172.800 MHz, 23.1 kHz below the frequency picked. The decoders listened there."
    },
    "headline": "The receivers' own clock, not a transmitter: 6 x 28.8 MHz.",
    "sure": "High confidence. Rests on: all 3 dongles within 0.3 kHz of their own 6 x 28.8 MHz line; no drift; no modulation. A transmitter exactly on 172.800 MHz would hide behind this line.",
    "confidence": "high",
-   "history_line": "Saved on 4 days since 9 Nov (4 checks).",
+   "history_line": "Saved on 4 days since 9 Mar (4 checks).",
    "bars": [
     {
      "dongle": "Dongle 1",
-     "serial": "00001001",
+     "serial": "00017350",
      "state": "heard",
      "db": 8.0,
      "pct": 20,
@@ -253,7 +253,7 @@
     },
     {
      "dongle": "Dongle 2",
-     "serial": "00003003",
+     "serial": "00026410",
      "state": "heard",
      "db": 16.0,
      "pct": 40,
@@ -262,7 +262,7 @@
     },
     {
      "dongle": "Dongle 3",
-     "serial": "00004004",
+     "serial": "00035720",
      "state": "heard",
      "db": 10.0,
      "pct": 25,
@@ -275,7 +275,7 @@
     "action": "decode",
     "label": "Decode again (10 s)",
     "reason": "To be sure, unplug Dongle 2's antenna first. If the level stays, it is the receiver.",
-    "mhz": 172.8004,
+    "mhz": 172.8,
     "seconds": 10,
     "minutes": null,
     "dongle": null
@@ -347,7 +347,7 @@
     {
      "title": "HISTORY",
      "lines": [
-      "4 saved checks within 6 kHz, the last on 13 Nov. Each time a steady carrier. The saved list goes back to 5 Oct.",
+      "4 saved checks within 6 kHz, the last on 13 Mar. Each time a steady carrier. The saved list goes back to 2 Feb.",
       "No baseline covers 172.8 MHz, so there is no normal day to compare with."
      ],
      "strip": null
@@ -372,8 +372,8 @@
    ]
   },
   "2": {
-   "freq_mhz": 172.8364,
-   "measured_mhz": 172.83641,
+   "freq_mhz": 172.8231,
+   "measured_mhz": 172.82312,
    "verdict": "Not identified: no decoder recognised it. Measured: Steady unmodulated carrier (an idle transmitter carrier or a clock signal from equipment)",
    "evidence": "signal_present",
    "evidence_text": "Heard, but no decoder identified it",
@@ -401,18 +401,18 @@
    "history_tag": "REGULAR HERE",
    "history_kind": "regular",
    "carrier": {
-    "mhz": 172.836412,
-    "text": "172.836 MHz",
+    "mhz": 172.823112,
+    "text": "172.823 MHz",
     "note": null
    },
    "headline": "Steady carrier on all 3 dongles: a fixed source, here for weeks.",
-   "sure": "Medium confidence. Rests on: saved on 9 days since 24 Oct, a steady carrier each time; in Dongle 2's baseline of 3 Nov. What sends it is still not known.",
+   "sure": "Medium confidence. Rests on: saved on 9 days since 21 Feb, a steady carrier each time; in Dongle 2's baseline of 3 Mar. What sends it is still not known.",
    "confidence": "medium",
-   "history_line": "Saved on 9 days since 24 Oct (12 checks).",
+   "history_line": "Saved on 9 days since 21 Feb (12 checks).",
    "bars": [
     {
      "dongle": "Dongle 1",
-     "serial": "00001001",
+     "serial": "00017350",
      "state": "heard",
      "db": 8.0,
      "pct": 20,
@@ -421,7 +421,7 @@
     },
     {
      "dongle": "Dongle 2",
-     "serial": "00003003",
+     "serial": "00026410",
      "state": "heard",
      "db": 16.0,
      "pct": 40,
@@ -430,7 +430,7 @@
     },
     {
      "dongle": "Dongle 3",
-     "serial": "00004004",
+     "serial": "00035720",
      "state": "heard",
      "db": 10.0,
      "pct": 25,
@@ -443,7 +443,7 @@
     "action": "none",
     "label": "",
     "reason": "It is not new. Nothing to do unless it changes.",
-    "mhz": 172.8364,
+    "mhz": 172.8231,
     "seconds": null,
     "minutes": null,
     "dongle": null
@@ -507,7 +507,7 @@
     {
      "title": "SPUR CHECK",
      "lines": [
-      "Not the dongles' own clock: 36 kHz from 6 x 28.8 MHz.",
+      "Not the dongles' own clock: 23 kHz from 6 x 28.8 MHz.",
       "No match with 13 common equipment clocks.",
       "All 3 dongles read the same frequency within 0.2 kHz: one signal reaches all of them. Whether through the antennas or the wiring is not known from this."
      ],
@@ -516,8 +516,8 @@
     {
      "title": "HISTORY",
      "lines": [
-      "12 saved checks within 6 kHz, the last on 13 Nov. Each time a steady carrier. The saved list goes back to 5 Oct.",
-      "Dongle 2's baseline of 3 Nov already had a signal at or next to this frequency; Dongle 1's and Dongle 3's baselines of 3 Nov are not clear here.",
+      "12 saved checks within 6 kHz, the last on 13 Mar. Each time a steady carrier. The saved list goes back to 2 Feb.",
+      "Dongle 2's baseline of 3 Mar already had a signal at or next to this frequency; Dongle 1's and Dongle 3's baselines of 3 Mar are not clear here.",
       "Checked 2 times in the last 6 hours: heard every time."
      ],
      "strip": null
@@ -584,7 +584,7 @@
    "bars": [
     {
      "dongle": "Dongle 1",
-     "serial": "00001001",
+     "serial": "00017350",
      "state": "heard",
      "db": 14.0,
      "pct": 35,
@@ -593,7 +593,7 @@
     },
     {
      "dongle": "Dongle 2",
-     "serial": "00003003",
+     "serial": "00026410",
      "state": "not_heard",
      "db": null,
      "pct": null,
@@ -602,7 +602,7 @@
     },
     {
      "dongle": "Dongle 3",
-     "serial": "00004004",
+     "serial": "00035720",
      "state": "heard",
      "db": 9.0,
      "pct": 22,
@@ -650,7 +650,7 @@
     {
      "title": "HISTORY",
      "lines": [
-      "4 saved checks within 60 kHz, the last on 12 Nov. The saved list goes back to 5 Oct.",
+      "4 saved checks within 60 kHz, the last on 12 Mar. The saved list goes back to 2 Feb.",
       "No baseline covers 433.92 MHz, so there is no normal day to compare with.",
       "Devices decoded here before: Nexus-TH weather station and 3 others."
      ],
@@ -669,7 +669,7 @@
    ]
   },
   "4": {
-   "freq_mhz": 28.79,
+   "freq_mhz": 29.31,
    "measured_mhz": null,
    "verdict": "Doubtful: rtl_433 decoded something, but it is probably noise and not that device",
    "evidence": "signal_present",
@@ -677,7 +677,7 @@
    "listened_seconds": 33,
    "band": "Narrowband Utility / Telemetry Carrier",
    "dongles": [
-    "Dongle 1: heard it, 4 dB above noise, 1 packet decoded (strongest)",
+    "Dongle 1: heard it, 5 dB above noise, 1 packet decoded (strongest)",
     "Dongle 2: did not hear it",
     "Dongle 3: did not hear it"
    ],
@@ -689,39 +689,39 @@
     "rtl_433"
    ],
    "doubtful": [
-    "28.790 MHz is outside the bands these devices use",
-    "it is a single packet, only 4 dB above noise",
+    "29.310 MHz is outside the bands these devices use",
+    "it is a single packet, only 5 dB above noise",
     "it is a single packet with ID 0"
    ],
    "station_name": null,
-   "station_channel": 28.8,
+   "station_channel": 29.3,
    "report_v": 1,
    "tag": "CHECK FIRST",
    "tag_kind": "doubtful",
    "history_tag": null,
    "history_kind": null,
    "carrier": {
-    "mhz": 28.79,
-    "text": "28.790 MHz",
+    "mhz": 29.31,
+    "text": "29.310 MHz",
     "note": null
    },
    "headline": "Probably noise, not a real device.",
-   "sure": "A decoder named \"ERT-SCM\", but 28.790 MHz is outside the bands these devices use; it is a single packet with ID 0; it is a single packet, only 4 dB above noise.",
+   "sure": "A decoder named \"ERT-SCM\", but 29.310 MHz is outside the bands these devices use; it is a single packet with ID 0; it is a single packet, only 5 dB above noise.",
    "confidence": "check",
    "history_line": null,
    "bars": [
     {
      "dongle": "Dongle 1",
-     "serial": "00001001",
+     "serial": "00017350",
      "state": "heard",
-     "db": 4.0,
-     "pct": 10,
+     "db": 5.0,
+     "pct": 12,
      "best": true,
-     "text": "4 dB"
+     "text": "5 dB"
     },
     {
      "dongle": "Dongle 2",
-     "serial": "00003003",
+     "serial": "00026410",
      "state": "not_heard",
      "db": null,
      "pct": null,
@@ -730,7 +730,7 @@
     },
     {
      "dongle": "Dongle 3",
-     "serial": "00004004",
+     "serial": "00035720",
      "state": "not_heard",
      "db": null,
      "pct": null,
@@ -743,7 +743,7 @@
     "action": "decode",
     "label": "Decode again for 1 min",
     "reason": "One weak packet is not proof. A real device decodes again.",
-    "mhz": 28.79,
+    "mhz": 29.31,
     "seconds": 60,
     "minutes": null,
     "dongle": null
@@ -766,8 +766,8 @@
     {
      "title": "HISTORY",
      "lines": [
-      "No saved check within 6 kHz. The saved list goes back to 5 Oct.",
-      "No baseline covers 28.79 MHz, so there is no normal day to compare with."
+      "No saved check within 6 kHz. The saved list goes back to 2 Feb.",
+      "No baseline covers 29.31 MHz, so there is no normal day to compare with."
      ],
      "strip": null
     },
@@ -843,7 +843,7 @@
     {
      "title": "HISTORY",
      "lines": [
-      "No saved check within 6 kHz. The saved list goes back to 5 Oct.",
+      "No saved check within 6 kHz. The saved list goes back to 2 Feb.",
       "No baseline covers 162.55 MHz, so there is no normal day to compare with."
      ],
      "strip": null
@@ -868,9 +868,9 @@
    ]
   },
   "6": {
-   "freq_mhz": 96.9,
-   "measured_mhz": 96.9003,
-   "verdict": "Identified: FM broadcast station on 96.9 MHz, RDS station name \"HITS FM\". It sends its own name, so this is a public radio station",
+   "freq_mhz": 97.1,
+   "measured_mhz": 97.1003,
+   "verdict": "Identified: FM broadcast station on 97.1 MHz, RDS station name \"HITS FM\". It sends its own name, so this is a public radio station",
    "evidence": "confirmed_decode",
    "evidence_text": "Identified by a decoder",
    "listened_seconds": 10,
@@ -887,15 +887,15 @@
    "decoders": [],
    "doubtful": [],
    "station_name": "HITS FM",
-   "station_channel": 96.9,
+   "station_channel": 97.1,
    "report_v": 1,
    "tag": "IDENTIFIED",
    "tag_kind": "confirmed_decode",
    "history_tag": null,
    "history_kind": null,
    "carrier": {
-    "mhz": 96.9,
-    "text": "96.9 MHz",
+    "mhz": 97.1,
+    "text": "97.1 MHz",
     "note": null
    },
    "headline": "FM radio station \"HITS FM\".",
@@ -905,7 +905,7 @@
    "bars": [
     {
      "dongle": "Dongle 1",
-     "serial": "00001001",
+     "serial": "00017350",
      "state": "heard",
      "db": 28.0,
      "pct": 70,
@@ -914,7 +914,7 @@
     },
     {
      "dongle": "Dongle 2",
-     "serial": "00003003",
+     "serial": "00026410",
      "state": "heard",
      "db": 10.0,
      "pct": 25,
@@ -923,7 +923,7 @@
     },
     {
      "dongle": "Dongle 3",
-     "serial": "00004004",
+     "serial": "00035720",
      "state": "not_heard",
      "db": null,
      "pct": null,
@@ -936,7 +936,7 @@
     "action": "none",
     "label": "",
     "reason": "Nothing to do: identified.",
-    "mhz": 96.9,
+    "mhz": 97.1,
     "seconds": null,
     "minutes": null,
     "dongle": null
@@ -959,14 +959,14 @@
     {
      "title": "HISTORY",
      "lines": [
-      "Its name \"HITS FM\" was read here before, last on 12 Nov."
+      "Its name \"HITS FM\" was read here before, last on 12 Mar."
      ],
      "strip": null
     },
     {
      "title": "DECODERS",
      "lines": [
-      "Identified: FM broadcast station on 96.9 MHz, RDS station name \"HITS FM\". It sends its own name, so this is a public radio station.",
+      "Identified: FM broadcast station on 97.1 MHz, RDS station name \"HITS FM\". It sends its own name, so this is a public radio station.",
       "Band plan: Commercial FM Broadcast (Wideband FM, ~200 kHz).",
       "Heard on Dongle 1 and Dongle 2, not on Dongle 3. The dongles have different antennas, so this usually means the antennas on Dongle 1 and Dongle 2 suit this band better; it does not mean the signal is internal.",
       "Not saved to the Signals list."
@@ -1017,7 +1017,7 @@
    "bars": [
     {
      "dongle": "Dongle 1",
-     "serial": "00001001",
+     "serial": "00017350",
      "state": "heard",
      "db": 15.0,
      "pct": 38,
@@ -1026,7 +1026,7 @@
     },
     {
      "dongle": "Dongle 2",
-     "serial": "00003003",
+     "serial": "00026410",
      "state": "heard",
      "db": 6.0,
      "pct": 15,
@@ -1035,7 +1035,7 @@
     },
     {
      "dongle": "Dongle 3",
-     "serial": "00004004",
+     "serial": "00035720",
      "state": "heard",
      "db": 11.0,
      "pct": 28,
@@ -1090,7 +1090,7 @@
     {
      "title": "HISTORY",
      "lines": [
-      "14 saved checks within 60 kHz, the last on 13 Nov. The saved list goes back to 5 Oct.",
+      "14 saved checks within 60 kHz, the last on 13 Mar. The saved list goes back to 2 Feb.",
       "No baseline covers 433.92 MHz, so there is no normal day to compare with.",
       "Devices decoded here before: Nexus-TH weather station and 3 others."
      ],
@@ -1152,11 +1152,11 @@
    "headline": "Carrier that switches on and off on both dongles: on 50 % of the 3 s look.",
    "sure": "Source not known: a short look shows that it switches, not what sends it.",
    "confidence": "unknown",
-   "history_line": "No earlier record here (list from 5 Oct).",
+   "history_line": "No earlier record here (list from 2 Feb).",
    "bars": [
     {
      "dongle": "Dongle 1",
-     "serial": "00001001",
+     "serial": "00017350",
      "state": "heard",
      "db": 14.0,
      "pct": 35,
@@ -1165,7 +1165,7 @@
     },
     {
      "dongle": "Dongle 2",
-     "serial": "00003003",
+     "serial": "00026410",
      "state": "heard",
      "db": 11.0,
      "pct": 28,
@@ -1250,7 +1250,7 @@
     {
      "title": "HISTORY",
      "lines": [
-      "No saved check within 6 kHz. The saved list goes back to 5 Oct.",
+      "No saved check within 6 kHz. The saved list goes back to 2 Feb.",
       "No baseline covers 151.25 MHz, so there is no normal day to compare with."
      ],
      "strip": null
@@ -1309,11 +1309,11 @@
    "headline": "Aviation-band transmission: AM, on in 3 of 8 looks.",
    "sure": "Medium confidence. Rests on: AM measured on Dongle 1; a frequency in the aircraft voice band.",
    "confidence": "medium",
-   "history_line": "No earlier record here (list from 5 Oct).",
+   "history_line": "No earlier record here (list from 2 Feb).",
    "bars": [
     {
      "dongle": "Dongle 1",
-     "serial": "00001001",
+     "serial": "00017350",
      "state": "heard",
      "db": 15.0,
      "pct": 38,
@@ -1322,7 +1322,7 @@
     },
     {
      "dongle": "Dongle 2",
-     "serial": "00003003",
+     "serial": "00026410",
      "state": "heard",
      "db": 9.0,
      "pct": 22,
@@ -1331,7 +1331,7 @@
     },
     {
      "dongle": "Dongle 3",
-     "serial": "00004004",
+     "serial": "00035720",
      "state": "not_heard",
      "db": null,
      "pct": null,
@@ -1389,7 +1389,7 @@
     {
      "title": "HISTORY",
      "lines": [
-      "No saved check within 6 kHz. The saved list goes back to 5 Oct.",
+      "No saved check within 6 kHz. The saved list goes back to 2 Feb.",
       "No baseline covers 118.1 MHz, so there is no normal day to compare with."
      ],
      "strip": null
@@ -1453,7 +1453,7 @@
    "bars": [
     {
      "dongle": "Dongle 1",
-     "serial": "00001001",
+     "serial": "00017350",
      "state": "count",
      "db": null,
      "pct": null,
@@ -1462,7 +1462,7 @@
     },
     {
      "dongle": "Dongle 2",
-     "serial": "00003003",
+     "serial": "00026410",
      "state": "not_heard",
      "db": null,
      "pct": null,
@@ -1542,7 +1542,7 @@
    "bars": [
     {
      "dongle": "Dongle 1",
-     "serial": "00001001",
+     "serial": "00017350",
      "state": "not_used",
      "db": null,
      "pct": null,
@@ -1551,7 +1551,7 @@
     },
     {
      "dongle": "Dongle 2",
-     "serial": "00003003",
+     "serial": "00026410",
      "state": "heard",
      "db": 0.2,
      "pct": 4,
@@ -1560,7 +1560,7 @@
     },
     {
      "dongle": "Dongle 3",
-     "serial": "00004004",
+     "serial": "00035720",
      "state": "heard",
      "db": 12.0,
      "pct": 30,
@@ -1631,7 +1631,7 @@
    "bars": [
     {
      "dongle": "Dongle 1",
-     "serial": "00001001",
+     "serial": "00017350",
      "state": "heard",
      "db": 12.0,
      "pct": 30,
@@ -1640,7 +1640,7 @@
     },
     {
      "dongle": "Dongle 2",
-     "serial": "00003003",
+     "serial": "00026410",
      "state": "heard",
      "db": 9.0,
      "pct": 22,
@@ -1649,7 +1649,7 @@
     },
     {
      "dongle": "Dongle 3",
-     "serial": "00004004",
+     "serial": "00035720",
      "state": "heard",
      "db": 21.0,
      "pct": 52,
@@ -1714,11 +1714,11 @@
    "headline": "FM transmitter at 94.8 MHz, between the station channels. Not a normal station.",
    "sure": "Medium confidence. Rests on: wideband FM measured; a carrier on an even tenth, where no station belongs.",
    "confidence": "medium",
-   "history_line": "Saved on 2 days since 11 Nov (2 checks).",
+   "history_line": "Saved on 2 days since 11 Mar (2 checks).",
    "bars": [
     {
      "dongle": "Dongle 1",
-     "serial": "00001001",
+     "serial": "00017350",
      "state": "heard",
      "db": 22.0,
      "pct": 55,
@@ -1727,7 +1727,7 @@
     },
     {
      "dongle": "Dongle 2",
-     "serial": "00003003",
+     "serial": "00026410",
      "state": "heard",
      "db": 14.0,
      "pct": 35,
@@ -1736,7 +1736,7 @@
     },
     {
      "dongle": "Dongle 3",
-     "serial": "00004004",
+     "serial": "00035720",
      "state": "heard",
      "db": 17.0,
      "pct": 42,
@@ -1811,7 +1811,7 @@
   "bars": [
    {
     "dongle": "Dongle 1",
-    "serial": "00001001",
+    "serial": "00017350",
     "state": "heard",
     "db": 0.2,
     "pct": 4,
@@ -1820,7 +1820,7 @@
    },
    {
     "dongle": "Dongle 2",
-    "serial": "00003003",
+    "serial": "00026410",
     "state": "heard",
     "db": 15.0,
     "pct": 38,
@@ -1829,7 +1829,7 @@
    },
    {
     "dongle": "Dongle 3",
-    "serial": "00004004",
+    "serial": "00035720",
     "state": "heard",
     "db": 25.0,
     "pct": 62,

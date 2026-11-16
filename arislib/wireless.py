@@ -1,4 +1,4 @@
-"""Wi-Fi networks heard (v4.10.0): the rules of the Wireless tab, with no Flask and no radio calls.
+"""Wi-Fi networks heard: the rules of the Wireless tab, with no Flask and no radio calls.
 
 What is read: the output of `iw dev <interface> scan dump` (one block per network: BSSID, frequency, signal,
 SSID, security). Only what every access point announces in its beacons: the network's name and ID, channel,
@@ -20,11 +20,11 @@ from . import oui
 MAX_NETS = 600            # networks kept (the oldest not in the baseline go first)
 STRONG_DBM = -60          # a signal this strong or stronger is most likely within the building
 HEARD_S = 600             # "heard now": in a scan within this many seconds
-TWIN_SPAN = 8             # v4.12.0: addresses equal but for the last byte, within this many, are one device's radios
+TWIN_SPAN = 8             # addresses equal but for the last byte, within this many, are one device's radios
 LONG_UP_S = 14 * 86400    # a router up for two weeks or more is an old fixture: a strong signal alone is not news
 JUST_UP_S = 3600          # up for less than an hour: it came up just now
 MARKS = ("mine", "known", "no")
-HIST_SLOT_S = 900         # v4.13.0: the signal history keeps each network's best signal per 15 minutes ...
+HIST_SLOT_S = 900         # the signal history keeps each network's best signal per 15 minutes ...
 HIST_SLOTS = 96           # ... over the last 24 hours (96 numbers at most per address: wifi.json stays small)
 GONE_S = 2 * 3600         # a steady baseline network (or one marked yours) not heard for this long has gone: a notice
 STEADY_FRAC = 0.8         # steady: heard in this share of the scanned quarter hours before it went ...
@@ -379,7 +379,7 @@ def set_mark(state: dict, bssids, mark) -> int:
     return n
 
 
-# ---- v4.13.0: words for the chat: notices and direct answers ----------------------------------------
+# ---- words for the chat: notices and direct answers ----------------------------------------------
 
 _CTRL_RX = re.compile(r"[\x00-\x1f\x7f]")
 
@@ -417,7 +417,7 @@ def _when(t: float, now: float) -> str:
 
 
 def describe(r: dict, now=None) -> str:
-    """One row in words: "'HOMENET-7F2A' (ExampleMaker): 2.4 + 5 GHz, channels 1 and 100, WPA2, -44 dBm now,
+    """One row in words: "'Workshop' (ExampleMaker): 2.4 + 5 GHz, channels 1 and 100, WPA2, -44 dBm now,
     up 16 h; in the baseline"."""
     now = time.time() if now is None else now
     head = _name(r) + (f" ({r['maker']})" if r.get("maker") else " (private address, no maker)" if r.get("private_address") else "")

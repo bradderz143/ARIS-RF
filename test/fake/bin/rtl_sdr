@@ -2,7 +2,7 @@
 """FAKE_IQ = f_mhz:mode:snr_db[:station name],...  modes: cw ook fsk wbfm (stereo pilot + real RDS carrying the
 station name, locked to the pilot), wbfm_unlocked (stereo, RDS coder on its own clock 2.1 Hz low), wbfm_monords
 (mono, RDS on its own clock 3.3 Hz high), wbfm_nords (stereo, no RDS), wbfm_mono (mono, no RDS), fmbug (mono,
-drifting). A name with | scrolls: "LA|MEJOR|97.7".
+drifting). A name with | scrolls: "HARBOR|FM|100.5".
 Narrow kinds (the fourth field is the kind's option): cwdrift[:Hz per second] a carrier that drifts in a straight line
 from the start of each capture (300), cwkey[:on/off seconds] a carrier keyed on and off by the wall clock (0.5/0.5),
 nfm[:CTCSS Hz] narrow FM voice, 2.5 kHz deviation, with a CTCSS tone (100.0; 0 = none), am[:depth percent] AM voice
@@ -17,7 +17,7 @@ per sample is about -8 dB: the per-sample levels of the older tests are far stro
 Streaming (no -n, the band capture) has its own kinds, see below; the fourth field is then the kind's option.
 FAKE_SDR_STALL=<rate>: at that sample rate and above, send a little and then stall.
 FAKE_SIGINT_HANG=<seconds|never>: Ctrl+C / SIGTERM stops the samples but rtl_sdr exits only that much later (never:
-only SIGKILL), as librtlsdr's cancel did on the real PC. FAKE_END_HANG=1: after sending its -n count it does not
+only SIGKILL), as librtlsdr's cancel can on real hardware. FAKE_END_HANG=1: after sending its -n count it does not
 exit by itself (it ends its streaming with the same cancel as Ctrl+C), so it has to be stopped."""
 import sys, os
 import numpy as np
@@ -35,7 +35,7 @@ tune = float(opt(a, "-f")); fs = float(opt(a, "-s")); out = a[-1]
 n = int(opt(a, "-n")) if "-n" in a else None
 applied = int(opt(a, "-p", "0"))
 if os.environ.get("FAKE_SDR_STALL") and fs >= float(os.environ["FAKE_SDR_STALL"]):
-    # a dongle that starts and then stops sending (seen on the real PC at 2.048 MS/s): a little data, then nothing
+    # a dongle that starts and then stops sending (seen on real hardware at 2.048 MS/s): a little data, then nothing
     sys.stdout.buffer.write(bytes(65536)); sys.stdout.flush()
     sys.stderr.write("Found 1 device(s):\nReading samples in async mode...\nLost at least 16384 bytes\n"); sys.stderr.flush()
     import time as _t; _t.sleep(120); sys.exit(0)
@@ -87,7 +87,7 @@ if n is None:
     # Streaming (band capture): FAKE_IQ devices of kind ev1527 / unk28 / ook each burst every FAKE_BURST_EVERY seconds
     # (default 1.5) at their own frequency, in real time, until rtl_sdr is stopped. Steady 'cw' carriers too.
     # ev1527hold[:seconds]: the ev1527 remote held down (default 1.5 s), fsk2[:kHz]: a 2-FSK burst with its tones
-    # that far either side of the frequency (default 35: 70 kHz apart, like a tyre sensor on the real PC). A device
+    # that far either side of the frequency (default 35: 70 kHz apart, like a typical tyre sensor). A device
     # whose burst is longer than FAKE_BURST_EVERY repeats 0.5 s after it ends.
     import time as _t3
     rng = np.random.default_rng(int(os.environ.get("FAKE_SEED", "7")))
@@ -226,7 +226,7 @@ for s in specs("FAKE_IQ"):
             ph = 2 * np.pi * np.cumsum(fb + (2 * b - 1) * 15e3) / fs
             z += A * np.exp(1j * ph) * inb
 # the dongle's own filter: flat to 70% of the band edge, gone by 90% (stations near the edge lose part of their
-# signal: v4.7.4's wide slices put some there on the real PC)
+# signal: slices that are too wide put some there)
 if n >= 4096:
     Z = np.fft.fft(z)
     a = np.abs(np.fft.fftfreq(n)) / 0.5

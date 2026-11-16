@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ARIS Bluetooth helper (v4.11.0), run by aris-bt.service. LISTENS ONLY: it starts `ubertooth-btle -n`, which prints the
+"""ARIS Bluetooth helper, run by aris-bt.service. LISTENS ONLY: it starts `ubertooth-btle -n`, which prints the
 advertisements it hears and sends nothing (the options of that tool that follow, interfere with or fake a connection are
 never given; a test fails if they appear in this file). Every EVERY seconds it writes a SUMMARY to
 $RUNTIME_DIRECTORY/scan.json for the ARIS web server: counts, the manufacturers and service types devices announce,
@@ -19,8 +19,8 @@ from arislib import bluetooth as bt   # noqa: E402
 
 COMMAND = ["ubertooth-btle", "-n"]        # passive: advertisements only
 EVERY = int(os.environ.get("ARIS_BT_EVERY", "60"))
-STALL_S = 30                               # no output at all for this long: the tool is stuck (it normally prints hundreds of
-                                           # advertisements a second here; it went silent about every half hour on the station), start it again
+STALL_S = 30                               # no output at all for this long: the tool is stuck (it normally prints many
+                                           # advertisements a second; it can go silent now and then), start it again
 
 
 def _key() -> bytes:

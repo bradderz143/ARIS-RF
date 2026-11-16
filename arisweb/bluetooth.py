@@ -1,4 +1,4 @@
-"""Bluetooth for the Devices tab (v4.11.0): what the Ubertooth heard, with a baseline.
+"""Bluetooth for the Devices tab: what the Ubertooth heard, with a baseline.
 
 The listening is done by a separate helper (deploy/aris-bt.sh installs it: a small unit that runs `ubertooth-btle -n`
 and writes a SUMMARY to ARIS_BT_SCAN_FILE, default /run/aris-bt/scan.json). ARIS itself neither listens nor transmits:

@@ -136,8 +136,8 @@ def _median(xs):
 
 
 def fmt_mhz(f, places=4, fixed=False) -> str:
-    """A frequency for a sentence, in MHz: 172.8364, 96.9, 1090 (trailing zeros trimmed; never ':g', which turns
-    172.8364 into 172.836). fixed=True keeps the places: a carrier read to 1 kHz is '172.800'."""
+    """A frequency for a sentence, in MHz: 172.8231, 97.1, 1090 (trailing zeros trimmed; never ':g', which turns
+    172.8231 into 172.823). fixed=True keeps the places: a carrier read to 1 kHz is '172.800'."""
     v = _num(f)
     if v is None:
         return "?"
@@ -269,7 +269,7 @@ def _day(ts):
 
 
 def _day_words(iso, now=None) -> str:
-    """'5 Oct', or '5 Oct 2025' when that is not this year."""
+    """'2 Feb', or '2 Feb 2025' when that is not this year."""
     try:
         d = datetime.date.fromisoformat(str(iso))
     except ValueError:
@@ -807,7 +807,7 @@ def _baseline_words(h, now):
         by.setdefault(b["state"], []).append(b)
 
     def whose(state):
-        """'Dongle 2's baseline of 3 Nov' / 'Dongle 1's and Dongle 3's baselines' (the date when they share one)."""
+        """'Dongle 2's baseline of 3 Mar' / 'Dongle 1's and Dongle 3's baselines' (the date when they share one)."""
         bs = by[state]
         dates = {b["date"] for b in bs}
         return (f"{_poss(b['dongle'] for b in bs)} baseline{'s' if len(bs) > 1 else ''}"
@@ -1766,7 +1766,7 @@ def text_lines(report) -> dict:
 # the example cards: eleven checks as the engine would describe them, for tests and the page's fixtures
 # ----------------------------------------------------------------------------------------------------------------
 EXAMPLE_CASES = ("1a", "1b", "2", "3", "4", "5", "6", "7", "8", "9", "10")
-EXAMPLE_NOW = time.mktime((2026, 11, 14, 12, 0, 0, 0, 0, -1))
+EXAMPLE_NOW = time.mktime((2026, 3, 14, 12, 0, 0, 0, 0, -1))
 
 
 def _ex_day(month, day, hour=10) -> float:
@@ -1818,14 +1818,14 @@ def _ex_dongle(n, serial, heard, snr, ppm=0.0, role="look", **more) -> dict:
     return d
 
 
-def _ex_carrier(asked, lines, ppm=(0.0, 8.0, 2.0)) -> list:
+def _ex_carrier(asked, lines, ppm=(0.0, -6.0, 2.0)) -> list:
     """Three dongles on a steady carrier in an audio band: Dongle 2 hears it best and runs the decoders, the
     other two watch."""
-    return [_ex_dongle(1, "00001001", True, 8.0, ppm[0], "watch", continuous=True, looks=_ex_looks(lines[0], snr=8.2),
+    return [_ex_dongle(1, "00017350", True, 8.0, ppm[0], "watch", continuous=True, looks=_ex_looks(lines[0], snr=8.2),
                        profile=_ex_profile(8.0, "B", lines[0])),
-            _ex_dongle(2, "00003003", True, 16.0, ppm[1], "decoder", continuous=True,
+            _ex_dongle(2, "00026410", True, 16.0, ppm[1], "decoder", continuous=True,
                        profile=_ex_profile(16.2, "A", lines[1])),
-            _ex_dongle(3, "00004004", True, 10.0, ppm[2], "watch", continuous=True, looks=_ex_looks(lines[2], snr=10.1),
+            _ex_dongle(3, "00035720", True, 10.0, ppm[2], "watch", continuous=True, looks=_ex_looks(lines[2], snr=10.1),
                        profile=_ex_profile(10.0, "B", lines[2]))]
 
 
@@ -1837,36 +1837,36 @@ def example_facts(case) -> dict:
     steady = ("Not identified: no decoder recognised it. Measured: Steady unmodulated carrier (an idle transmitter "
               "carrier or a clock signal from equipment)")
     head = "• ARIS verdict (heuristic): " + steady
-    base = {"asked_mhz": 172.8364, "band_kind": "audio", "band_label": land, "evidence": "signal_present",
+    base = {"asked_mhz": 172.8231, "band_kind": "audio", "band_label": land, "evidence": "signal_present",
             "verdict": steady, "doubtful": [], "decoder_failed": False, "listen_s": 30, "listened_s": 33, "timed": True,
             "strongest": "Dongle 2", "tune_offset_hz": -40000.0, "devices": [], "rtl433": None,
             "audio": {"frames": 0, "tone_hz": None, "seconds": 30, "decoders": "the pager, APRS and tone decoders",
-                      "dongle": "Dongle 2", "tuned_mhz": 172.8364},
+                      "dongle": "Dongle 2", "tuned_mhz": 172.8231},
             "adsb": None, "fm": None, "air": None, "map_ready": False, "capture_running": None, "new_devices": 0,
             "known_devices": 0, "now": EXAMPLE_NOW,
-            "history": {"saved": [], "list_from": _ex_day(10, 5), "list_trimmed": False, "recent": [], "baselines": [],
+            "history": {"saved": [], "list_from": _ex_day(2, 2), "list_trimmed": False, "recent": [], "baselines": [],
                         "baseline_covered": False, "last_capture": None, "fm_name": None, "devices_here": None}}
-    quiet = [_ex_dongle(1, "00001001", False, -1.2), _ex_dongle(2, "00003003", False, 0.4),
-             _ex_dongle(3, "00004004", False, -0.8)]
+    quiet = [_ex_dongle(1, "00017350", False, -1.2), _ex_dongle(2, "00026410", False, 0.4),
+             _ex_dongle(3, "00035720", False, -0.8)]
     if case == "1a":
-        base["dongles"] = _ex_carrier(172.8364, (172.836350, 172.836412, 172.836500))
+        base["dongles"] = _ex_carrier(172.8231, (172.823050, 172.823112, 172.823200))
     elif case == "1b":
-        base["dongles"] = _ex_carrier(172.8364, (172.800010, 172.801390, 172.800352))
-        base["audio"]["tuned_mhz"] = 172.8014
-        base["history"]["saved"] = [{"ts": _ex_day(11, d), "mhz": 172.8364, "carrier_mhz": None, "head": head,
+        base["dongles"] = _ex_carrier(172.8231, (172.800010, 172.798963, 172.800352))
+        base["audio"]["tuned_mhz"] = 172.799
+        base["history"]["saved"] = [{"ts": _ex_day(3, d), "mhz": 172.8231, "carrier_mhz": None, "head": head,
                                      "confirmed": False, "doubtful": False} for d in (9, 10, 12, 13)]
     elif case == "2":
-        base["dongles"] = _ex_carrier(172.8364, (172.836350, 172.836412, 172.836500))
-        days = ((10, 24), (10, 26), (10, 29), (11, 1), (11, 3), (11, 5), (11, 8), (11, 11), (11, 13))
+        base["dongles"] = _ex_carrier(172.8231, (172.823050, 172.823112, 172.823200))
+        days = ((2, 21), (2, 23), (2, 26), (3, 1), (3, 3), (3, 5), (3, 8), (3, 11), (3, 13))
         base["history"].update({
-            "saved": [{"ts": _ex_day(m, d, 9 + i), "mhz": 172.8364, "head": head, "confirmed": False, "doubtful": False,
-                       "carrier_mhz": 172.83641 if (m, d) >= (11, 8) else None}
-                      for m, d in days for i in range(2 if (m, d) in ((11, 3), (11, 11), (11, 13)) else 1)],
-            "recent": [{"ts": EXAMPLE_NOW - 3600.0 * x, "mhz": 172.8364, "carrier_mhz": 172.83641, "heard": True}
+            "saved": [{"ts": _ex_day(m, d, 9 + i), "mhz": 172.8231, "head": head, "confirmed": False, "doubtful": False,
+                       "carrier_mhz": 172.82312 if (m, d) >= (3, 8) else None}
+                      for m, d in days for i in range(2 if (m, d) in ((3, 3), (3, 11), (3, 13)) else 1)],
+            "recent": [{"ts": EXAMPLE_NOW - 3600.0 * x, "mhz": 172.8231, "carrier_mhz": 172.82312, "heard": True}
                        for x in (1, 4)],
-            "baselines": [{"dongle": "Dongle 1", "serial": "00001001", "date": _ex_day(11, 3), "state": "unclear"},
-                          {"dongle": "Dongle 2", "serial": "00003003", "date": _ex_day(11, 3), "state": "present"},
-                          {"dongle": "Dongle 3", "serial": "00004004", "date": _ex_day(11, 3), "state": "unclear"}],
+            "baselines": [{"dongle": "Dongle 1", "serial": "00017350", "date": _ex_day(3, 3), "state": "unclear"},
+                          {"dongle": "Dongle 2", "serial": "00026410", "date": _ex_day(3, 3), "state": "present"},
+                          {"dongle": "Dongle 3", "serial": "00035720", "date": _ex_day(3, 3), "state": "unclear"}],
             "baseline_covered": True})
     elif case == "3":
         base.update({
@@ -1876,27 +1876,27 @@ def example_facts(case) -> dict:
             "devices": [{"model": "Generic-Remote", "label": "#3fa2c1", "packets": 6, "doubts": [],
                          "name": "Generic fixed-code remote"}],
             "rtl433": {"bursts": 6, "packets": 6, "fingerprint": None, "seconds": 10, "pattern_hint": None},
-            "dongles": [_ex_dongle(1, "00001001", True, 14.0, 0.0, "decoder", continuous=False, rtl_433_packets=6,
+            "dongles": [_ex_dongle(1, "00017350", True, 14.0, 0.0, "decoder", continuous=False, rtl_433_packets=6,
                                    profile=_ex_burst(14.0, 433.9187, 5)),
-                        _ex_dongle(2, "00003003", False, 0.3, 8.0, "decoder"),
-                        _ex_dongle(3, "00004004", True, 9.0, 2.0, "decoder", continuous=False, rtl_433_packets=4,
+                        _ex_dongle(2, "00026410", False, 0.3, -6.0, "decoder"),
+                        _ex_dongle(3, "00035720", True, 9.0, 2.0, "decoder", continuous=False, rtl_433_packets=4,
                                    profile=_ex_burst(9.0, 433.9189, 5))]})
-        base["history"].update({"saved": [{"ts": _ex_day(11, d), "mhz": 433.92, "carrier_mhz": None,
+        base["history"].update({"saved": [{"ts": _ex_day(3, d), "mhz": 433.92, "carrier_mhz": None,
                                            "head": "• ARIS verdict (confirmed decode): Identified: Nexus-TH",
                                            "confirmed": True, "doubtful": False} for d in (2, 6, 9, 12)],
                                 "devices_here": {"names": ["Nexus-TH weather station"], "more": 3}})
     elif case == "4":
-        doubts = ["28.790 MHz is outside the bands these devices use", "it is a single packet, only 4 dB above noise",
+        doubts = ["29.310 MHz is outside the bands these devices use", "it is a single packet, only 5 dB above noise",
                   "it is a single packet with ID 0"]
         base.update({
-            "asked_mhz": 28.79, "band_kind": "other", "band_label": "10 m Amateur Band", "strongest": "Dongle 1",
+            "asked_mhz": 29.31, "band_kind": "other", "band_label": "10 m Amateur Band", "strongest": "Dongle 1",
             "audio": None, "doubtful": sorted(doubts),
             "verdict": "Doubtful: rtl_433 decoded something, but it is probably noise and not that device",
             "devices": [{"model": "ERT-SCM", "label": "0", "packets": 1, "doubts": doubts, "name": "ERT-SCM"}],
             "rtl433": {"bursts": 1, "packets": 1, "fingerprint": None, "seconds": 30, "pattern_hint": None},
-            "dongles": [_ex_dongle(1, "00001001", True, 4.0, 0.0, "decoder", heard_by_rtl433=True, rtl_433_snr_db=4.0,
-                                   rtl_433_packets=1), _ex_dongle(2, "00003003", False, -0.5, 8.0, "decoder"),
-                        _ex_dongle(3, "00004004", False, 0.2, 2.0, "decoder")]})
+            "dongles": [_ex_dongle(1, "00017350", True, 5.0, 0.0, "decoder", heard_by_rtl433=True, rtl_433_snr_db=5.0,
+                                   rtl_433_packets=1), _ex_dongle(2, "00026410", False, -0.5, -6.0, "decoder"),
+                        _ex_dongle(3, "00035720", False, 0.2, 2.0, "decoder")]})
     elif case == "5":
         base.update({"asked_mhz": 162.55, "evidence": "none", "listen_s": 10, "listened_s": 13, "strongest": None,
                      "band_label": "VHF Marine / Weather Radio", "dongles": quiet,
@@ -1904,16 +1904,16 @@ def example_facts(case) -> dict:
         base["audio"].update({"seconds": 10, "tuned_mhz": 162.55, "dongle": "Dongle 1"})
     elif case == "6":
         base.update({
-            "asked_mhz": 96.9, "band_kind": "wide", "band_label": "FM Broadcast Radio", "evidence": "confirmed_decode",
+            "asked_mhz": 97.1, "band_kind": "wide", "band_label": "FM Broadcast Radio", "evidence": "confirmed_decode",
             "listen_s": 10, "listened_s": 10, "strongest": "Dongle 1", "audio": None, "tune_offset_hz": -250000.0,
-            "verdict": 'Identified: FM broadcast station on 96.9 MHz, RDS station name "HITS FM" (PI code 0x5969). '
+            "verdict": 'Identified: FM broadcast station on 97.1 MHz, RDS station name "HITS FM" (PI code 0x3E21). '
                        "It sends its own name, so this is a public radio station",
-            "fm": {"name": "HITS FM", "channel_mhz": 96.9, "on_channel": True, "pilot": True, "rds": True,
+            "fm": {"name": "HITS FM", "channel_mhz": 97.1, "on_channel": True, "pilot": True, "rds": True,
                    "scrolls": False},
             "air": {"looks": 3, "looks_heard": 3},
-            "dongles": [_ex_dongle(1, "00001001", True, 28.0), _ex_dongle(2, "00003003", True, 10.0, 8.0),
-                        _ex_dongle(3, "00004004", False, 1.5, 2.0)]})
-        base["history"]["fm_name"] = {"name": "HITS FM", "date": _ex_day(11, 12)}
+            "dongles": [_ex_dongle(1, "00017350", True, 28.0), _ex_dongle(2, "00026410", True, 10.0, -6.0),
+                        _ex_dongle(3, "00035720", False, 1.5, 2.0)]})
+        base["history"]["fm_name"] = {"name": "HITS FM", "date": _ex_day(3, 12)}
     elif case == "7":
         base.update({
             "asked_mhz": 433.92, "band_kind": "sensor", "band_label": "433.92 MHz ISM Band", "listen_s": 10,
@@ -1922,14 +1922,14 @@ def example_facts(case) -> dict:
                        "Its signal: OOK pulse-width modulation, 300/900 us pulses, 28-bit packets sent 4 times",
             "rtl433": {"bursts": 9, "packets": 0, "fingerprint": "OOK, pulses 300 / 900 us, 28-bit packets",
                        "seconds": 10, "pattern_hint": None},
-            "dongles": [_ex_dongle(1, "00001001", True, 15.0, 0.0, "decoder", continuous=False,
+            "dongles": [_ex_dongle(1, "00017350", True, 15.0, 0.0, "decoder", continuous=False,
                                    profile=_ex_burst(15.0, 433.9211, 6)),
-                        _ex_dongle(2, "00003003", True, 6.0, 8.0, "decoder", continuous=False,
+                        _ex_dongle(2, "00026410", True, 6.0, -6.0, "decoder", continuous=False,
                                    profile=_ex_burst(6.0, 433.9209, 6)),
-                        _ex_dongle(3, "00004004", True, 11.0, 2.0, "decoder", continuous=False,
+                        _ex_dongle(3, "00035720", True, 11.0, 2.0, "decoder", continuous=False,
                                    profile=_ex_burst(11.0, 433.9213, 6))]})
-        days = (18, 20, 22, 24, 26, 28, 30, 1, 3, 5, 7, 9, 11, 13)             # from 18 Oct to 13 Nov
-        base["history"].update({"saved": [{"ts": _ex_day(10 if d > 14 else 11, d), "mhz": 433.92, "carrier_mhz": None,
+        days = (15, 17, 19, 21, 23, 25, 27, 1, 3, 5, 7, 9, 11, 13)             # from 15 Feb to 13 Mar
+        base["history"].update({"saved": [{"ts": _ex_day(2 if d > 14 else 3, d), "mhz": 433.92, "carrier_mhz": None,
                                            "head": "• ARIS verdict (heuristic): Not identified", "confirmed": False,
                                            "doubtful": False} for d in days],
                                 "devices_here": {"names": ["Nexus-TH weather station"], "more": 3}})
@@ -1939,9 +1939,9 @@ def example_facts(case) -> dict:
         base.update({
             "asked_mhz": 151.25, "strongest": "Dongle 1",
             "verdict": "Not identified: no decoder recognised it. Measured: Intermittent carrier (keyed on and off)",
-            "dongles": [_ex_dongle(1, "00001001", True, 14.0, 0.0, "decoder", continuous=False,
+            "dongles": [_ex_dongle(1, "00017350", True, 14.0, 0.0, "decoder", continuous=False,
                                    profile=keyed(14.2, "B", 151.251020)),
-                        _ex_dongle(2, "00003003", True, 11.0, 8.0, "watch", continuous=False,
+                        _ex_dongle(2, "00026410", True, 11.0, -6.0, "watch", continuous=False,
                                    profile=keyed(11.3, "B", 151.251090),
                                    looks=_ex_looks(151.2511, heard=(0, 2, 3, 5), snr=11.0, step_hz=300.0))]})
         base["audio"].update({"tuned_mhz": 151.25, "dongle": "Dongle 1"})
@@ -1952,9 +1952,9 @@ def example_facts(case) -> dict:
             "asked_mhz": 118.1, "band_kind": "air", "band_label": "Aeronautical Band", "listen_s": 30, "listened_s": 30,
             "strongest": "Dongle 1", "audio": None, "air": {"looks": 8, "looks_heard": 3},
             "verdict": "Aviation-band transmission (AM voice or data; content not recorded)",
-            "dongles": [_ex_dongle(1, "00001001", True, 15.0, 0.0, continuous=True, profile=am(15.0, "A", 118.100040)),
-                        _ex_dongle(2, "00003003", True, 9.0, 8.0, continuous=True, profile=am(9.2, "B", 118.100110)),
-                        _ex_dongle(3, "00004004", False, 0.6, 2.0)]})
+            "dongles": [_ex_dongle(1, "00017350", True, 15.0, 0.0, continuous=True, profile=am(15.0, "A", 118.100040)),
+                        _ex_dongle(2, "00026410", True, 9.0, -6.0, continuous=True, profile=am(9.2, "B", 118.100110)),
+                        _ex_dongle(3, "00035720", False, 0.6, 2.0)]})
     elif case == "10":
         base.update({
             "asked_mhz": 1090.0, "band_kind": "adsb", "band_label": "ADS-B Aircraft Transponders", "listen_s": 10,
@@ -1962,9 +1962,9 @@ def example_facts(case) -> dict:
             "tune_offset_hz": None, "adsb": {"aircraft": 2, "verified": 9},
             "verdict": "Identified: aircraft ADS-B transponders, 2 aircraft (9 checksum-verified position or identity "
                        "messages, public broadcast)",
-            "dongles": [_ex_dongle(1, "00001001", True, None, 0.0, "decoder", adsb_messages=14, adsb_verified=9,
+            "dongles": [_ex_dongle(1, "00017350", True, None, 0.0, "decoder", adsb_messages=14, adsb_verified=9,
                                    aircraft=2),
-                        _ex_dongle(2, "00003003", False, None, 8.0, "decoder", adsb_messages=3)]})
+                        _ex_dongle(2, "00026410", False, None, -6.0, "decoder", adsb_messages=3)]})
     else:
         raise ValueError(f"No example case {case!r}: use one of {', '.join(EXAMPLE_CASES)}.")
     return base

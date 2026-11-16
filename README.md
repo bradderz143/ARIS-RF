@@ -11,7 +11,7 @@ out is a read-only check of its own git repository every few hours, so the page 
 off with `"update_check": false` in the data folder's `config.json`). It never transmits, and it keeps metadata only.
 
 <p align="center">
-  <img src="docs/screenshots/phone-chat.png" width="200" alt="Chat: an investigation and the station's status in plain words">
+  <img src="docs/screenshots/phone-chat.png" width="200" alt="Chat: an investigation and ARIS's status in plain words">
   <img src="docs/screenshots/phone-spectrum.png" width="200" alt="Spectrum: three receivers overlaid on the FM band">
   <img src="docs/screenshots/phone-devices.png" width="200" alt="Devices: sensors, cars' tyre sensors and remotes">
   <img src="docs/screenshots/phone-activity.png" width="200" alt="Activity: a band capture and its result">
@@ -20,8 +20,8 @@ off with `"update_check": false` in the data folder's `config.json`). It never t
   <img src="docs/screenshots/desktop-spectrum.png" width="820" alt="Spectrum on a desktop browser">
 </p>
 
-*Screenshots from the built-in simulator (no radios attached), at phone width and on a desktop browser:
-`bash test/run_all.sh --shots` makes them again.*
+*Screenshots from the built-in simulator (no radios attached, made-up stations and devices), at phone width and on a
+desktop browser: `test/shot_readme.py` makes them again (its first lines say how).*
 
 ## What it does
 
@@ -58,7 +58,7 @@ off with `"update_check": false` in the data folder's `config.json`). It never t
 
 | Kind | How | Status |
 |---|---|---|
-| RTL-SDR dongles (RTL2832U with R820T / R828D / E4000 ...) | the rtl-sdr tools | used daily |
+| RTL-SDR dongles (RTL2832U with R820T / R828D / E4000 ...) | the rtl-sdr tools | tested on real hardware |
 | Any SoapySDR receiver: HackRF, Airspy, SDRplay, LimeSDR, PlutoSDR, USRP, SoapyRemote ... | SoapySDR + [rx_tools](https://github.com/rxseger/rx_tools) | tested in simulation |
 | Signal Hound BB60C / BB60D | the bundled plug-in `plugins/signalhound_bb60.py` with Signal Hound's BB API | tested in simulation |
 | Signal Hound SA44B / SA124B (sweeps to 12.4 GHz; narrow IQ) | the bundled plug-in `plugins/signalhound_sa.py` with Signal Hound's SA API | tested in simulation |

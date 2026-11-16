@@ -69,7 +69,7 @@ def ensure_local(dongles, absent=()) -> list:
     """Make sure every dongle of this PC has a node, named as ARIS numbers it now. dongles: [(serial, name)] of
     the dongles ARIS knows; absent: serials among them that are not plugged in. A local node whose dongle was
     forgotten or is absent is switched off ('missing') and keeps its place and calibration, so it comes back as it
-    was; v4.8.6 kept the removed 00002002 as an enabled 'Dongle 2' and called the real Dongle 2 'Dongle 3'.
+    was (an older version kept a forgotten dongle as an enabled node and numbered the others wrongly).
     A name the user gave a node is kept. Returns all nodes."""
     with _LOCK:
         d = _load()

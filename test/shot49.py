@@ -1,4 +1,4 @@
-"""Phone-width screenshots of the v4.8.8 Devices tab: the grouped list (a car's tyre sensors as one row) and the
+"""Phone-width screenshots of the Devices tab: the grouped list (a car's tyre sensors as one row) and the
 filter box at work. Needs serve.py running with ARIS_SEED_DEVICES=1.  python3 shot49.py [port] [outdir]"""
 import asyncio
 import os
@@ -26,10 +26,10 @@ async def main():
         await pg.click("#tab-devices")
         await pg.wait_for_selector(".act-row.dev-set", timeout=30000)
         await pg.wait_for_timeout(300)
-        await pg.screenshot(path=f"{OUT}/v488_devices.png", full_page=False)
-        await pg.fill("#dev-filter", "citroen")
+        await pg.screenshot(path=f"{OUT}/devices.png", full_page=False)
+        await pg.fill("#dev-filter", "ford")
         await pg.wait_for_timeout(300)
-        await pg.screenshot(path=f"{OUT}/v488_devices_filter.png", full_page=False)
+        await pg.screenshot(path=f"{OUT}/devices_filter.png", full_page=False)
         await pg.fill("#dev-filter", "")
         print("page errors:", errors or "none")
         await br.close()

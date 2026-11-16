@@ -153,7 +153,7 @@ def node_health(nid):
     if n["kind"] != "remote":
         _eng()                                     # numbering and presence as ARIS sees them now
         n = nodes.get(nid) or n
-        if n.get("missing"):                       # v4.8.6 said 'Plugged into this PC' for the removed dongle
+        if n.get("missing"):                       # never 'Plugged into this PC' for a forgotten or absent dongle
             return jsonify({"ok": False, "note": "Not plugged in: this dongle was forgotten, or the last check did "
                                                  "not find it. The node stays off until it is back."})
         return jsonify({"ok": True, "note": "Plugged into this PC"})

@@ -16,7 +16,7 @@ if "-h" in a:
 # Device selection exactly like the real rtl_433 (src/sdr.c): "-d :SERIAL" picks by serial, a bare number is a device
 # INDEX. Its own errors only show with "-F log" (to stderr); without it, a hint line instead. Exit code 2 when the
 # dongle cannot be opened. FAKE_433_BROKEN=1: it finds the dongle but cannot open it (busy / DVB driver).
-_devs = ["00001001", "00003003", "00004004"] + [x for x in os.environ.get("FAKE_EXTRA", "").split(",") if x]
+_devs = ["00017350", "00026410", "00035720"] + [x for x in os.environ.get("FAKE_EXTRA", "").split(",") if x]
 _devs = [d for d in _devs if d not in os.environ.get("FAKE_MISSING", "").split(",")]
 _log = "log" in [a[i + 1] for i, x in enumerate(a[:-1]) if x == "-F"]
 def _fail(*msgs):
@@ -47,7 +47,7 @@ if _log:
           file=sys.stderr, flush=True)
 tune = float(opt(a, "-f", "433920000").rstrip("M")) * (1e6 if opt(a, "-f", "").endswith("M") else 1)
 if os.environ.get("FAKE_433") == "1":
-    print(json.dumps({"time": "2026-10-31 12:00:00", "model": "Acurite-Tower", "id": 42, "temperature_C": 21.5}))
+    print(json.dumps({"time": "2026-03-01 12:00:00", "model": "Acurite-Tower", "id": 42, "temperature_C": 21.5}))
     sys.exit(0)
 fs = 250000
 rng = np.random.default_rng(int(time.time() * 1000) % 100000)
@@ -108,7 +108,7 @@ else:                                  # streaming like a real watchdog: a trans
     import signal as _sg
     _sg.signal(_sg.SIGTERM, lambda *_: sys.exit(0))
     from _common import sigint_hang
-    sigint_hang()                      # FAKE_SIGINT_HANG: its stop hangs, like the rtl-sdr tools' on the real PC
+    sigint_hang()                      # FAKE_SIGINT_HANG: its stop hangs, as the rtl-sdr tools' can
     while True:
         capture(); sys.stdout.flush(); sys.stderr.flush()
         time.sleep(float(os.environ.get("FAKE_WD_PERIOD", "2")))

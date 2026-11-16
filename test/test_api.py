@@ -32,7 +32,7 @@ class Security(unittest.TestCase):
         self.assertEqual(c.get("/").status_code, 302)
 
     def test_engine_log_lines_reach_aris_log_from_the_gui_process(self):
-        # v4.9.5 (found on a test station): the band capture's "rtl_433 decodes bursts in batches" line is log.info in the
+        # found on a test station: the band capture's "rtl_433 decodes bursts in batches" line is log.info in the
         # engine, and the GUI process (where captures run) had no handler for it; only the chat console wrote aris.log
         import logging
         eng = __import__("arisweb.engine", fromlist=["x"]).engine()
@@ -45,7 +45,7 @@ class Security(unittest.TestCase):
         self.assertIn("decodes bursts in batches (test line 4950)", eng.LOG_FILE.read_text())
 
     def test_internal_endpoint_is_local_only(self):
-        # v4.9.4: the chat console's capture endpoint takes its token from this machine only
+        # the chat console's capture endpoint takes its token from this machine only
         from arisweb import jobs
         tok = jobs.INTERNAL.get("token") or jobs.init_internal_token()
         c = APP.test_client()
@@ -60,7 +60,7 @@ class Security(unittest.TestCase):
         self.assertEqual(r.status_code, 400)                       # past the address and token checks
 
     def test_behind_the_https_proxy_clients_are_counted_apart_and_the_internal_endpoint_stays_closed(self):
-        # v4.9.7: `tailscale serve` connects from 127.0.0.1 for every phone and adds X-Forwarded-For
+        # `tailscale serve` connects from 127.0.0.1 for every phone and adds X-Forwarded-For
         from arisweb import jobs
         c = APP.test_client()
         lo = {"REMOTE_ADDR": "127.0.0.1"}
@@ -82,13 +82,13 @@ class Security(unittest.TestCase):
         self.assertEqual(r.status_code, 403)                                   # a request through the proxy is not local
 
     def test_other_console_commands_stay_out_of_the_console(self):
-        # v4.9.4: '/run <tool> ...' and 'exit' typed in the chat reached the console as commands
+        # '/run <tool> ...' and 'exit' typed in the chat must not reach the console as commands
         from arisweb import bridge
         for msg in ("/run set_timing_defaults", "/raw", "/reset", "exit", "quit", "/tools"):
             self.assertFalse(bridge.SLASH_COMMANDS.match(msg), msg)
         for msg in ("/run set_timing_defaults dongle=1", " /raw", "exit", "QUIT", "/cleanup confirm x"):
             self.assertTrue(bridge.not_a_chat_command(msg), msg)
-        for msg in ("/check", "/cleanup confirm", "/devices Citroen", "investigate 433.92", "what is on 92.1", ""):
+        for msg in ("/check", "/cleanup confirm", "/devices Citroen", "investigate 433.92", "what is on 90.3", ""):
             self.assertFalse(bridge.not_a_chat_command(msg), msg)
         b = bridge.ArisAIBridge.__new__(bridge.ArisAIBridge)
         b.messages, b.seq, b.gen, b.busy, b.status_line = [], 0, 0, False, "Ready"
@@ -182,9 +182,9 @@ class ExtraLogins(unittest.TestCase):
         self.assertEqual(self._login("viewer", "a-long-random-secret"), 200)
 
     def test_extra_account_is_a_viewer_in_the_chat_and_the_apis(self):
-        """Review (v4.9.5): 'set up everything' and 'remove dongle 2' route straight to admin tools and were not
-        in the chat's phrase list; marking a device known changes what the station reports (admin only, like
-        Forget); a session from before v4.9.4 has no role and must still be the admin's."""
+        """'set up everything' and 'remove dongle 2' route straight to admin tools and must be in the chat's
+        phrase list; marking a device known changes what the station reports (admin only, like
+        Forget); an older session with no role in its cookie must still be the admin's."""
         import io
         from arisweb import bridge
         self.auth.cmd_add_user("viewer", io.StringIO(generate_password_hash("a-long-random-secret") + "\n"))
@@ -210,7 +210,7 @@ class ExtraLogins(unittest.TestCase):
         try:
             self.assertTrue(b.ask_async("calibrate the gain on dongle 1", role="viewer"))
             b.busy = False                                   # (the fake thread never ran the worker)
-            self.assertTrue(b.ask_async("what is on 92.1", role="admin"))
+            self.assertTrue(b.ask_async("what is on 90.3", role="admin"))
         finally:
             threading.Thread = real
             b.busy = False
@@ -277,7 +277,7 @@ class Spectrum(unittest.TestCase):
             # a view that crosses the top of the dongles' range: each receiver shows its own part and no more
             j = c.get("/api/spectrum?dongle=all&start=1700&stop=1900").get_json()
             rng = {t["dongle"]: t["range_mhz"] for t in j["traces"]}
-            self.assertEqual(rng["00001001"], [1700.0, 1766.0])
+            self.assertEqual(rng["00017350"], [1700.0, 1766.0])
             self.assertEqual(rng["sa-19184001"], [1700.0, 1900.0])
             for t in j["traces"]:
                 self.assertLessEqual(max(t["freqs"]), t["range_mhz"][1] + 1e-6, t["name"])
@@ -358,7 +358,7 @@ class Spectrum(unittest.TestCase):
             self.assertEqual(j["gap_note"], one["gap_note"])
             self.assertEqual(len(asked), 12)          # in pieces the engine accepts, cut at the FM and 915 MHz gain edges too
             self.assertTrue(all(e - s <= eng.MAX_SPAN_MHZ + 1e-6 and 24.0 <= s < e <= 1766.0 for s, e in asked))
-            self.assertTrue(any(abs(p["mhz"] - 96.9) < 0.3 for p in j["peaks"]), j["peaks"])   # an FM station
+            self.assertTrue(any(abs(p["mhz"] - 97.1) < 0.3 for p in j["peaks"]), j["peaks"])   # an FM station
             # one piece of the plan, as the page asks for them: the plan's step, its share of the points
             ch = pl["chunks"][2]
             del asked[:]
@@ -379,14 +379,14 @@ class Spectrum(unittest.TestCase):
         c = client()
         from arisweb.engine import engine as _eng
         eng = _eng()
-        eng._set_dongle("00004004", present=False)
+        eng._set_dongle("00035720", present=False)
         try:
             j = c.get("/api/spectrum?dongle=all&start=433&stop=435").get_json()
-            self.assertEqual([t["dongle"] for t in j["traces"]], ["00001001", "00003003"])
+            self.assertEqual([t["dongle"] for t in j["traces"]], ["00017350", "00026410"])
             m = c.get("/api/spectrum/meta").get_json()
             self.assertEqual([d["present"] for d in m["dongles"]], [True, True, False])
         finally:
-            eng._set_dongle("00004004", present=True)
+            eng._set_dongle("00035720", present=True)
         self.assertEqual(len(c.get("/api/spectrum?dongle=all&start=433&stop=435").get_json()["traces"]), 3)
 
     def test_a_receiver_name_nobody_has_is_refused(self):
@@ -403,11 +403,11 @@ class Spectrum(unittest.TestCase):
         eng.init_db()
         eng._log_signal({"frequency_mhz": 150.0}, {"frequency_mhz": 150.0, "evidence": "signal_present",
                         "final_signal_verdict": "Doubtful: noise", "doubtful": ["one packet, ID 0"], "snr_db": 4.0,
-                        "identified_devices": [], "stage2_rtl433_telemetry": {}}, "00001001")
+                        "identified_devices": [], "stage2_rtl433_telemetry": {}}, "00017350")
         eng._log_signal({"frequency_mhz": 160.0}, {"frequency_mhz": 160.0, "evidence": "confirmed_decode",
                         "final_signal_verdict": "Identified: a remote", "snr_db": 20.0,
                         "identified_devices": [{"model": "Generic-Remote"}],
-                        "stage2_rtl433_telemetry": {"identified_models": ["Generic-Remote"]}}, "00001001")
+                        "stage2_rtl433_telemetry": {"identified_models": ["Generic-Remote"]}}, "00017350")
         merged = [{"frequency_mhz": 150.0, "snr_db": 5.0}, {"frequency_mhz": 160.0, "snr_db": 20.0},
                   {"frequency_mhz": 170.0, "snr_db": 30.0}]
         rows = S._peak_list(merged, marks=eng._decode_marks())
@@ -431,8 +431,8 @@ class Spectrum(unittest.TestCase):
             self.assertAlmostEqual(a - 19.7, b, delta=0.11)
         # a sweep in pieces at different gains: every point has its own piece's gain taken off
         gain_of = lambda lo, hi: 10.0 if hi <= 88.01 else (30.0 if hi <= 108.01 else 20.0)   # noqa: E731
-        a = S._frame(eng, "00001001", 24.0, 500.0, gain_of, step_khz=200.0, points=100000, live=False, remove_gain=False)
-        b = S._frame(eng, "00001001", 24.0, 500.0, gain_of, step_khz=200.0, points=100000, live=False)
+        a = S._frame(eng, "00017350", 24.0, 500.0, gain_of, step_khz=200.0, points=100000, live=False, remove_gain=False)
+        b = S._frame(eng, "00017350", 24.0, 500.0, gain_of, step_khz=200.0, points=100000, live=False)
         self.assertEqual(a["freqs"], b["freqs"])
         self.assertEqual(a["gain_db"], "10.0 to 30.0 to 20.0")
         edges = [88.0, 108.0]                               # the FM band is its own piece with its own gain
@@ -450,7 +450,7 @@ class Spectrum(unittest.TestCase):
         real = eng._rtl_power
         eng._rtl_power = lambda *a, **k: (asked.append((a[0], a[1], a[3])), real(*a, **k))[1]
         try:
-            S._frame(eng, "00001001", 24.0, 200.0, lambda lo, hi: eng._gain_for("00001001", lo, hi), step_khz=200.0,
+            S._frame(eng, "00017350", 24.0, 200.0, lambda lo, hi: eng._gain_for("00017350", lo, hi), step_khz=200.0,
                      points=1000, live=False)
         finally:
             eng._rtl_power = real
@@ -487,10 +487,10 @@ class Spectrum(unittest.TestCase):
         self.assertEqual((n, db), (0, beside))
         db, n = S._fill_hop_spikes(freqs, beside, hop, 200.0, guard)               # the fine-step rule is as it was
         self.assertEqual((n, at(db, 104.2)), (1, -46.0))
-        # the first preset: every simulated station is in the list (105.3 sits beside a hop centre of that sweep)
+        # the first preset: every simulated station is in the list
         c = client()
         j = c.get("/api/spectrum?dongle=1&start=0&stop=6000").get_json()
-        for mhz in (88.9, 96.9, 101.7, 105.3):
+        for mhz in (89.5, 97.1, 100.7, 106.1):
             self.assertTrue(any(abs(p["mhz"] - mhz) <= 0.25 for p in j["peaks"]), (mhz, j["peaks"]))
         self.assertFalse(j["spikes_kept"])
         # a step of 1000 kHz is one point per hop: every point is shown as it was measured
@@ -564,12 +564,12 @@ class Spectrum(unittest.TestCase):
         self.assertFalse(j["fm_plan_checked"])
         self.assertFalse(any(p["flag"] for p in j["peaks"]), j["peaks"])
         self.assertEqual(len(j["traces"]), 3)
-        d3 = [t for t in j["traces"] if t["dongle"] == "00004004"][0]
+        d3 = [t for t in j["traces"] if t["dongle"] == "00035720"][0]
         self.assertEqual(d3["health"], "flat")                   # dongle 3 cannot hear FM in this simulation
         self.assertTrue(any("Dongle 3" in w for w in j["warnings"]))
 
     def test_levels_are_dbfs_at_or_below_zero(self):
-        """The plot's levels are true dBFS (v4.8.9 showed stations at +10 to +15 dB on the live station): a sweep and
+        """The plot's levels are true dBFS (raw rtl_power numbers put stations at +10 to +15 dB): a sweep and
         a live IQ frame both sit at or below 0, say so, and still report floors and signals above the noise."""
         c = client()
         for q in ("dongle=all&start=88&stop=108", "dongle=1&start=433.52&stop=434.32"):
@@ -593,8 +593,8 @@ class Spectrum(unittest.TestCase):
         self.assertTrue(j["fm_plan_checked"])
         for p in j["peaks"]:                     # each entry says how far its signal reaches
             self.assertTrue(p["lo_mhz"] <= p["hi_mhz"] and abs(p["mhz"] - p["lo_mhz"]) < 0.5, p)
-        self.assertIn(96.9, [p["mhz"] for p in j["peaks"]])
-        self.assertFalse(any(p["flag"] for p in j["peaks"] if p["mhz"] in (88.9, 96.9, 101.7, 105.3)))
+        self.assertIn(97.1, [p["mhz"] for p in j["peaks"]])
+        self.assertFalse(any(p["flag"] for p in j["peaks"] if p["mhz"] in (89.5, 97.1, 100.7, 106.1)))
 
 
 class MapFlow(unittest.TestCase):
@@ -619,18 +619,18 @@ class MapFlow(unittest.TestCase):
         sid = m["session"]["id"]
         # survey point next to the transmitter, with dongle 1 carried there
         import os
-        os.environ["FAKE_NODE_POS"] = "00001001:7:2.5;00003003:9:1;00004004:5:7"
+        os.environ["FAKE_NODE_POS"] = "00017350:7:2.5;00026410:9:1;00035720:5:7"
         s = c.post("/api/map/measure", json={"freq_mhz": 433.92, "dwell_s": 3, "session_id": sid, "survey": True,
-                                             "node_id": "dongle-00001001", "x": 7, "y": 2.5, "mode": "strength"},
+                                             "node_id": "dongle-00017350", "x": 7, "y": 2.5, "mode": "strength"},
                    headers=H).get_json()
         self.assertEqual(s["mode"], "strength")
         self.assertTrue(any(p["kind"] == "survey" for p in s["points"]))
         # calibration with every antenna in the same spot
-        os.environ["FAKE_NODE_POS"] = "00001001:6:2;00003003:6:2;00004004:6:2"
+        os.environ["FAKE_NODE_POS"] = "00017350:6:2;00026410:6:2;00035720:6:2"
         cal = c.post("/api/map/calibrate", json={"freq_mhz": 433.92, "dwell_s": 3}, headers=H).get_json()
         self.assertEqual(len(cal["offsets_db"]), 3, cal)
         self.assertAlmostEqual(cal["offsets_db"]["Dongle 2"] - cal["offsets_db"]["Dongle 1"], 6.0, delta=1.5)
-        os.environ["FAKE_NODE_POS"] = "00001001:1:1;00003003:9:1;00004004:5:7"
+        os.environ["FAKE_NODE_POS"] = "00017350:1:1;00026410:9:1;00035720:5:7"
         m2 = c.post("/api/map/measure", json={"freq_mhz": 433.92, "dwell_s": 3, "new_session": True},
                     headers=H).get_json()
         b = m2["heat"]["best"]
@@ -660,8 +660,8 @@ class DecodeAndCapture(unittest.TestCase):
 
     def test_decode_button_job(self):
         c = client()
-        self.assertEqual(c.post("/api/decode", json={"freq_mhz": 96.9, "seconds": 5}).status_code, 403)  # header
-        r = c.post("/api/decode", json={"freq_mhz": 96.9, "seconds": 5}, headers=H)
+        self.assertEqual(c.post("/api/decode", json={"freq_mhz": 97.1, "seconds": 5}).status_code, 403)  # header
+        r = c.post("/api/decode", json={"freq_mhz": 97.1, "seconds": 5}, headers=H)
         self.assertEqual(r.status_code, 200, r.get_json())
         job = r.get_json()["job"]
         busy = c.post("/api/decode", json={"freq_mhz": 433.92, "seconds": 5}, headers=H)
@@ -677,15 +677,15 @@ class DecodeAndCapture(unittest.TestCase):
         self.assertEqual(bad.status_code, 400)
 
     def test_decode_job_of_a_narrowband_signal(self):
-        """The Decode card of a narrowband signal carries the signal report (v4.21): a headline, a bar per dongle,
+        """The Decode card of a narrowband signal carries the signal report: a headline, a bar per dongle,
         one next step and the details, all plain JSON (the card goes through Flask as it is), next to every key the
         card had before."""
         c = client()
         keep = os.environ["FAKE_IQ"]
-        os.environ["FAKE_IQ"] = keep + ",172.8364:cw:6"
+        os.environ["FAKE_IQ"] = keep + ",172.8231:cw:6"
         try:
             # a steady carrier in a voice band: one dongle hears it, the other two watch while the decoders listen
-            r = c.post("/api/decode", json={"freq_mhz": 172.8364, "seconds": 6}, headers=H)
+            r = c.post("/api/decode", json={"freq_mhz": 172.8231, "seconds": 6}, headers=H)
             self.assertEqual(r.status_code, 200, r.get_json())
             j = self._wait(c, r.get_json()["job"])
         finally:
@@ -700,14 +700,14 @@ class DecodeAndCapture(unittest.TestCase):
                          ("NOT IDENTIFIED", "signal_present", "unknown"))
         self.assertEqual(card["headline"], "Steady carrier on Dongle 1 only. What sends it is not known.")
         self.assertEqual([(b["dongle"], b["serial"], b["state"], b["text"], b["pct"], b["best"]) for b in card["bars"]],
-                         [("Dongle 1", "00001001", "heard", "16 dB", 40, True),
-                          ("Dongle 2", "00003003", "not_heard", "not heard", None, False),
-                          ("Dongle 3", "00004004", "not_heard", "not heard", None, False)])
+                         [("Dongle 1", "00017350", "heard", "16 dB", 40, True),
+                          ("Dongle 2", "00026410", "not_heard", "not heard", None, False),
+                          ("Dongle 3", "00035720", "not_heard", "not heard", None, False)])
         self.assertEqual(sorted(card["step"]), ["action", "dongle", "label", "mhz", "minutes", "reason", "seconds"])
         # (the one dongle that hears it ran the decoders, so nobody could watch it: a longer listen would add nothing)
-        self.assertEqual((card["step"]["action"], card["step"]["label"], card["step"]["mhz"]), ("none", "", 172.8364))
+        self.assertEqual((card["step"]["action"], card["step"]["label"], card["step"]["mhz"]), ("none", "", 172.8231))
         self.assertTrue(card["step"]["reason"])
-        self.assertEqual(card["carrier"], {"mhz": 172.8364, "text": "172.836 MHz", "note": None})
+        self.assertEqual(card["carrier"], {"mhz": 172.8231, "text": "172.823 MHz", "note": None})
         titles = [d["title"] for d in card["details"]]
         self.assertEqual(titles, ["WHAT IT DID", "MODULATION", "SPUR CHECK", "HISTORY", "COULD NOT TELL", "DECODERS"])
         for d in card["details"]:
@@ -727,15 +727,15 @@ class DecodeAndCapture(unittest.TestCase):
 
     def test_capture_api_and_activity(self):
         c = client()
-        r = c.post("/api/capture/start", json={"freq_mhz": 96.9}, headers=H)
+        r = c.post("/api/capture/start", json={"freq_mhz": 97.1}, headers=H)
         self.assertEqual(r.status_code, 200, r.get_json())
         t0 = time.time()
         while time.time() - t0 < 60:
             a = c.get("/api/activity").get_json()
-            if any(x["freq_mhz"] == 96.9 for x in a.get("captures") or []):
+            if any(x["freq_mhz"] == 97.1 for x in a.get("captures") or []):
                 break
             time.sleep(0.5)
-        cap = next(x for x in a["captures"] if x["freq_mhz"] == 96.9)
+        cap = next(x for x in a["captures"] if x["freq_mhz"] == 97.1)
         self.assertEqual(cap["outcome"], "identified", cap)
         self.assertTrue(c.get("/api/activity?brief=1").get_json()["captures"])
         r = c.post("/api/capture/start", json={"freq_mhz": 433.92, "mode": "continuous"}, headers=H)
@@ -757,7 +757,7 @@ class DecodeAndCapture(unittest.TestCase):
         # at once with its stations "not checked" (the test then raced, and failed on a test station)
         r = c.post("/api/capture/start", json={"freq_mhz": 433.92, "mode": "continuous"}, headers=H)
         self.assertEqual(r.status_code, 200, r.get_json())
-        fr = [88.9, 89.7, 90.5, 92.1, 93.7, 95.3, 96.9, 98.5, 100.1, 101.7, 103.3, 105.3, 106.9]
+        fr = [88.3, 89.5, 90.7, 91.5, 93.1, 94.7, 95.5, 97.1, 98.7, 100.7, 102.3, 103.9, 106.1]
         job = c.post("/api/fm_names", json={"freqs": fr}, headers=H).get_json()["job"]
         time.sleep(1)
         self.assertEqual(c.get(f"/api/decode/{job}").get_json()["state"], "running")
@@ -771,8 +771,8 @@ class DecodeAndCapture(unittest.TestCase):
         self.assertIn("Stopped Name all FM stations and the capture on 433.92 MHz", msg)
         self.assertIn("are free", msg)
         self.assertNotIn("stuck", msg)
-        # v4.8.5 note: only the dongles that are plugged in are called free
-        os.environ["FAKE_MISSING"] = "00004004"
+        # only the dongles that are plugged in are called free
+        os.environ["FAKE_MISSING"] = "00035720"
         try:
             jobs.LAST_RESET["message"] = None
             c.post("/api/chat_reset", headers=H)
@@ -788,14 +788,14 @@ class DecodeAndCapture(unittest.TestCase):
         self.assertFalse(c.get("/api/activity").get_json()["watchdog"]["watchdogs_running"])
         self.assertEqual(eng._radio_children(), [])
         self.assertFalse(jobs.RESTART["needed"])
-        r = c.post("/api/fm_names", json={"freqs": [96.9]}, headers=H)       # and new work starts normally
+        r = c.post("/api/fm_names", json={"freqs": [97.1]}, headers=H)       # and new work starts normally
         self.assertEqual(self._wait(c, r.get_json()["job"])["state"], "done")
 
     def test_clear_data(self):
         from arisweb import jobs
         eng = __import__("arisweb.engine", fromlist=["x"]).engine()
         c = client()
-        eng._remember_station(96.9, "HITS FM", "0x5969", "00001001", carrier_mhz=96.9)
+        eng._remember_station(97.1, "HITS FM", "0x53CB", "00017350", carrier_mhz=97.1)
         eng._log_append({"type": "burst", "t": time.time(), "aris_freq_mhz": 433.92})
         eng._notice("a test notice")
         eng.BASELINE_DIR.mkdir(parents=True, exist_ok=True)
@@ -822,59 +822,59 @@ class DecodeAndCapture(unittest.TestCase):
         c = client()
         k = c.get("/api/fm_known").get_json()
         self.assertEqual(c.get("/api/fm_known?have=" + k["tag"]).get_json().get("unchanged"), True)
-        eng._remember_station(101.7, "TOP 40", "0x91E3", "00003003", carrier_mhz=101.7001)
-        eng._remember_station(88.9, "Escucha y en vivo", "0x0889", "00001001", carrier_mhz=88.9, scrolls=True)
+        eng._remember_station(103.9, "TOP 40", "0x2B1D", "00026410", carrier_mhz=103.9001)
+        eng._remember_station(89.5, "Listen in and hear", "0x1A42", "00017350", carrier_mhz=89.5, scrolls=True)
         k2 = c.get("/api/fm_known?have=" + k["tag"]).get_json()
-        self.assertEqual(k2["named"]["101.7"]["name"], "TOP 40")
-        self.assertTrue(k2["named"]["88.9"]["scrolls"])
-        fr = c.get("/api/spectrum?dongle=00001001&start=88&stop=108").get_json()
+        self.assertEqual(k2["named"]["103.9"]["name"], "TOP 40")
+        self.assertTrue(k2["named"]["89.5"]["scrolls"])
+        fr = c.get("/api/spectrum?dongle=00017350&start=88&stop=108").get_json()
         pk = {round(p["mhz"], 1): p for p in fr["peaks"]}
-        self.assertEqual(pk[88.9]["band"], 'FM station, RDS scrolling text "Escucha y en vivo"')
+        self.assertEqual(pk[89.5]["band"], 'FM station, RDS scrolling text "Listen in and hear"')
 
     def test_name_all_fm_stations_job(self):
         c = client()
-        r = c.post("/api/fm_names", json={"freqs": [96.9, 105.3]}, headers=H)
+        r = c.post("/api/fm_names", json={"freqs": [97.1, 106.1]}, headers=H)
         self.assertEqual(r.status_code, 200, r.get_json())
         j = self._wait(c, r.get_json()["job"])
         self.assertEqual(j["state"], "done", j)
-        self.assertEqual(j["names"]["named"]["96.9"]["name"], "HITS FM")
-        fr = c.get("/api/spectrum?dongle=00001001&start=88&stop=108").get_json()
+        self.assertEqual(j["names"]["named"]["97.1"]["name"], "HITS FM")
+        fr = c.get("/api/spectrum?dongle=00017350&start=88&stop=108").get_json()
         named = {p["mhz"]: p.get("name") for p in fr["peaks"]}
-        self.assertEqual(named.get(96.9), "HITS FM")              # the list now names it, not orange
-        self.assertFalse(next(p for p in fr["peaks"] if p["mhz"] == 96.9)["flag"])
+        self.assertEqual(named.get(97.1), "HITS FM")              # the list now names it, not orange
+        self.assertFalse(next(p for p in fr["peaks"] if p["mhz"] == 97.1)["flag"])
 
     def test_not_heard_stations_are_remembered(self):
-        """live v4.8.9: after Name all the result box said 'Not heard in the check: 94.9, ...', but the rows
-        still said only 'FM band, station channel' and the button counted them again. A not_heard or too_weak
+        """After Name all the result box can say 'Not heard in the check: ...'; the rows must not still say only
+        'FM band, station channel', nor the button count them again. A not_heard or too_weak
         result is remembered with its time, shown on the row and in /api/fm_known, and a later reading replaces it."""
         import os
         env = {k: os.environ.get(k) for k in ("FAKE_IQ", "FAKE_PEAKS")}
-        os.environ.update(FAKE_PEAKS=env["FAKE_PEAKS"] + ",99.7:22:150")          # the sweep sees it, the IQ look
+        os.environ.update(FAKE_PEAKS=env["FAKE_PEAKS"] + ",102.1:22:150")          # the sweep sees it, the IQ look
         eng = __import__("arisweb.engine", fromlist=["x"]).engine()                # hears nothing there
         try:
             c = client()
-            r = c.post("/api/fm_names", json={"freqs": [99.7]}, headers=H)
+            r = c.post("/api/fm_names", json={"freqs": [102.1]}, headers=H)
             j = self._wait(c, r.get_json()["job"])
             self.assertEqual(j["state"], "done", j)
             st = {x["channel_mhz"]: x for x in j["names"]["not_named"]}
-            self.assertIn(st[99.7]["state"], ("not_heard", "too_weak"), st)
-            state = st[99.7]["state"]
+            self.assertIn(st[102.1]["state"], ("not_heard", "too_weak"), st)
+            state = st[102.1]["state"]
             k = c.get("/api/fm_known").get_json()
-            row = next(x for x in k["checked"] if x["channel_mhz"] == 99.7)
+            row = next(x for x in k["checked"] if x["channel_mhz"] == 102.1)
             self.assertEqual(row["state"], state)
             self.assertTrue(row["band"].startswith("Checked: " + ("not heard in the last check" if state == "not_heard"
                                                                   else "too weak here to read in the last check") + " ("), row)
             self.assertGreater(row["epoch"], time.time() - 60)
-            fr = c.get("/api/spectrum?dongle=00001001&start=88&stop=108").get_json()
+            fr = c.get("/api/spectrum?dongle=00017350&start=88&stop=108").get_json()
             pk = {round(p["mhz"], 1): p for p in fr["peaks"]}
-            self.assertEqual((pk[99.7]["checked"], pk[99.7]["flag"]), (state, False))
-            self.assertRegex(pk[99.7]["band"], r"^Station channel, checked: (not heard|too weak here to read) in the last check \(20\d\d-")
+            self.assertEqual((pk[102.1]["checked"], pk[102.1]["flag"]), (state, False))
+            self.assertRegex(pk[102.1]["band"], r"^Station channel, checked: (not heard|too weak here to read) in the last check \(20\d\d-")
             # a reading later (a station heard on the channel) replaces the note; a named station is never touched
-            eng._remember_station(99.7, None, None, "00001001", carrier_mhz=99.7002, on_channel=True, rds=False)
-            self.assertIsNone(eng._unheard_state(eng._known_stations()["99.7"]))
-            eng._remember_station(96.9, "HITS FM", "0x53C9", "00001001", carrier_mhz=96.9, on_channel=True, rds=True)
-            self.assertEqual(eng._remember_unheard({96.9: {"state": "not_heard", "serial": "00001001"}}), 0)
-            self.assertEqual(eng._known_stations()["96.9"].get("name"), "HITS FM")
+            eng._remember_station(102.1, None, None, "00017350", carrier_mhz=102.1002, on_channel=True, rds=False)
+            self.assertIsNone(eng._unheard_state(eng._known_stations()["102.1"]))
+            eng._remember_station(97.1, "HITS FM", "0x53CB", "00017350", carrier_mhz=97.1, on_channel=True, rds=True)
+            self.assertEqual(eng._remember_unheard({97.1: {"state": "not_heard", "serial": "00017350"}}), 0)
+            self.assertEqual(eng._known_stations()["97.1"].get("name"), "HITS FM")
         finally:
             for kk, v in env.items():
                 if v is None:
@@ -887,22 +887,22 @@ class DecodeAndCapture(unittest.TestCase):
         import tempfile
         env = {k: os.environ.get(k) for k in ("FAKE_IQ", "FAKE_PEAKS", "FAKE_ARGLOG")}
         log = tempfile.mktemp(prefix="args_", dir=harness.DATA)
-        os.environ.update(FAKE_IQ=env["FAKE_IQ"] + ",93.7:wbfm_nords:28,94.8:wbfm_mono:20",
-                          FAKE_PEAKS=env["FAKE_PEAKS"] + ",93.7:30:150,94.8:26:150", FAKE_ARGLOG=log)
+        os.environ.update(FAKE_IQ=env["FAKE_IQ"] + ",102.7:wbfm_nords:28,94.8:wbfm_mono:20",
+                          FAKE_PEAKS=env["FAKE_PEAKS"] + ",102.7:30:150,94.8:26:150", FAKE_ARGLOG=log)
         try:
             c = client()
-            r = c.post("/api/fm_names", json={"freqs": [93.7, 94.8], "best": {"93.7": "Dongle 1"}}, headers=H)
+            r = c.post("/api/fm_names", json={"freqs": [102.7, 94.8], "best": {"102.7": "Dongle 1"}}, headers=H)
             j = self._wait(c, r.get_json()["job"])
             self.assertEqual(j["state"], "done", j)
             st = {x["channel_mhz"]: x for x in j["names"]["not_named"]}
-            self.assertEqual(st[93.7]["band"], "Station channel: no RDS name read in the last check")
+            self.assertEqual(st[102.7]["band"], "Station channel: no RDS name read in the last check")
             self.assertEqual(st[94.8]["state"], "off_channel")
-            fr = c.get("/api/spectrum?dongle=00001001&start=88&stop=108").get_json()
+            fr = c.get("/api/spectrum?dongle=00017350&start=88&stop=108").get_json()
             pk = {round(p["mhz"], 1): p for p in fr["peaks"]}
-            self.assertEqual((pk[93.7]["checked"], pk[93.7]["flag"]), ("no_name", False))    # grey, not orange
+            self.assertEqual((pk[102.7]["checked"], pk[102.7]["flag"]), ("no_name", False))    # grey, not orange
             self.assertEqual((pk[94.8]["checked"], pk[94.8]["flag"]), ("off_channel", True))
             self.assertEqual(pk[94.8]["label"], "94.800 off-plan")
-            c.get("/api/spectrum?dongle=00001001&start=433&stop=435")
+            c.get("/api/spectrum?dongle=00017350&start=433&stop=435")
             with open(log) as f:
                 runs = [json.loads(x) for x in f if '"rtl_power"' in x]
             integ = {r_[r_.index("-f") + 1].split(":")[0]: r_[r_.index("-i") + 1] for r_ in runs}
@@ -929,7 +929,7 @@ class DecodeAndCapture(unittest.TestCase):
 
 
 class ClearLogs(unittest.TestCase):
-    """The Activity tab's Clear logs button (v4.8.8): the event logs and result lists go, everything else stays, a
+    """The Activity tab's Clear logs button: the event logs and result lists go, everything else stays, a
     running capture keeps running and is listed again when it ends, the chat still gets the notices written after
     it, and /api/disk gives the sizes the tab shows."""
     LOGS = ("WATCHDOG_LOG", "PATROL_LOG", "AUDIT_HISTORY", "AUDIT_REPORT", "CAPTURES", "NOTICES", "RECENT_CHECKS")
@@ -938,16 +938,16 @@ class ClearLogs(unittest.TestCase):
         eng.init_db()
         eng._log_append({"type": "burst", "t": time.time(), "aris_freq_mhz": 433.92})
         eng._notice("a test notice")
-        eng._jsonl_append(eng.PATROL_LOG, {"time": "2026-11-02 10:00:00", "band": "433", "flagged": 1, "top": []},
+        eng._jsonl_append(eng.PATROL_LOG, {"time": "2026-03-02 10:00:00", "band": "433", "flagged": 1, "top": []},
                           eng.PATROL_LOG_MAX_LINES)
-        eng._jsonl_append(eng.AUDIT_HISTORY, {"timestamp": "2026-11-02 10:00:00"}, eng.AUDIT_LOG_MAX_LINES)
-        eng._atomic_write_json(eng.CAPTURES, [{"t": time.time(), "freq_mhz": 96.9, "outcome": "identified"}])
+        eng._jsonl_append(eng.AUDIT_HISTORY, {"timestamp": "2026-03-02 10:00:00"}, eng.AUDIT_LOG_MAX_LINES)
+        eng._atomic_write_json(eng.CAPTURES, [{"t": time.time(), "freq_mhz": 97.1, "outcome": "identified"}])
         eng._atomic_write_json(eng.AUDIT_REPORT, {"timestamp": "x"})
-        eng._atomic_write_json(eng.RECENT_CHECKS, [{"time": "x", "epoch": time.time(), "frequency_mhz": 96.9}])
+        eng._atomic_write_json(eng.RECENT_CHECKS, [{"time": "x", "epoch": time.time(), "frequency_mhz": 97.1}])
         (eng.DATA_DIR / "check_report.json").write_text("{}")
         eng.LOG_FILE.write_text("a line of the text log\n" * 30000)                 # about 0.7 MB
         (eng.DATA_DIR / "aris.log.1").write_text("an old rotation\n")
-        eng._remember_station(96.9, "HITS FM", "0x5969", "00001001", carrier_mhz=96.9)
+        eng._remember_station(97.1, "HITS FM", "0x53CB", "00017350", carrier_mhz=97.1)
         eng.BASELINE_DIR.mkdir(parents=True, exist_ok=True)
         (eng.BASELINE_DIR / "test_baseline.json").write_text("{}")
         (eng.DATA_DIR / "devices.json").write_text("{}")
@@ -1061,17 +1061,17 @@ class Engine(unittest.TestCase):
         self.assertIsNone(eng._route_intent("how does locating work?"))
 
     def test_saved_records_for_the_ai(self):
-        # v4.8.6: the context cut each record at 110 characters ('1) Renault, a tyre-pr') and the AI invented the
-        # other devices; old 101.7 records still said 'not standard broadcast FM' after 101.7 was named TOP 40
+        # a context that cuts each record at 110 characters ('1) Renault, a tyre-pr') makes the AI invent the
+        # other devices; old records of a channel must not still say 'not standard broadcast FM' once it is named
         import sqlite3
         from arisweb import bridge
         from arisweb.engine import engine
         eng = engine()
         v = ("• ARIS verdict (confirmed decode): Identified 3 different devices on 433.92 MHz (decoded by rtl_433): "
-             "1) Renault, a tyre-pressure sensor (TPMS) on a vehicle (2 packets; ID 215f46; reports tyre pressure); "
-             "2) Hyundai VDO, a tyre-pressure sensor (TPMS) on a vehicle (1 packet; ID 4ac5e0)\n"
+             "1) Renault, a tyre-pressure sensor (TPMS) on a vehicle (2 packets; ID 3c0a11; reports tyre pressure); "
+             "2) Hyundai VDO, a tyre-pressure sensor (TPMS) on a vehicle (1 packet; ID 7e21b9)\n"
              "• rtl_433 confirmed decode: Hyundai-VDO, Renault")
-        line = bridge._fact_line(433.92, 14.2, v, "2026-11-02 16:51:44")
+        line = bridge._fact_line(433.92, 14.2, v, "2026-03-02 12:00:00")
         self.assertIn("Hyundai-VDO, Renault", line)
         self.assertNotIn("tyre-pr]", line)
         self.assertTrue(line.split("]")[0].endswith("..."), line)
@@ -1080,8 +1080,8 @@ class Engine(unittest.TestCase):
         try:
             cur = conn.execute("INSERT INTO peaks (timestamp, frequency_mhz, power_db, snr_db, bw_khz, urh_analysis, "
                                "notes) VALUES (?, ?, ?, ?, ?, ?, ?)", (
-                                   "2026-11-02 00:47:00", 101.7, -20.0, 25.0, 180.0,
-                                   "• ARIS verdict (heuristic): Signal in the FM band at 101.700 MHz that is not "
+                                   "2026-03-02 12:00:00", 103.9, -20.0, 25.0, 180.0,
+                                   "• ARIS verdict (heuristic): Signal in the FM band at 103.900 MHz that is not "
                                    "standard broadcast FM; worth a closer look\n• Heard on: Dongle 2",
                                    "Dongle 2 | Signal in the FM band ... not standard broadcast FM"))
             conn.commit()
@@ -1091,13 +1091,13 @@ class Engine(unittest.TestCase):
         keep = eng.FM_STATIONS.read_text() if eng.FM_STATIONS.exists() else None
         try:
             eng.FM_STATIONS.write_text(json.dumps({}))
-            eng._remember_station(101.7, "TOP 40", "0x91E3", "00001001", carrier_mhz=101.7)
+            eng._remember_station(103.9, "TOP 40", "0x2B1D", "00017350", carrier_mhz=103.9)
             conn = sqlite3.connect(eng.DB_PATH)
             try:
                 text = conn.execute("SELECT urh_analysis FROM peaks WHERE id=?", (row_id,)).fetchone()[0]
             finally:
                 conn.close()
-            self.assertTrue(text.startswith("• ARIS verdict (relabelled): FM broadcast station 101.7 MHz"), text)
+            self.assertTrue(text.startswith("• ARIS verdict (relabelled): FM broadcast station 103.9 MHz"), text)
             self.assertIn('"TOP 40"', text)
             self.assertIn("• Heard on: Dongle 2", text)
             self.assertEqual(eng._relabel_named_signals(eng._known_stations()), 0)   # once, not at every start
@@ -1108,7 +1108,7 @@ class Engine(unittest.TestCase):
                 eng.FM_STATIONS.write_text(keep)
 
     def test_negative_snr_is_signed_on_the_pages(self):
-        # live Signal #7 (snr_db -2.8) showed 'SNR +-2.8 dB'; the Map table and labels had the same '+' prefix
+        # a signal with snr_db -2.8 must not show 'SNR +-2.8 dB'; nor the Map table and labels a '+' before it
         js = {n: open(os.path.join(harness.CODE_DIR, "arisweb", "static", "js", n)).read()
               for n in ("signals.js", "map.js")}
         self.assertNotIn("'SNR +' + p.snr_db", js["signals.js"])
@@ -1126,10 +1126,10 @@ class Engine(unittest.TestCase):
         # the Recent investigations list showed the raw value ("confirmed_decode") next to the time
         from arisweb.engine import engine
         eng = engine()
-        eng._remember_check({"frequency_mhz": 92.1, "evidence": "confirmed_decode", "strongest_dongle": "Dongle 1",
-                             "final_signal_verdict": "FM broadcast station KIDS FM"})
+        eng._remember_check({"frequency_mhz": 90.3, "evidence": "confirmed_decode", "strongest_dongle": "Dongle 1",
+                             "final_signal_verdict": "FM broadcast station NEWS 24"})
         checks = client().get("/api/activity").get_json()["checks"]
-        mine = next(c for c in checks if c["frequency_mhz"] == 92.1)
+        mine = next(c for c in checks if c["frequency_mhz"] == 90.3)
         self.assertEqual(mine["evidence_text"], "Identified by a decoder")
         with open(os.path.join(harness.CODE_DIR, "arisweb", "static", "js", "activity.js")) as f:
             js = f.read()
@@ -1138,11 +1138,11 @@ class Engine(unittest.TestCase):
 
 
 class Wifi(unittest.TestCase):
-    """The Wi-Fi view of the Devices tab (v4.10.0): the helper's scan file, the baseline, no helper, unchanged."""
-    DUMP = ("BSS aa:bb:cc:00:00:01(on wlx) -- associated\n\tfreq: 5745.0\n\tcapability: ESS Privacy (0x1011)\n"
-            "\tsignal: -48.00 dBm\n\tSSID: Casa\n\tRSN:\t * Version: 1\n\t\t * Authentication suites: PSK\n"
-            "BSS aa:bb:cc:00:00:02(on wlx)\n\tfreq: 2437\n\tcapability: ESS (0x0401)\n\tsignal: -80.00 dBm\n"
-            "\tSSID: Vecino\n")
+    """The Wi-Fi view of the Devices tab: the helper's scan file, the baseline, no helper, unchanged."""
+    DUMP = ("BSS aa:bb:cc:00:00:01(on wlan1) -- associated\n\tfreq: 5745.0\n\tcapability: ESS Privacy (0x1011)\n"
+            "\tsignal: -48.00 dBm\n\tSSID: Home\n\tRSN:\t * Version: 1\n\t\t * Authentication suites: PSK\n"
+            "BSS aa:bb:cc:00:00:02(on wlan1)\n\tfreq: 2437\n\tcapability: ESS (0x0401)\n\tsignal: -80.00 dBm\n"
+            "\tSSID: Neighbour\n")
 
     def test_wifi_api_baseline_and_helper_states(self):
         import tempfile
@@ -1156,7 +1156,7 @@ class Wifi(unittest.TestCase):
             r = c.get("/api/wifi").get_json()                                                 # no helper yet
             self.assertEqual((r["helper"], r["networks"], r["scan_age_s"]), ("missing", 0, None))
             self.assertEqual(c.post("/api/wifi/baseline", headers=H).status_code, 409)        # nothing heard: no empty baseline
-            scan.write_text("# ARIS-WIFI 1 wlx\n" + self.DUMP)
+            scan.write_text("# ARIS-WIFI 1 wlan1\n" + self.DUMP)
             r = c.get("/api/wifi").get_json()
             self.assertEqual((r["helper"], r["networks"], r["counts"]["unrated"]), ("ok", 2, 2))
             self.assertIsNone(r["baseline_n"])
@@ -1166,7 +1166,7 @@ class Wifi(unittest.TestCase):
             j = c.post("/api/wifi/baseline", headers=H).get_json()
             self.assertEqual((j["ok"], j["baseline_n"]), (True, 2))
             # a new strong network in the next scan is worth a look
-            scan.write_text(self.DUMP + "BSS aa:bb:cc:00:00:03(on wlx)\n\tfreq: 2412\n\tcapability: ESS (0x0401)\n"
+            scan.write_text(self.DUMP + "BSS aa:bb:cc:00:00:03(on wlan1)\n\tfreq: 2412\n\tcapability: ESS (0x0401)\n"
                             "\tsignal: -45.00 dBm\n\tSSID: \\x00\\x00\n")
             os.utime(scan, (time.time() + 5, time.time() + 5))
             r = c.get("/api/wifi").get_json()
@@ -1175,7 +1175,7 @@ class Wifi(unittest.TestCase):
             self.assertEqual((first["status"], first["hidden"]), ("look", True))
             self.assertTrue(first["reasons"])
             self.assertNotIn("client", json.dumps(r).lower())                                 # nothing about connected devices
-            # marks (v4.12.0): admin only, validated, they change the row's status and the page's tag
+            # marks: admin only, validated, they change the row's status and the page's tag
             tag = r["tag"]
             self.assertEqual(c.post("/api/wifi/mark", json={"bssids": [first["key"]], "mark": "known"}).status_code, 403)
             self.assertEqual(c.post("/api/wifi/mark", headers=H, json={"bssids": [first["key"]], "mark": "maybe"}).status_code, 400)
@@ -1212,17 +1212,17 @@ class Wifi(unittest.TestCase):
             self.assertEqual(WF.tick(), [])                                    # the first round only notes what is there
             notices = engine().NOTICES
             before = notices.read_text() if notices.exists() else ""
-            scan.write_text(self.DUMP + "BSS aa:bb:cc:00:00:03(on wlx)\n\tfreq: 2412\n\tcapability: ESS (0x0401)\n"
-                            "\tsignal: -45.00 dBm\n\tSSID: Nuevo\n")
+            scan.write_text(self.DUMP + "BSS aa:bb:cc:00:00:03(on wlan1)\n\tfreq: 2412\n\tcapability: ESS (0x0401)\n"
+                            "\tsignal: -45.00 dBm\n\tSSID: NewOne\n")
             t = WF.tick()
             self.assertEqual(len(t), 1, t)
-            self.assertTrue(t[0].startswith("Wi-Fi: a new network worth a look: 'Nuevo'"), t)
+            self.assertTrue(t[0].startswith("Wi-Fi: a new network worth a look: 'NewOne'"), t)
             added = notices.read_text()[len(before):]
             self.assertIn('"kind": "wifi"', added)
-            self.assertIn("'Nuevo'", added)
+            self.assertIn("'NewOne'", added)
             self.assertEqual(WF.tick(), [])                                    # once a day
             r = c.get("/api/wifi").get_json()                                  # the page gets the history
-            row = next(x for x in r["rows"] if x["ssid"] == "Nuevo")
+            row = next(x for x in r["rows"] if x["ssid"] == "NewOne")
             self.assertEqual(len(row["hist"]), 96)
             self.assertEqual(row["hist"][-1], -45)
             self.assertEqual(r["hist_slot_s"], 900)
@@ -1231,7 +1231,7 @@ class Wifi(unittest.TestCase):
 
 
 class Bluetooth(unittest.TestCase):
-    """The Bluetooth view of the Devices tab (v4.11.0): the helper's summary file, the baseline, no helper, unchanged."""
+    """The Bluetooth view of the Devices tab: the helper's summary file, the baseline, no helper, unchanged."""
 
     @staticmethod
     def _snap(t, devs):
@@ -1320,18 +1320,18 @@ class Devices(unittest.TestCase):
         self.assertEqual((r["devices"], r["sets"]), (7, 1))
         self.assertEqual(c.get("/api/devices?have=" + r["tag"]).get_json(), {"unchanged": True, "tag": r["tag"]})
         titles = [x["title"] for x in r["rows"]]
-        self.assertIn("Citroen car: 4 tyre sensors", titles)
-        self.assertIn("Nexus-TH temperature sensor 213", titles)
-        self.assertIn("Renault tyre sensor 5b6d1e", titles)
-        # the remote's title is the name the investigation reply gives it (v4.8.8 said 'Generic-Remote #1e4e6d')
+        self.assertIn("Ford car: 4 tyre sensors", titles)
+        self.assertIn("LaCrosse-TX141THBv2 temperature sensor 87", titles)
+        self.assertIn("Porsche tyre sensor 2e94b1c0", titles)
+        # the remote's title is the name the investigation reply gives it (not 'Generic-Remote #1e4e6d')
         self.assertTrue(any(t.startswith("Generic fixed-code remote (PT2262 / EV1527-type chip) #") for t in titles),
                         titles)
-        self.assertEqual(r["groups"], {"vehicle": 2, "sensor": 1, "remote": 1})      # v4.9.7: the car's 4 sensors are one row
+        self.assertEqual(r["groups"], {"vehicle": 2, "sensor": 1, "remote": 1})      # the car's 4 sensors are one row
         self.assertEqual(r["vehicles"], {"car": 1, "together": 0, "again": 0, "passing": 1})
         self.assertEqual([x["last_t"] for x in r["rows"]], sorted((x["last_t"] for x in r["rows"]), reverse=True))
         car = next(x for x in r["rows"] if x["kind"] == "set")
         self.assertEqual(len(car["members"]), 4)
-        self.assertEqual(sorted(car["ids"]), ["92cf949a", "92cf94a1", "92cf94b3", "92cf94c7"])
+        self.assertEqual(sorted(car["ids"]), ["8a4c2f10", "8a4c3a27", "8a4c51b3", "8a4c66e9"])
         self.assertTrue(car["seen_line"].startswith("Seen 3 times since "), car["seen_line"])    # 3 passes, not 12
         # the car's last pass is 9 minutes before now: just after midnight that is yesterday (the CI runs in UTC)
         same_day = time.strftime("%Y%m%d", time.localtime(car["last_t"])) == time.strftime("%Y%m%d")
@@ -1339,12 +1339,12 @@ class Devices(unittest.TestCase):
         # the car was heard on three different days, so it is known by the rule; the others are not
         self.assertEqual((car["known"], car["known_by"]), (True, "days"))
         self.assertEqual(r["known"], 1)                                   # the car: one row
-        nexus0 = next(x for x in r["rows"] if x["model"] == "Nexus-TH")
-        self.assertEqual((nexus0["known"], nexus0["known_by"], nexus0.get("mark")), (False, None, None))
+        sensor0 = next(x for x in r["rows"] if x["model"] == "LaCrosse-TX141THBv2")
+        self.assertEqual((sensor0["known"], sensor0["known_by"], sensor0.get("mark")), (False, None, None))
         self.assertIn("Known: heard on 3 or more different days", r["known_rule"])
-        # the Known toggle: mark the Nexus known, the car watched, then back to the rule
-        self.assertEqual(c.post("/api/devices/mark", json={"key": nexus0["key"], "known": True}).status_code, 403)
-        j = c.post("/api/devices/mark", json={"key": nexus0["key"], "known": True}, headers=H).get_json()
+        # the Known toggle: mark the LaCrosse sensor known, the car watched, then back to the rule
+        self.assertEqual(c.post("/api/devices/mark", json={"key": sensor0["key"], "known": True}).status_code, 403)
+        j = c.post("/api/devices/mark", json={"key": sensor0["key"], "known": True}, headers=H).get_json()
         self.assertEqual((j["ok"], j["changed"]), (True, 1))
         j = c.post("/api/devices/mark", json={"key": car["key"], "known": False}, headers=H).get_json()
         self.assertEqual(j["changed"], 4)
@@ -1352,32 +1352,32 @@ class Devices(unittest.TestCase):
         for bad in ("yes", 1, 0, 1.0):
             self.assertEqual(c.post("/api/devices/mark", json={"key": car["key"], "known": bad}, headers=H).status_code, 400)
         r3 = c.get("/api/devices").get_json()
-        nexus3 = next(x for x in r3["rows"] if x["model"] == "Nexus-TH")
+        sensor3 = next(x for x in r3["rows"] if x["model"] == "LaCrosse-TX141THBv2")
         car3 = next(x for x in r3["rows"] if x["kind"] == "set")
-        self.assertEqual((nexus3["known"], nexus3["known_by"], nexus3["mark"]), (True, "you", "yes"))
+        self.assertEqual((sensor3["known"], sensor3["known_by"], sensor3["mark"]), (True, "you", "yes"))
         self.assertEqual((car3["known"], car3["known_by"], car3["mark"]), (False, None, "no"))
         self.assertEqual(r3["known"], 1)
         c.post("/api/devices/mark", json={"key": car["key"], "known": None}, headers=H)
         car4 = next(x for x in c.get("/api/devices").get_json()["rows"] if x["kind"] == "set")
         self.assertEqual((car4["known"], car4["mark"]), (True, None))
-        c.post("/api/devices/mark", json={"key": nexus0["key"], "known": None}, headers=H)
+        c.post("/api/devices/mark", json={"key": sensor0["key"], "known": None}, headers=H)
         # the chat's list says which are known
         reply = eng._devices_reply(eng.devices_list())
         self.assertIn("1 known", reply)
-        self.assertIn("Citroen car: 4 tyre sensors (known)", reply)
-        self.assertNotIn("Nexus-TH temperature sensor 213 (known)", reply)
+        self.assertIn("Ford car: 4 tyre sensors (known)", reply)
+        self.assertNotIn("LaCrosse-TX141THBv2 temperature sensor 87 (known)", reply)
         self.assertTrue(car["reading_words"].endswith("bar, 24 °C"), car["reading_words"])   # no 'flags a0'
         self.assertEqual(r["tag"].split("-")[-1], time.strftime("%Y%m%d"))                   # a new day: new rows
-        # the GUI chat sends '/devices [text]' to the console as it is (v4.8.8 wrapped it in the saved-records
+        # the GUI chat sends '/devices [text]' to the console as it is (an older version wrapped it in the saved-records
         # context, which became the filter)
         from arisweb import bridge
-        self.assertTrue(bridge.SLASH_COMMANDS.match("/devices") and bridge.SLASH_COMMANDS.match("/devices Citroen"))
+        self.assertTrue(bridge.SLASH_COMMANDS.match("/devices") and bridge.SLASH_COMMANDS.match("/devices Ford"))
         self.assertFalse(bridge.SLASH_COMMANDS.match("/devicesx") or bridge.SLASH_COMMANDS.match("what devices"))
         for m in car["members"]:
             self.assertTrue(m["seen_line"].startswith("Seen 3 times since "), m["seen_line"])
-        nexus = next(x for x in r["rows"] if x["model"] == "Nexus-TH")
-        self.assertEqual(nexus["reading_words"], "23.4 °C, 44% humidity, battery ok, channel 1")
-        self.assertEqual((nexus["transmissions"], nexus["dongles"]), (40, ["Dongle 3"]))
+        sensor = next(x for x in r["rows"] if x["model"] == "LaCrosse-TX141THBv2")
+        self.assertEqual(sensor["reading_words"], "23.4 °C, 44% humidity, battery ok, channel 1")
+        self.assertEqual((sensor["transmissions"], sensor["dongles"]), (40, ["Dongle 3"]))
         text = eng.DEVICES_FILE.read_text()
         for bad in ("1193046", "0F10FF01F1F0", "tristate", '"cmd"'):                      # the remote's codes
             self.assertNotIn(bad, text, bad)

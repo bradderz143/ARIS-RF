@@ -2,7 +2,7 @@
 free afterwards. Standard library only, no ARIS imports.
 
 The rtl-sdr tools end on Ctrl+C (SIGINT) or SIGTERM: their handler cancels librtlsdr's streaming, and the program
-then closes the dongle. That cancel can hang. On the real PC (2026-11-02, both dongles, rtl-sdr from Ubuntu 26.04)
+then closes the dongle. That cancel can hang. Seen on a test machine with a distribution's rtl-sdr package:
 `timeout -s INT -k 3 5 rtl_sdr ...` stopped writing at the signal but was still running 3 s later, and only
 SIGKILL ended it (exit 137). A program that hangs like that never ends by itself, and while it lives it keeps its
 dongle: whoever opens that dongle next fails. So a stop is always: the signal, a short grace, SIGKILL, and a wait
@@ -48,8 +48,8 @@ def _drain(p):
 def stop(p, sig=signal.SIGINT, grace=STOP_GRACE_S, kill_wait=KILL_WAIT_S, drain=False) -> str:
     """End the program p (a subprocess.Popen) and reap it: `sig` (None: straight to SIGKILL), up to `grace` seconds
     for it to exit, then SIGKILL and up to `kill_wait` seconds. drain=True reads and drops its stdout meanwhile (only
-    when nobody else reads it): on the real PC (2026-11-02) rtl_sdr writing into a pipe nobody read never ended on
-    Ctrl+C (blocked in its write, its cancel never ran), and ended 0.06 s after Ctrl+C when the pipe was read.
+    when nobody else reads it): on a test station rtl_sdr writing into a pipe nobody read never ended on Ctrl+C
+    (blocked in its write, its cancel never ran), and ended 0.06 s after Ctrl+C when the pipe was read.
     Safe to call from two threads at once. Returns how
     it ended: "exited" (it had already), "signal" (it exited after the signal), "killed" (it needed SIGKILL) or
     "stuck" (still not gone after SIGKILL: its dongle may stay busy until it is replugged)."""

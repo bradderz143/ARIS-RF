@@ -105,17 +105,6 @@ def perform_system_maintenance(max_lines=None):
 # ----------------------------------------------------------------------------
 # Cleanup of files left by earlier versions (only these known patterns are ever touched)
 # ----------------------------------------------------------------------------
-def _db_rows(path) -> int:
-    try:
-        conn = sqlite3.connect(str(path), timeout=5)
-        try:
-            return int(conn.execute("SELECT COUNT(*) FROM peaks").fetchone()[0])
-        finally:
-            conn.close()
-    except sqlite3.Error:
-        return -1
-
-
 def _size(p: Path) -> int:
     try:
         if p.is_dir():
@@ -126,7 +115,7 @@ def _size(p: Path) -> int:
 
 
 def _cleanup_candidates():
-    """Leftovers from Argon and earlier ARIS upgrades: backups, patch files, downloads, caches, old logs."""
+    """Leftovers from earlier ARIS upgrades: backups, patch files, downloads, caches, old logs."""
     me = Path(os.path.abspath(__file__))
     keep = {me.name, "aris_gui.py", "aris_node.py"}
     # ARIS may run from its folder (a checkout) through a link in the home folder: look in both places.
@@ -144,36 +133,22 @@ def _cleanup_candidates():
         except OSError:
             return
         found.append((p, why))
-    for pat, why in (("aris_urh.py", "merged into aris.py in v4.4"), ("aris_urh.py.*", "old backup"),
-                     ("argon*.py", "old Argon program (replaced by ARIS)"), ("argon_data", "old Argon data folder"),
-                     ("*.pre4*", "backup from an earlier ARIS upgrade"),
+    for pat, why in (("*.pre4*", "backup from an earlier ARIS upgrade"),
                      ("aris*.py.pre2*", "backup made by deploy/install.sh"), ("aris*.py.bak*", "old backup"),
                      ("aris*.py.orig", "patch leftover"), ("aris*.py.rej", "patch leftover"),
                      ("aris*.patch", "old patch file"), ("aris_v4*.tar.gz", "old download"),
                      ("aris (*", "renamed duplicate download"), ("aris_gui (*", "renamed duplicate download"),
-                     ("aris_urh (*", "renamed duplicate download"), ("__pycache__", "Python cache (rebuilt automatically)"),
-                     ("aris_sigint.db.bak-*", "old Saved Signals backup")):
+                     ("__pycache__", "Python cache (rebuilt automatically)")):
         for base in bases:
             for p in sorted(base.glob(pat)):
                 add(p, why)
-    base = Path.home()
-    for op in [Path(x) for x in OLD_DB_PATHS] + [base / "aris_sigint.db", base / "argon_sigint.db"]:
-        try:                                         # (an unreadable folder: Python 3.8's Path.exists raises
-            there = op.exists()                      # PermissionError there, 3.9+ answers False)
-        except OSError:
-            there = False
-        if there and Path(DB_PATH).exists() and op.resolve() != Path(DB_PATH).resolve() \
-                and _db_rows(DB_PATH) >= _db_rows(op):
-            add(op, "old Saved Signals file (already copied to aris_data/signals.db)")
     tmp = Path(tempfile.gettempdir())
-    for pat, why in (("aris4*", "old download folder"), ("share", "old file-transfer folder"),
-                     ("argon_rf_config.json", "old Argon setting"),
-                     ("ism_background.jsonl", "old watchdog log (now kept in aris_data)"),
+    for pat, why in (("ism_background.jsonl", "old watchdog log (now kept in aris_data)"),
                      ("aris_*", "leftover temporary capture")):
         for p in sorted(tmp.glob(pat)):
             try:
                 if hasattr(os, "getuid") and p.lstat().st_uid != os.getuid():
-                    continue                 # only what this user made: /tmp is world-writable (v4.9.6 review)
+                    continue                 # only what this user made: /tmp is world-writable
                 if pat == "aris_*" and (p.is_dir() or time.time() - p.stat().st_mtime < 3600):
                     continue
             except OSError:
@@ -228,7 +203,7 @@ def _cleanup_text(res) -> str:
     return "\n".join(lines)
 
 
-@register("list_old_files", "List leftover files from Argon and earlier ARIS versions that /cleanup can remove "
+@register("list_old_files", "List leftover files from earlier ARIS versions that /cleanup can remove "
           "(it never touches settings, baselines, the login or Saved Signals). Listing only; the user deletes them "
           "with /cleanup confirm.", {})
 def list_old_files():
@@ -237,8 +212,8 @@ def list_old_files():
 
 def _list_devices() -> list:
     """`rtl_test -d 99` lists dongles without opening any of them: librtlsdr prints the list first, 99 is no
-    device index, and none of the station's serials starts or ends with 99 (its prefix and suffix matches would
-    open such a dongle: keep that in mind when choosing a serial)."""
+    device index, as long as no dongle's serial starts or ends with 99 (its prefix and suffix matches would open
+    such a dongle: choose serials that do not)."""
     if shutil.which("rtl_test") is None:
         return _other_receivers()
     try:

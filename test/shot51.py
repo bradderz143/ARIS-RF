@@ -1,4 +1,4 @@
-"""Phone-width screenshots of the v4.11.0 Bluetooth view (Devices tab > Bluetooth). Needs serve.py running with
+"""Phone-width screenshots of the Bluetooth view (Devices tab > Bluetooth). Needs serve.py running with
 ARIS_SEED_DEVICES=1 and ARIS_BT_SCAN_FILE=<file> (this script writes the file).  python3 shot51.py [port] [outdir]"""
 import asyncio
 import json
@@ -45,23 +45,23 @@ async def main():
         await pg.wait_for_selector(".act-row.dev-set", timeout=30000)
         await pg.click("#dev-wifi-seg button[data-v=bt]")
         await pg.wait_for_timeout(600)
-        await pg.screenshot(path=f"{OUT}/v4110_bt_missing.png")            # no helper yet
+        await pg.screenshot(path=f"{OUT}/bt_missing.png")            # no helper yet
         open(SCAN, "w").write(json.dumps(snap(time.time() - 3, BASE)))
         await pg.evaluate("loadBt(true)")
         await pg.wait_for_timeout(600)
-        await pg.screenshot(path=f"{OUT}/v4110_bt_unrated.png")            # devices, no baseline
+        await pg.screenshot(path=f"{OUT}/bt_unrated.png")            # devices, no baseline
         await pg.click("text=Record Bluetooth baseline")
         await pg.wait_for_timeout(800)
         open(SCAN, "w").write(json.dumps(snap(time.time() - 1, LATER, {"tile": {"distinct": 1, "rssi_max": -41}, "find_my": {"distinct": 14, "rssi_max": -70}})))
         await pg.evaluate("loadBt(true)")
         await pg.wait_for_timeout(800)
-        await pg.screenshot(path=f"{OUT}/v4110_bt_look.png")               # worth a look first
-        await pg.screenshot(path=f"{OUT}/v4110_bt_full.png", full_page=True)
+        await pg.screenshot(path=f"{OUT}/bt_look.png")               # worth a look first
+        await pg.screenshot(path=f"{OUT}/bt_full.png", full_page=True)
         await pg.click("#dev-wifi-seg button[data-v=wifi]")
         await pg.wait_for_timeout(500)
         await pg.click("#dev-group button[data-v=all]")
         await pg.wait_for_timeout(400)
-        await pg.screenshot(path=f"{OUT}/v4110_devices_back.png")          # the other views unchanged
+        await pg.screenshot(path=f"{OUT}/bt_devices_back.png")          # the other views unchanged
         print("page errors:", errors or "none")
         await br.close()
 

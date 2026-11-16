@@ -30,7 +30,7 @@ class Node(unittest.TestCase):
         env = dict(os.environ, ARIS_NODE_DIR=NODE_DIR)
         node = os.path.join(harness.CODE_DIR, "aris_node.py")
         subprocess.run([sys.executable, node, "--init", "--name", "Test Pi", "--port", str(PORT), "--serial",
-                        "00003003", "--bind", "127.0.0.1"], env=env, check=True, capture_output=True)
+                        "00026410", "--bind", "127.0.0.1"], env=env, check=True, capture_output=True)
         cls.proc = subprocess.Popen([sys.executable, node], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         for _ in range(50):
             try:
@@ -61,7 +61,7 @@ class Node(unittest.TestCase):
         self.assertEqual(n["kind"], "remote")
         h = c.get(f"/api/map/node/{n['id']}/health").get_json()
         self.assertTrue(h["ok"], h)
-        self.assertIn("00003003", h["dongles"])
+        self.assertIn("00026410", h["dongles"])
         st = c.get("/api/map/state").get_json()
         for x in st["nodes"]:
             c.post(f"/api/map/node/{x['id']}", json={"enabled": x["id"] == n["id"]}, headers=H)

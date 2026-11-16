@@ -8,6 +8,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   suite:
     runs-on: ubuntu-22.04          # the newest runner with Python 3.8 still available

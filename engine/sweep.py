@@ -401,7 +401,7 @@ _RTL_BENIGN = ("Found ", "Using device", "Detached kernel", "Exact sample rate",
 def _end_radio(p, sig=signal.SIGINT, drain=False) -> str:
     """Stop a radio program and wait until it has exited, the way every ARIS stop does it (arislib/radioproc.py):
     `sig` (Ctrl+C by default: the rtl-sdr tools' own clean exit), a short grace, then SIGKILL. librtlsdr's cancel
-    can hang (the real PC, 2026-11-02: rtl_sdr stopped writing at Ctrl+C but never exited), and a program still
+    can hang (seen on a test machine: rtl_sdr stopped writing at Ctrl+C but never exited), and a program still
     alive keeps its dongle, so callers release the dongle's lock only after this returns: its USB settle time then
     counts from the moment the program was really gone. Returns how it ended (radioproc.stop)."""
     how = radioproc.stop(p, sig=sig, drain=drain)
@@ -446,8 +446,8 @@ def _capture_raw(serial, tune_hz, fs, n, gain_db, timeout, ppm=None, min_bytes=N
     _check_stop()
     if not _have_tool("rtl_sdr", serial):
         raise RFError(_tool_missing("rtl_sdr", serial))
-    # rtl_sdr never stops when the byte count is a whole number of its 256 kB buffers (seen on the real PC: -n
-    # 12582912 ran until killed): ask for a few samples more, keep only what is needed
+    # rtl_sdr never stops when the byte count is a whole number of its 256 kB buffers (-n 12582912 runs until
+    # killed): ask for a few samples more, keep only what is needed
     n_req = int(n) + 4096
     if (2 * n_req) % RTL_SDR_BUF == 0:
         n_req += 1

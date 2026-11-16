@@ -12,7 +12,7 @@ function actRow(title, sub, level, buttons){
   return r;
 }
 function actSeen(){ try { return parseFloat(localStorage.getItem('aris_act_seen') || '0'); } catch (e) { return 0; } }
-// Clear logs (v4.8.8): the event logs and result lists go so the data folder never fills the disk. One confirm;
+// Clear logs: the event logs and result lists go so the data folder never fills the disk. One confirm;
 // the reply stays at the top of the tab for two minutes. Captures keep running. (Clear data, on the chat, wipes all.)
 let ACT_NOTE = null;
 async function clearLogs(){

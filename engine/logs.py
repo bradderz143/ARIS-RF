@@ -102,7 +102,7 @@ def _devices_file_lock():
 
 
 def _packet_epoch(p, default):
-    """rtl_433's clock time in a live packet ('2026-11-02 15:21:03') as an epoch; `default` for '@0.04s' (-r files)
+    """rtl_433's clock time in a live packet ('2026-03-14 12:00:00') as an epoch; `default` for '@0.04s' (-r files)
     or none."""
     try:
         return time.mktime(time.strptime(str(p.get("time")), "%Y-%m-%d %H:%M:%S"))
@@ -293,8 +293,8 @@ def _known_fold(heard: list, passing: bool = True) -> tuple:
 
 def _identified_text(devs, decoder="rtl_433", limit=5) -> str:
     """'Identified: ...' for the devices a decoder named (from _devices_from_packets), the known ones folded into
-    one clause: 'Identified: Citroen tyre sensor 92cf949a, a tyre-pressure sensor (3 packets; ID 92cf949a).
-    Also known devices: Nexus-TH temperature sensor; 4 packets. Decoded by rtl_433'."""
+    one clause: 'Identified: BMW tyre sensor 92cf949a, a tyre-pressure sensor (3 packets; ID 92cf949a).
+    Also known devices: LaCrosse-TX141THBv2 temperature sensor; 4 packets. Decoded by rtl_433'."""
     heard = [{"model": d.get("model"), "id": d.get("id_label"), "kind": d.get("type"), "packets": d.get("packets"),
               "_d": d} for d in devs]
     known_line, _none, rest = _known_fold(heard, passing=False)   # (one frequency: every new device with its ID)

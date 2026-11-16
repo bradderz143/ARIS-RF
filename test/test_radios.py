@@ -24,12 +24,12 @@ needs_rtl433 = unittest.skipUnless(harness.REAL_BIN, "needs the real rtl_433 (RE
 
 class Translate(unittest.TestCase):
     def test_rtl_sdr_commands_run_unchanged(self):
-        cmd = ["rtl_sdr", "-d", "00001001", "-f", "100000000", "-s", "2048000", "-g", "19.7", "-"]
+        cmd = ["rtl_sdr", "-d", "00017350", "-f", "100000000", "-s", "2048000", "-g", "19.7", "-"]
         self.assertEqual(radios.translate(cmd), cmd)
-        r433 = ["rtl_433", "-d", ":00001001", "-f", "433885000", "-s", "250k"]
+        r433 = ["rtl_433", "-d", ":00017350", "-f", "433885000", "-s", "250k"]
         self.assertEqual(radios.translate(r433), r433)
         self.assertEqual(radios.translate(["rtl_433", "-r", "x.cf32"]), ["rtl_433", "-r", "x.cf32"])  # a file
-        self.assertTrue(radios.is_rtl("00001001"))
+        self.assertTrue(radios.is_rtl("00017350"))
 
     def test_soapy_commands_become_rx_tools_and_soapy_device_args(self):
         dev = "soapy-hackrf-a06063c8234e4f5f"
@@ -137,7 +137,7 @@ class IQPipe(unittest.TestCase):
 
 class BB60Sim(unittest.TestCase):
     """The Signal Hound plug-in's helper against its simulated device (ARIS_BB60_SIM=1)."""
-    env = dict(os.environ, ARIS_BB60_SIM="1", ARIS_BB60_SIM_CARRIERS="96.9:-40,433.92:-60")
+    env = dict(os.environ, ARIS_BB60_SIM="1", ARIS_BB60_SIM_CARRIERS="97.1:-40,433.92:-60")
 
     def test_lists_its_serial(self):
         p = subprocess.run([sys.executable, BB60, "list"], capture_output=True, text=True, env=self.env, timeout=20)
@@ -145,26 +145,26 @@ class BB60Sim(unittest.TestCase):
 
     def test_iq_is_cu8_at_the_asked_rate_with_the_carrier_where_it_belongs(self):
         n = 250000
-        p = subprocess.run([sys.executable, BB60, "sdr", "-d", "24100123", "-f", "96800000", "-s", "250000",
+        p = subprocess.run([sys.executable, BB60, "sdr", "-d", "24100123", "-f", "97000000", "-s", "250000",
                             "-g", "20", "-n", str(n), "-"], capture_output=True, env=self.env, timeout=60)
         self.assertEqual(len(p.stdout), 2 * n)
         a = np.frombuffer(p.stdout, dtype=np.uint8).astype(float) - 127.5
         z = a[0::2] + 1j * a[1::2]
         f = np.fft.fftshift(np.fft.fftfreq(len(z), 1 / 250000.0))
         peak = f[np.argmax(np.abs(np.fft.fftshift(np.fft.fft(z))))]
-        self.assertAlmostEqual(peak, 100000, delta=2000)                     # 96.9 MHz is 100 kHz above 96.8
+        self.assertAlmostEqual(peak, 100000, delta=2000)                     # 97.1 MHz is 100 kHz above 97.0
 
     def test_sweep_rows_read_like_rtl_power(self):
         p = subprocess.run([sys.executable, BB60, "power", "-d", "24100123", "-f", "95M:99M:10k", "-i", "0.1",
                             "-1", "-"], capture_output=True, text=True, env=self.env, timeout=60)
         bins, _ = A._parse_rtl_power_lines(p.stdout.splitlines())
         best = max(bins, key=lambda f: max(bins[f]))
-        self.assertAlmostEqual(best / 1e6, 96.9, delta=0.03)
+        self.assertAlmostEqual(best / 1e6, 97.1, delta=0.03)
 
 
 class SASim(unittest.TestCase):
     """The SA44B / SA124B plug-in's helper against its simulated device (ARIS_SA_SIM=1)."""
-    env = dict(os.environ, ARIS_SA_SIM="1", ARIS_SA_SIM_CARRIERS="96.9:-40,2437:-55")
+    env = dict(os.environ, ARIS_SA_SIM="1", ARIS_SA_SIM_CARRIERS="97.1:-40,2437:-55")
 
     def run_helper(self, *args, text=True):
         return subprocess.run([sys.executable, SA] + list(args), capture_output=True, text=text, env=self.env,
@@ -175,7 +175,7 @@ class SASim(unittest.TestCase):
 
     def test_iq_at_its_own_rates_with_the_carrier_where_it_belongs(self):
         n = 121500
-        p = self.run_helper("sdr", "-d", "19184001", "-f", "96850000", "-s", "243000", "-g", "20", "-n", str(n), "-",
+        p = self.run_helper("sdr", "-d", "19184001", "-f", "97050000", "-s", "243000", "-g", "20", "-n", str(n), "-",
                             text=False)
         self.assertEqual(len(p.stdout), 2 * n)
         a = np.frombuffer(p.stdout, dtype=np.uint8).astype(float) - 127.5
@@ -281,7 +281,7 @@ class SoapyEndToEnd(unittest.TestCase):
         # only rtl_power's numbers are referred to an 8-bit full scale: a Signal Hound sweeps in calibrated dBm and a
         # SoapySDR receiver on its own scale, so neither may be shifted and labelled dBFS on the Spectrum tab
         A._load_plugins()
-        self.assertEqual(radios.sweep_unit("00001001"), "dBFS")
+        self.assertEqual(radios.sweep_unit("00017350"), "dBFS")
         self.assertEqual(radios.sweep_unit(self.dev), "dB")
         self.assertEqual(radios.sweep_unit("bb60-12345678"), "dBm")
         from arisweb import spectrum
@@ -303,7 +303,7 @@ class SAEndToEnd(unittest.TestCase):
 
     def setUp(self):
         os.environ["ARIS_SA_SIM"] = "1"
-        os.environ["ARIS_SA_SIM_CARRIERS"] = "96.9:-40,2437:-55"
+        os.environ["ARIS_SA_SIM_CARRIERS"] = "97.1:-40,2437:-55"
         self.dev = "sa-19184001"
         A._load_plugins()
 

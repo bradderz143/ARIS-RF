@@ -20,9 +20,9 @@ _base_chat = Client.chat
 def _chat2(self, model, messages, tools=None, options=None, **kw):
     last = messages[-1]
     if last["role"] == "user" and "baseline on fm band" in last["content"].lower():
-        # what the model sent in the user's screenshot: edges copied from the saved signals
+        # a small model's typical call: band edges copied from the saved signals
         return {"message": {"role": "assistant", "content": "", "tool_calls": [{"function": {
-            "name": "record_baseline", "arguments": {"start_mhz": 95.3066, "stop_mhz": 98.5078}}}]}}
+            "name": "record_baseline", "arguments": {"start_mhz": 95.1066, "stop_mhz": 98.3078}}}]}}
     if last["role"] == "user" and "what did the baseline find" in last["content"].lower():
         return {"message": {"role": "assistant", "content": "", "tool_calls": [{"function": {
             "name": "list_baselines", "arguments": {}}}]}}

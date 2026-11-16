@@ -193,8 +193,8 @@ def _extract_raw_digital_bursts(env, inst_freq_hz, fs_dec, active_mask):
         fsk = "".join("1" if float(np.mean(seg_f[i * sps:(i + 1) * sps])) >= f_med else "0"
                       for i in range(n_syms) if len(seg_f[i * sps:(i + 1) * sps]) > 0)
         # the demodulated symbols are used here and now (which modulation carries data, a radio-chip sync word)
-        # and never kept: before v4.9.4 the hex of every burst went into the Signals list, the Activity API and
-        # last_investigation.json, which for a fixed-code remote is the code itself (the security review)
+        # and never kept: the hex of a burst stored in the Signals list, the Activity API or
+        # last_investigation.json would be, for a fixed-code remote, the code itself
         has_fsk = bool(fsk) and set(fsk) != {"0"} and set(fsk) != {"1"}
         has_ook = bool(ook) and set(ook) != {"0"}
         if modulation is None:
@@ -212,7 +212,7 @@ def _extract_raw_digital_bursts(env, inst_freq_hz, fs_dec, active_mask):
         "estimated_symbol_rate_baud": est_baud,
         "modulation_guess": modulation or "CARRIER",
         "sync_word_match": sync_word,
-        "raw_demodulated_hex_frames": frames,     # (lengths only since v4.9.4: no bits, no hex)
+        "raw_demodulated_hex_frames": frames,     # (lengths only: no bits, no hex)
     }
 
 
@@ -387,8 +387,8 @@ def _rtl433_extra_flags():
 
 
 def _rtl433_device(serial) -> list:
-    """rtl_433 picks a dongle by serial only with a ':' in front ('-d :00001001'). A bare number is a device INDEX
-    there, so '-d 00001001' asked for dongle number 1001 and rtl_433 exited with code 2 before v4.7.1. (rtl_sdr,
+    """rtl_433 picks a dongle by serial only with a ':' in front ('-d :00017350'). A bare number is a device INDEX
+    there, so '-d 00017350' asks for dongle number 17350 and rtl_433 exits with code 2. (rtl_sdr,
     rtl_power, rtl_fm, rtl_test and rtl_adsb take the bare serial.)"""
     return ["-d", ":" + str(serial)]
 
@@ -440,7 +440,7 @@ def _pattern_hint(mod, guess, short_us, long_us, bits=None):
     EV1527 / PT2262 remotes send 24 data bits (25 with the sync pulse), so another packet length rules them out."""
     g = (guess or "").lower()
     if g in ("", "pattern unclear", "single pulse", "unclear") or (bits is not None and bits < 8):
-        return None                         # no pattern to match (v4.8.6: 'pattern unclear' -> 'remotes')
+        return None                         # no pattern to match (an unclear pattern is no hint of 'remotes')
     if mod == "OOK" and "pulse width" in g and short_us and long_us and 250 <= short_us <= 700 \
             and 2.3 <= long_us / short_us <= 3.7 and bits in (None, 24, 25):
         return ("fixed-code remotes (EV1527/PT2262 chips): doorbells, PIR motion sensors, door/window contacts, "
@@ -596,14 +596,14 @@ NOISE_MIN_PULSE_US = 50.0     # no OOK device sends pulses this short: rtl_433's
 
 def _noise_package(b) -> bool:
     """An undecoded rtl_433 package that is noise, not a device: a few pulses or bits, or a short package at
-    rtl_433's trigger level. On the live station (v4.8.6) '40/60 us pulses, 2-bit packets, SNR 4.8 dB' made both
-    dongles 'hear' 433.92 (the IQ look heard nothing, -2.8 dB) and was saved as an unknown device."""
+    rtl_433's trigger level. Without this rule a package of a few short pulses at the trigger level made every
+    dongle 'hear' a frequency where the IQ look heard nothing, and was saved as an unknown device."""
     if b.get("decoded"):
         return False
     pulses, bits, snr = b.get("pulses"), b.get("bits"), b.get("snr")
     short = b.get("short")
     if short is not None and 0 < float(short) < NOISE_MIN_PULSE_US and str(b.get("mod") or "OOK") == "OOK":
-        return True            # live (v4.8.8): "OOK PWM, 16/37 us pulses, 9-bit packets, 18 dB" next to a TPMS decode
+        return True            # rtl_433's OOK view of an FSK burst (e.g. a tyre sensor's): pulses of a few tens of us
     if pulses is not None and pulses < NOISE_MIN_PULSES:
         return True
     if bits is not None and bits < NOISE_MIN_PULSES:
@@ -670,8 +670,8 @@ _LABEL_SECRET = {"key": None}
 
 def _label_secret() -> bytes:
     """The key behind a remote's label (#3fa2c1): random, made once, kept in DATA_DIR/label_secret (mode 600) and
-    never logged or shown. Clear logs and Clear data keep it, so a remote keeps its label. Without a key (v4.8.7
-    and before: sha1 of 'model:id', the first 6 hex digits) a remote's 20-bit ID was found again from its label by
+    never logged or shown. Clear logs and Clear data keep it, so a remote keeps its label. Without a key (an
+    unkeyed sha1 of 'model:id', the first 6 hex digits) a remote's 20-bit ID was found again from its label by
     trying every ID, in under a second: the label was the remote."""
     if _LABEL_SECRET["key"] is None:
         path = DATA_DIR / "label_secret"
@@ -1027,20 +1027,20 @@ _TMP_STALE_S = 600.0
 def _tmp_owned_prefix(kind: str) -> str:
     """'aris_aud_<pid>_': the name of a temporary audio file or burst-cut folder says which process owns it, so
     the start-up sweep removes only what a dead process left and never what another ARIS process (the GUI's
-    Decode job while the chat console restarts) is using right now (v4.9.5 review)."""
+    Decode job while the chat console restarts) is using right now."""
     return f"aris_{kind}_{os.getpid()}_"
 
 
 def _open_private(path: str):
     """A new file only this user can read (0600, never an existing one): the decoders' audio in /dev/shm would
-    otherwise take the umask (review: the .wav was world-readable for the seconds it existed)."""
+    otherwise take the umask (the .wav would be world-readable for the seconds it exists)."""
     return os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb")
 
 
 def _sweep_audio_leftovers() -> int:
     """Delete the demodulated-audio files and burst-cut folders of ARIS processes that are gone (killed before
-    their own clean-up): metadata input and a remote's replayable IQ, never anything to keep (v4.9.4; the
-    owner's pid in the name and the band folders since v4.9.5). Names without a pid (older versions) go when
+    their own clean-up): metadata input and a remote's replayable IQ, never anything to keep (the
+    owning process's pid is in each name). Names without a pid (older versions) go when
     older than _TMP_STALE_S. Called at start (after every part is loaded: _pid_alive lives in captures)."""
     n = 0
     for d in {_AUDIO_TMP or tempfile.gettempdir(), tempfile.gettempdir()}:

@@ -143,7 +143,7 @@ class SimLib:
         import numpy as np
         self.np = np
         self.rng = np.random.default_rng(2)
-        spec = os.environ.get("ARIS_SA_SIM_CARRIERS", "96.9:-40,433.92:-60,2437:-55")
+        spec = os.environ.get("ARIS_SA_SIM_CARRIERS", "97.1:-40,433.92:-60,2437:-55")
         self.carriers = [(float(a) * 1e6, float(b)) for a, b in (x.split(":") for x in spec.split(",") if ":" in x)]
         self.state = {}
 

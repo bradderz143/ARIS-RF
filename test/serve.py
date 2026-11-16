@@ -13,10 +13,10 @@ if os.environ.get("SERVE_FAKE_ANT"):
 
 # The FM view gets every kind of station that "Name all FM stations" tells apart: mono with RDS, an RDS coder on its
 # own clock, a stereo station that sends no RDS, and an FM transmitter on an even tenth (not a station channel).
-os.environ["FAKE_IQ"] += ",92.1:wbfm_monords:30:NOTICIAS,99.3:wbfm_unlocked:28:LA K,93.7:wbfm_nords:28,94.8:wbfm_mono:22"
-os.environ["FAKE_PEAKS"] += ",92.1:30:150,99.3:28:150,93.7:30:150,94.8:26:150"
-# ... and one the sweep sees but the IQ look does not hear (99.7: "not heard in the last check", v4.9.3)
-os.environ["FAKE_PEAKS"] += ",99.7:22:150"
+os.environ["FAKE_IQ"] += ",91.7:wbfm_monords:30:NEWS 24,103.9:wbfm_unlocked:28:CITY FM,95.1:wbfm_nords:28,94.8:wbfm_mono:22"
+os.environ["FAKE_PEAKS"] += ",91.7:30:150,103.9:28:150,95.1:30:150,94.8:26:150"
+# ... and one the sweep sees but the IQ look does not hear (102.1: "not heard in the last check")
+os.environ["FAKE_PEAKS"] += ",102.1:22:150"
 
 pw = os.environ.get("ARIS_TEST_PASSWORD", "test-password-123")
 with open(os.path.join(harness.DATA, "gui_secrets.json"), "w") as f:

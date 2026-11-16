@@ -8,10 +8,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from arislib import specplan as sp  # noqa: E402
 
-RTL = {"00001001": (24.0, 1766.0)}
-THREE = {"00001001": (24.0, 1766.0), "00003003": (24.0, 1766.0), "00004004": (24.0, 1766.0)}
+RTL = {"00017350": (24.0, 1766.0)}
+THREE = {"00017350": (24.0, 1766.0), "00026410": (24.0, 1766.0), "00035720": (24.0, 1766.0)}
 WIDE = {"sa-1": (0.1, 12400.0)}
-NAMES = {"00001001": "Dongle 1", "00003003": "Dongle 2", "00004004": "Dongle 3", "sa-1": "Dongle 4"}
+NAMES = {"00017350": "Dongle 1", "00026410": "Dongle 2", "00035720": "Dongle 3", "sa-1": "Dongle 4"}
 
 
 class Plan(unittest.TestCase):
@@ -75,15 +75,15 @@ class Plan(unittest.TestCase):
         pl = sp.plan(0, 6000, both, 0.8)
         self.assertEqual(pl["covered"], [[0.1, 6000.0]])
         self.assertEqual(pl["gaps"], [[0.0, 0.1]])
-        self.assertEqual(pl["receivers"]["00001001"], [24.0, 1766.0])
+        self.assertEqual(pl["receivers"]["00017350"], [24.0, 1766.0])
         self.assertEqual(pl["receivers"]["sa-1"], [0.1, 6000.0])
         for c in pl["chunks"]:
             self.assertLessEqual(c["stop"] - c["start"], 200.0 + 1e-6)
             self.assertIn("sa-1", c["receivers"])
-            self.assertEqual("00001001" in c["receivers"], c["start"] < 1766.0 and c["stop"] > 24.0, c)
+            self.assertEqual("00017350" in c["receivers"], c["start"] < 1766.0 and c["stop"] > 24.0, c)
         pl = sp.plan(2400, 2500, both, 0.8)
         self.assertEqual(pl["mode"], "sweep")
-        self.assertEqual(pl["receivers"]["00001001"], None)
+        self.assertEqual(pl["receivers"]["00017350"], None)
         self.assertEqual(pl["chunks"][0]["receivers"], ["sa-1"])
         self.assertEqual(pl["gaps"], [])
 
@@ -98,7 +98,7 @@ class Plan(unittest.TestCase):
         self.assertEqual(sp.plan(2437.0, 2437.5, THREE, 0.8)["mode"], "none")
         mixed = sp.plan(2437.0, 2437.5, dict(THREE, **WIDE), 0.8)
         self.assertEqual((mixed["mode"], mixed["live_receivers"]), ("live", ["sa-1"]))
-        self.assertIsNone(mixed["receivers"]["00001001"])
+        self.assertIsNone(mixed["receivers"]["00017350"])
         # a receiver that cannot make the direct capture sweeps a narrow view instead
         slow = sp.plan(2437.0, 2437.5, dict(THREE, **WIDE), 0.8, live_receivers=list(THREE))
         self.assertEqual((slow["mode"], slow["step_khz"], slow["live_receivers"]), ("sweep", 1.0, []))

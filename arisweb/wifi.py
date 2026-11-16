@@ -1,4 +1,4 @@
-"""Wi-Fi networks for the Devices tab (v4.10.0): what a passive scan heard, with a baseline.
+"""Wi-Fi networks for the Devices tab: what a passive scan heard, with a baseline.
 
 The scan is made by a separate helper (deploy/aris-wifi.sh installs it: a tiny unit that runs `iw ... scan passive`
 every minute and writes the text to ARIS_WIFI_SCAN_FILE, default /run/aris-wifi/scan.txt). ARIS itself neither
@@ -101,7 +101,7 @@ def _post(text: str) -> None:
 
 
 def tick(now=None) -> list:
-    """One round of the watcher (v4.13.0): fold the newest scan in (signal history) and post the notices for it
+    """One round of the watcher: fold the newest scan in (signal history) and post the notices for it
     (arislib.wireless.events). Returns the notice texts."""
     now = time.time() if now is None else now
     with _LOCK:

@@ -62,9 +62,9 @@ class Rds(unittest.TestCase):
         # no stereo pilot to lock to: the subcarrier is found by itself (here 4 Hz off 57 kHz, its own clock)
         t = np.arange(int(self.FS * 3)) / self.FS
         x = (0.4 * np.sin(2 * np.pi * 700 * t) + 0.02 * np.random.default_rng(2).standard_normal(len(t))
-             + 0.04 * rds.rds_waveform(t, 0x2C3D, "NOTICIAS", rds_phase=0.4, carrier_hz=57004.0))
+             + 0.04 * rds.rds_waveform(t, 0x2C3D, "NEWS 24", rds_phase=0.4, carrier_hz=57004.0))
         r = rds.decode(x, self.FS)
-        self.assertEqual((r["ps"], r["pi"], r["stereo_pilot"]), ("NOTICIAS", "0x2C3D", False), r)
+        self.assertEqual((r["ps"], r["pi"], r["stereo_pilot"]), ("NEWS 24", "0x2C3D", False), r)
         self.assertAlmostEqual(r["rds_carrier_hz"], 57004.0, delta=0.2)
 
     def test_rds_not_locked_to_the_pilot(self):
@@ -96,49 +96,49 @@ class Rds(unittest.TestCase):
         self.assertEqual(rds._groups(junk)[0], [])
 
     def test_scrolling_name_is_not_a_station_name(self):
-        # 88.9 showed "y en": one word of text the station scrolls through its name field
+        # a station that scrolls its text through its name field, a word or two at a time
         t = np.arange(int(self.FS * 6.0)) / self.FS
-        words = ["Escucha", "y en", "vivo", "la", "mejor", "musica"]
+        words = ["Listen", "in and", "hear", "the", "best", "music"]
         x = (0.4 * np.sin(2 * np.pi * 1000 * t) + 0.1 * np.sin(2 * np.pi * rds.PILOT_HZ * t)
-             + 0.04 * rds.rds_waveform(t, 0x0889, words, -np.pi / 2, 0.9)
+             + 0.04 * rds.rds_waveform(t, 0x1A42, words, -np.pi / 2, 0.9)
              + 0.02 * np.random.default_rng(3).standard_normal(len(t)))
         r = rds.decode(x, self.FS)
         self.assertIsNone(r["ps"], r)
         self.assertEqual(sorted(r["ps_scrolling"].split()), sorted(" ".join(words).split()))
         # a fixed name that comes back between the pieces is still the name
-        fixed = ["TOP 40", "Escucha", "TOP 40", "y en", "TOP 40", "vivo"]
+        fixed = ["TOP 40", "Listen", "TOP 40", "in and", "TOP 40", "hear"]
         x = (0.4 * np.sin(2 * np.pi * 1000 * t) + 0.1 * np.sin(2 * np.pi * rds.PILOT_HZ * t)
-             + 0.04 * rds.rds_waveform(t, 0x91E3, fixed, -np.pi / 2, 0.9)
+             + 0.04 * rds.rds_waveform(t, 0x2B1D, fixed, -np.pi / 2, 0.9)
              + 0.02 * np.random.default_rng(4).standard_normal(len(t)))
         self.assertEqual(rds.decode(x, self.FS)["ps"], "TOP 40")
-        self.assertEqual(rds.scrolling_text(["THE BEAT", "E BEAT 1", "BEAT 101"]), "THE BEAT 101")
+        self.assertEqual(rds.scrolling_text(["THE BEAT", "E BEAT 1", "BEAT 100"]), "THE BEAT 100")
 
     def test_two_pieces_seen_once_are_scrolling_text(self):
-        # the live station (v4.8.6) kept 'RUSH' / 'HOUR' (pieces of "RUSH HOUR") as two rotating station names
+        # two pieces of one text, each seen once ('DRIVE' / 'TIME' of "DRIVE TIME"), are not two rotating station names
         t = np.arange(int(self.FS * 6.0)) / self.FS
         blank = "        "
         x = (0.4 * np.sin(2 * np.pi * 1000 * t) + 0.1 * np.sin(2 * np.pi * rds.PILOT_HZ * t)
-             + 0.04 * rds.rds_waveform(t, 0x1009, [blank, blank, "RUSH", "HOUR"] + [blank] * 12, -np.pi / 2, 0.9)
+             + 0.04 * rds.rds_waveform(t, 0x1D07, [blank, blank, "DRIVE", "TIME"] + [blank] * 12, -np.pi / 2, 0.9)
              + 0.02 * np.random.default_rng(6).standard_normal(len(t)))
         r = rds.decode(x, self.FS)
         self.assertIsNone(r["ps"], r)
-        self.assertEqual(r["ps_scrolling"], "RUSH HOUR")
-        # words cut into 8-character blocks join again: 'Alejandr' + 'o Sanz' (shown as 'Alejandr o Sanz')
+        self.assertEqual(r["ps_scrolling"], "DRIVE TIME")
+        # words cut into 8-character blocks join again: 'Sunflowe' + 'r Hour' (shown as 'Sunflowe r Hour')
         x = (0.4 * np.sin(2 * np.pi * 1000 * t) + 0.1 * np.sin(2 * np.pi * rds.PILOT_HZ * t)
-             + 0.04 * rds.rds_waveform(t, 0xFB89, ["Noche", "Alejandr", "o Sanz"], -np.pi / 2, 0.9)
+             + 0.04 * rds.rds_waveform(t, 0x1E55, ["Late", "Sunflowe", "r Hour"], -np.pi / 2, 0.9)
              + 0.02 * np.random.default_rng(7).standard_normal(len(t)))
         r = rds.decode(x, self.FS)
-        self.assertIn("Alejandro Sanz", r["ps_scrolling"], r)
-        self.assertEqual(rds.scrolling_text(["Noche", "Alejandr", "o Sanz"], full={"Alejandr"}), "Noche Alejandro Sanz")
+        self.assertIn("Sunflower Hour", r["ps_scrolling"], r)
+        self.assertEqual(rds.scrolling_text(["Late", "Sunflowe", "r Hour"], full={"Sunflowe"}), "Late Sunflower Hour")
         self.assertEqual(rds.scrolling_text(["MUSICALE", "2024"], full={"MUSICALE"}), "MUSICALE 2024")
-        # a capital after a full block is a new word (the live station: 'IglesiasY SantosBravos', 'Nada conLuis')
-        self.assertEqual(rds.scrolling_text(["Iglesias", "Y Santos", "Bravos"], full={"Iglesias", "Y Santos"}),
-                         "Iglesias Y Santos Bravos")
-        self.assertEqual(rds.scrolling_text(["Nada con", "Luis Mig", "uel En A", "mor"],
-                                            full={"Nada con", "Luis Mig", "uel En A"}), "Nada con Luis Miguel En Amor")
+        # a capital after a full block is a new word (never 'ThompsonAnd SonsTonight', 'Tune forAnna')
+        self.assertEqual(rds.scrolling_text(["Thompson", "And Sons", "Tonight"], full={"Thompson", "And Sons"}),
+                         "Thompson And Sons Tonight")
+        self.assertEqual(rds.scrolling_text(["Tune for", "Anna Kel", "ly On Ai", "r Now"],
+                                            full={"Tune for", "Anna Kel", "ly On Ai"}), "Tune for Anna Kelly On Air Now")
 
     def test_block_search_always_ends(self):
-        # v4.7.3 hung on real, noisy stations: an exact block pair near the end of the capture that does not start a
+        # an earlier version hung on real, noisy stations: an exact block pair near the end of the capture that does not start a
         # group sent the search back to the same pair for ever. Every position near the end, every pair kind.
         import signal as _sig
         def boom(*_a):
@@ -167,10 +167,10 @@ class Rds(unittest.TestCase):
         self.assertFalse(rds.decode(self._mpx(secs=0.2), self.FS)["ok"])
 
     def test_rotating_name_is_never_stitched(self):
-        # 94.5 alternates "NOVA" and "ECHO": both are reported, never "NOHO" or "ECVA"
+        # a station alternates "NOVA" and "ECHO": both are reported, never "NOHO" or "ECVA"
         t = np.arange(int(self.FS * 6.0)) / self.FS
         x = (0.4 * np.sin(2 * np.pi * 1000 * t) + 0.1 * np.sin(2 * np.pi * rds.PILOT_HZ * t)
-             + 0.04 * rds.rds_waveform(t, 0x0945, "NOVA", -np.pi / 2, 0.9, ps2="ECHO", switch_every=3)
+             + 0.04 * rds.rds_waveform(t, 0x1935, "NOVA", -np.pi / 2, 0.9, ps2="ECHO", switch_every=3)
              + 0.02 * np.random.default_rng(3).standard_normal(len(t)))
         r = rds.decode(x, self.FS)
         self.assertEqual(sorted(r["ps_all"]), ["ECHO", "NOVA"])
@@ -220,7 +220,7 @@ class BandWatch(unittest.TestCase):
         return out + d.flush(), d
 
     def test_held_remote_is_not_cut_off(self):
-        # real PC: a remote held down at 17 dB in one FFT bin ended after 757 ms, its bins had become "floor"
+        # a remote held down at 17 dB in one FFT bin must not end after 0.75 s because its bins became "floor"
         fs, rng = 2.4e6, np.random.default_rng(4)
         n = int(fs * 3.5)
         t = np.arange(n) / fs
@@ -232,7 +232,7 @@ class BandWatch(unittest.TestCase):
         self.assertGreater(out[0]["t1"] - out[0]["t0"], 1.4)
 
     def test_fsk_tones_are_one_burst(self):
-        # real PC: TPMS bursts were logged twice, once per tone (433.888 and 433.955 MHz at the same moment)
+        # a 2-FSK burst must not be logged twice, once per tone (tones about 70 kHz apart at the same moment)
         fs, rng = 2.4e6, np.random.default_rng(5)
         n = int(fs * 1.5)
         t = np.arange(n) / fs
@@ -255,7 +255,7 @@ class BandWatch(unittest.TestCase):
         return sig * np.sqrt(10 ** (db / 10.0) / 170.7)
 
     def test_channel_hears_again_soon_after_a_carrier(self):
-        # v4.8.6: after a 40 dB carrier ended, its bins' floor fell 15% per block: a remote 2 kHz away was not heard
+        # when the floor fell 15% per block after a 40 dB carrier ended, a remote 2 kHz away was not heard
         # 0.5, 1.5, 3 or 5 s later (a held remote did the same to presses that followed it)
         fs = 2.4e6
         n = int(fs * 5.0)
@@ -269,7 +269,7 @@ class BandWatch(unittest.TestCase):
     def test_samples_missing_for_a_while_give_no_false_burst(self):
         # the floor falls at once to a lower block median, but not when the whole band falls (samples missing for
         # 0.75 s): it then followed the near-silence down and the noise coming back was one band-wide 2 s "burst".
-        # (Falling slowly, as v4.8.6 did, can still let a single noise cell through just after: not a device.)
+        # (Falling slowly, as an earlier version did, can still let a single noise cell through just after: not a device.)
         fs = 2.4e6
         n = int(fs * 8.0)
         z = self._noise(n, 9)
@@ -279,7 +279,7 @@ class BandWatch(unittest.TestCase):
         self.assertLessEqual(len(out), 2, out)
 
     def test_fsk_burst_with_another_signal_on_is_one_burst(self):
-        # v4.8.6: with any other signal on in the band each FSK tone closed at its own row: logged twice, each cut
+        # with any other signal on in the band each FSK tone used to close at its own row: logged twice, each cut
         # to one tone
         fs = 2.4e6
         n = int(fs * 1.5)
@@ -296,7 +296,7 @@ class BandWatch(unittest.TestCase):
         self.assertGreater(fsk[0]["width_hz"], 60e3)
 
     def test_two_remotes_ending_together_stay_apart(self):
-        # v4.8.6 joined any two bursts within 200 kHz that shared half the shorter one's time: two remotes 120 kHz
+        # an earlier version joined any two bursts within 200 kHz that shared half the shorter one's time: two remotes 120 kHz
         # apart became one burst between them, and neither decoded
         fs = 2.4e6
         n = int(fs * 2.0)
@@ -309,7 +309,7 @@ class BandWatch(unittest.TestCase):
         self.assertEqual(sorted(round(o["offset_hz"] / 1e4) for o in out), [-9, 3], out)
 
     def test_no_blind_spot_at_the_tuning(self):
-        # v4.8.6 ignored +-9.4 kHz around 0 Hz: at the 433 band's tuning (433.87) devices at 433.863-433.877 were
+        # an earlier version ignored +-9.4 kHz around 0 Hz: at the 433 band's tuning (433.87) devices at 433.863-433.877 were
         # never heard. The receiver's DC offset (also when it wanders) still never makes a burst.
         fs = 2.4e6
         n = int(fs * 3.0)
@@ -366,7 +366,7 @@ class BandWatch(unittest.TestCase):
 
 
 class RadioProc(unittest.TestCase):
-    # real PC (2026-11-02): rtl_sdr writing into a pipe nobody read never ended on Ctrl+C (blocked in its write, so
+    # seen on real hardware: rtl_sdr writing into a pipe nobody read never ended on Ctrl+C (blocked in its write, so
     # its cancel never ran); with the pipe read it ended 0.06 s after Ctrl+C. This child behaves the same way.
     CHILD = ("import os, signal, sys\n"
              "stop = []\n"
@@ -461,7 +461,7 @@ class RtlPower(unittest.TestCase):
                     self.assertAlmostEqual(ref, self._csv_dbm(hop, window, 127.0), delta=0.05, msg=(lo, step, window))
                     self.assertAlmostEqual(self._csv_dbm(hop, window, 63.5) - ref, -6.02, delta=0.05)
         # the FM view: rtl_power prints about +20 dB for a full-scale sine with a Hamming window at 2.78 MS/s, which
-        # is why v4.8.9's plot showed stations above 0 dB
+        # is why a plot of the raw numbers showed stations above 0 dB
         self.assertAlmostEqual(rtlpower.sweep_fullscale_db(88e6, 108e6, 25e3, 0.2, "hamming"), 20.4, delta=0.3)
         self.assertEqual(rtlpower.window_coefs("rectangle", 4), [256] * 4)
         self.assertEqual(rtlpower.window_coefs("no such window", 8), [256] * 8)     # rtl_power keeps its rectangle
@@ -544,7 +544,7 @@ class PlansAndNodes(unittest.TestCase):
 
     def test_scale_keeps_node_spot(self):
         p = floorplan.add("Blank", None, width_m=10)
-        ns = nodes.ensure_local([("1001", "D1")])
+        ns = nodes.ensure_local([("7350", "D1")])
         nodes.place(ns[0]["id"], p["id"], 5, 3)
         floorplan.scale_from_points(p["id"], 0, 0, 5, 0, 10)       # 5 m on the plan is really 10 m
         n = nodes.get(ns[0]["id"])
@@ -564,8 +564,8 @@ class PlansAndNodes(unittest.TestCase):
         self.assertIsNone(nodes.token_for(n["id"]))
 
     def test_band_offsets(self):
-        ns = nodes.ensure_local([("2002", "D2")])
-        nid = [n for n in ns if n["serial"] == "2002"][0]["id"]
+        ns = nodes.ensure_local([("6410", "D2")])
+        nid = [n for n in ns if n["serial"] == "6410"][0]["id"]
         nodes.set_offsets(433.92, {nid: 4.5})
         self.assertEqual(nodes.offset_for(nodes.get(nid), 434.0), 4.5)
         self.assertEqual(nodes.offset_for(nodes.get(nid), 915.0), 0.0)
@@ -582,14 +582,14 @@ class PlansAndNodes(unittest.TestCase):
 
 
 class Wireless(unittest.TestCase):
-    """arislib.wireless (v4.10.0): the Wi-Fi scan's text, the baseline and what is worth a look."""
-    DUMP = ("BSS aa:bb:cc:00:00:01(on wlx) -- associated\n\tfreq: 5745.0\n\tcapability: ESS Privacy (0x1011)\n"
-            "\tsignal: -48.00 dBm\n\tSSID: Casa\n\tRSN:\t * Version: 1\n\t\t * Authentication suites: PSK\n"
-            "BSS aa:bb:cc:00:00:02(on wlx)\n\tfreq: 2437\n\tcapability: ESS (0x0401)\n\tsignal: -80.00 dBm\n"
+    """arislib.wireless: the Wi-Fi scan's text, the baseline and what is worth a look."""
+    DUMP = ("BSS aa:bb:cc:00:00:01(on wlan1) -- associated\n\tfreq: 5745.0\n\tcapability: ESS Privacy (0x1011)\n"
+            "\tsignal: -48.00 dBm\n\tSSID: Home\n\tRSN:\t * Version: 1\n\t\t * Authentication suites: PSK\n"
+            "BSS aa:bb:cc:00:00:02(on wlan1)\n\tfreq: 2437\n\tcapability: ESS (0x0401)\n\tsignal: -80.00 dBm\n"
             "\tSSID: \\x00\\x00\\x00\n"
-            "BSS aa:bb:cc:00:00:03(on wlx)\n\tfreq: 2412\n\tcapability: ESS Privacy (0x0411)\n\tsignal: -70.00 dBm\n"
+            "BSS aa:bb:cc:00:00:03(on wlan1)\n\tfreq: 2412\n\tcapability: ESS Privacy (0x0411)\n\tsignal: -70.00 dBm\n"
             "\tSSID: Wpa3Only\n\tRSN:\t * Version: 1\n\t\t * Authentication suites: SAE\n"
-            "BSS aa:bb:cc:00:00:04(on wlx)\n\tfreq: 5180\n\tcapability: ESS Privacy (0x0411)\n\tsignal: -60.00 dBm\n"
+            "BSS aa:bb:cc:00:00:04(on wlan1)\n\tfreq: 5180\n\tcapability: ESS Privacy (0x0411)\n\tsignal: -60.00 dBm\n"
             "\tSSID: Mixed\n\tRSN:\t * Version: 1\n\t\t * Authentication suites: PSK SAE\n")
 
     def test_parse_the_scan_dump(self):
@@ -598,7 +598,7 @@ class Wireless(unittest.TestCase):
         self.assertEqual(len(n), 4)
         a = n["aa:bb:cc:00:00:01"]
         self.assertEqual((a["ssid"], a["chan"], a["band"], a["security"], a["signal_dbm"], a["associated"]),
-                         ("Casa", 149, "5 GHz", "WPA2", -48.0, True))
+                         ("Home", 149, "5 GHz", "WPA2", -48.0, True))
         b = n["aa:bb:cc:00:00:02"]
         self.assertEqual((b["hidden"], b["ssid"], b["chan"], b["band"], b["security"]), (True, "", 6, "2.4 GHz", "open"))
         self.assertEqual(n["aa:bb:cc:00:00:03"]["security"], "WPA3")
@@ -615,10 +615,10 @@ class Wireless(unittest.TestCase):
         self.assertIsNone(r["baseline_n"])
         self.assertEqual(W.record_baseline(st, t), 4)
         later = W.parse_iw_dump(
-            "BSS aa:bb:cc:00:00:09(on wlx)\n\tfreq: 2462\n\tcapability: ESS (0x0401)\n\tsignal: -85.00 dBm\n\tSSID: Far\n"
-            "BSS aa:bb:cc:00:00:0a(on wlx)\n\tfreq: 2462\n\tcapability: ESS (0x0401)\n\tsignal: -50.00 dBm\n\tSSID: Close\n"
-            "BSS aa:bb:cc:77:00:0b(on wlx)\n\tfreq: 2462\n\tcapability: ESS (0x0401)\n\tsignal: -85.00 dBm\n\tSSID: \\x00\n"
-            "BSS aa:bb:cc:00:00:0c(on wlx)\n\tfreq: 2462\n\tcapability: ESS (0x0401)\n\tsignal: -85.00 dBm\n\tSSID: Casa\n")
+            "BSS aa:bb:cc:00:00:09(on wlan1)\n\tfreq: 2462\n\tcapability: ESS (0x0401)\n\tsignal: -85.00 dBm\n\tSSID: Far\n"
+            "BSS aa:bb:cc:00:00:0a(on wlan1)\n\tfreq: 2462\n\tcapability: ESS (0x0401)\n\tsignal: -50.00 dBm\n\tSSID: Close\n"
+            "BSS aa:bb:cc:77:00:0b(on wlan1)\n\tfreq: 2462\n\tcapability: ESS (0x0401)\n\tsignal: -85.00 dBm\n\tSSID: \\x00\n"
+            "BSS aa:bb:cc:00:00:0c(on wlan1)\n\tfreq: 2462\n\tcapability: ESS (0x0401)\n\tsignal: -85.00 dBm\n\tSSID: Home\n")
         W.update(st, later, t + 60)
         by = {x["bssid"]: x for x in W.rows(st, t + 70)["rows"]}
         self.assertEqual(by["aa:bb:cc:00:00:01"]["status"], "baseline")
@@ -635,26 +635,26 @@ class Wireless(unittest.TestCase):
         self.assertTrue(key(t + 400))                                        # last in a scan 400 s ago: heard now
         self.assertFalse(key(t + W.HEARD_S + 100))                           # not for 11 minutes: not heard now
 
-    # v4.12.0: what a beacon announces besides name and security, the same device's radios as one row, makers, marks
+    # what a beacon announces besides name and security, the same device's radios as one row, makers, marks
     RICH = (
-        "BSS e4:c3:2a:11:22:30(on wlx)\n\tTSF: 1546304410006 usec (17d, 21:31:44)\n\tfreq: 2432.0\n\tcapability: ESS Privacy (0x0411)\n"
-        "\tsignal: -72.00 dBm\n\tSSID: Casa Vecino\n\tCountry: US\tEnvironment: Indoor/Outdoor\n\tRSN:\t * Version: 1\n"
+        "BSS e4:c3:2a:11:22:30(on wlan1)\n\tTSF: 1500000000000 usec (17d, 08:40:00)\n\tfreq: 2432.0\n\tcapability: ESS Privacy (0x0411)\n"
+        "\tsignal: -72.00 dBm\n\tSSID: Next Door\n\tCountry: US\tEnvironment: Indoor/Outdoor\n\tRSN:\t * Version: 1\n"
         "\t\t * Authentication suites: PSK\n\tHT operation:\n\t\t * primary channel: 5\n\t\t * STA channel width: 20 MHz\n"
-        "\tWPS:\t * Version: 1.0\n\t\t * Manufacturer: TP-Link\n\t\t * Model: Deco M5\n\t\t * Device name: Whole-home Wi-Fi\n"
-        "BSS e4:c3:2a:11:22:31(on wlx)\n\tTSF: 1546304410006 usec (17d, 21:31:44)\n\tfreq: 5745.0\n\tcapability: ESS Privacy (0x0411)\n"
-        "\tsignal: -60.00 dBm\n\tSSID: Casa Vecino\n\tRSN:\t * Version: 1\n\t\t * Authentication suites: PSK\n"
+        "\tWPS:\t * Version: 1.0\n\t\t * Manufacturer: ExampleCo\n\t\t * Model: Mesh M1\n\t\t * Device name: Whole-home Wi-Fi\n"
+        "BSS e4:c3:2a:11:22:31(on wlan1)\n\tTSF: 1500000000000 usec (17d, 08:40:00)\n\tfreq: 5745.0\n\tcapability: ESS Privacy (0x0411)\n"
+        "\tsignal: -60.00 dBm\n\tSSID: Next Door\n\tRSN:\t * Version: 1\n\t\t * Authentication suites: PSK\n"
         "\tVHT operation:\n\t\t * channel width: 1 (80 MHz)\n"
-        "BSS e4:c3:2a:11:22:32(on wlx)\n\tfreq: 5745.0\n\tcapability: ESS Privacy (0x0411)\n\tsignal: -64.00 dBm\n\tSSID: \\x00\\x00\n"
+        "BSS e4:c3:2a:11:22:32(on wlan1)\n\tfreq: 5745.0\n\tcapability: ESS Privacy (0x0411)\n\tsignal: -64.00 dBm\n\tSSID: \\x00\\x00\n"
         "\tRSN:\t * Version: 1\n\t\t * Authentication suites: PSK\n"
-        "BSS 4e:c3:2a:aa:bb:01(on wlx)\n\tTSF: 600000000 usec (0d, 00:10:00)\n\tfreq: 2412\n\tcapability: ESS (0x0401)\n"
+        "BSS 4e:c3:2a:aa:bb:01(on wlan1)\n\tTSF: 600000000 usec (0d, 00:10:00)\n\tfreq: 2412\n\tcapability: ESS (0x0401)\n"
         "\tsignal: -70.00 dBm\n\tSSID: Hotspot\n")
 
     def test_beacon_extras_are_read(self):
         from arislib import wireless as W
         n = {x["bssid"]: x for x in W.parse_iw_dump(self.RICH)}
         a, b = n["e4:c3:2a:11:22:30"], n["e4:c3:2a:11:22:31"]
-        self.assertEqual((a["uptime_s"], a["country"], a["width"]), (1546304, "US", 20))
-        self.assertEqual(a["wps"], {"manufacturer": "TP-Link", "model": "Deco M5", "device_name": "Whole-home Wi-Fi"})
+        self.assertEqual((a["uptime_s"], a["country"], a["width"]), (1500000, "US", 20))
+        self.assertEqual(a["wps"], {"manufacturer": "ExampleCo", "model": "Mesh M1", "device_name": "Whole-home Wi-Fi"})
         self.assertEqual(b["width"], 80)                                      # VHT's width wins over the HT one
         self.assertNotIn("wps", b)
         self.assertEqual(n["4e:c3:2a:aa:bb:01"]["uptime_s"], 600)
@@ -667,12 +667,12 @@ class Wireless(unittest.TestCase):
         r = W.rows(st, t)
         self.assertEqual((r["networks"], r["bssids"]), (3, 4))                # the two named radios are one row; the hidden one is its own
         by = {x["key"]: x for x in r["rows"]}
-        casa = by["e4:c3:2a:11:22:30"]
-        self.assertEqual((casa["bands"], len(casa["members"]), casa["maker"], casa["private_address"]), (["2.4 GHz", "5 GHz"], 2, "TP-LINK", False))
-        self.assertEqual((casa["signal_dbm"], casa["wps"]["model"], casa["up_text"]), (-60.0, "Deco M5", "up 17 days"))
+        home = by["e4:c3:2a:11:22:30"]
+        self.assertEqual((home["bands"], len(home["members"]), home["maker"], home["private_address"]), (["2.4 GHz", "5 GHz"], 2, "TP-LINK", False))
+        self.assertEqual((home["signal_dbm"], home["wps"]["model"], home["up_text"]), (-60.0, "Mesh M1", "up 17 days"))
         hot = by["4e:c3:2a:aa:bb:01"]
         self.assertEqual((hot["private_address"], hot["maker"]), (True, ""))   # second hex digit E: made up by the device (a hotspot)
-        self.assertEqual(by["e4:c3:2a:11:22:32"]["hidden_sibling"], "Casa Vecino")   # a hidden radio of a named device
+        self.assertEqual(by["e4:c3:2a:11:22:32"]["hidden_sibling"], "Next Door")   # a hidden radio of a named device
         from arislib import oui
         self.assertEqual((oui.maker("54:13:79:aa:bb:cc"), oui.maker("02:00:00:00:00:01"), oui.locally_administered("a6:00:00:00:00:00")),
                          ("Hon Hai Precision Ind", "", True))
@@ -681,11 +681,11 @@ class Wireless(unittest.TestCase):
         from arislib import wireless as W
         t = 1_762_100_000.0
         st = W.new_state()
-        W.update(st, W.parse_iw_dump("BSS aa:bb:cc:00:00:01(on wlx)\n\tfreq: 2412\n\tcapability: ESS (0x0401)\n\tsignal: -80.00 dBm\n\tSSID: Mine\n"), t)
+        W.update(st, W.parse_iw_dump("BSS aa:bb:cc:00:00:01(on wlan1)\n\tfreq: 2412\n\tcapability: ESS (0x0401)\n\tsignal: -80.00 dBm\n\tSSID: Mine\n"), t)
         W.record_baseline(st, t)
-        extra = ("BSS 10:00:00:00:00:01(on wlx)\n\tTSF: 5000000000 usec\n\tfreq: 2412\n\tcapability: ESS (0x0401)\n\tsignal: -45.00 dBm\n\tSSID: Old\n"   # up for 83 minutes
-                 "BSS 10:00:00:00:00:02(on wlx)\n\tTSF: 1500000000000 usec\n\tfreq: 2412\n\tcapability: ESS (0x0401)\n\tsignal: -45.00 dBm\n\tSSID: Fixture\n"
-                 "BSS 10:00:00:00:00:03(on wlx)\n\tTSF: 90000000 usec\n\tfreq: 2412\n\tcapability: ESS (0x0401)\n\tsignal: -85.00 dBm\n\tSSID: JustNow\n")
+        extra = ("BSS 10:00:00:00:00:01(on wlan1)\n\tTSF: 5000000000 usec\n\tfreq: 2412\n\tcapability: ESS (0x0401)\n\tsignal: -45.00 dBm\n\tSSID: Old\n"   # up for 83 minutes
+                 "BSS 10:00:00:00:00:02(on wlan1)\n\tTSF: 1500000000000 usec\n\tfreq: 2412\n\tcapability: ESS (0x0401)\n\tsignal: -45.00 dBm\n\tSSID: Fixture\n"
+                 "BSS 10:00:00:00:00:03(on wlan1)\n\tTSF: 90000000 usec\n\tfreq: 2412\n\tcapability: ESS (0x0401)\n\tsignal: -85.00 dBm\n\tSSID: JustNow\n")
         W.update(st, W.parse_iw_dump(extra), t + 60)
         by = {x["key"]: x for x in W.rows(st, t + 70)["rows"]}
         self.assertEqual(by["10:00:00:00:00:01"]["status"], "look")           # strong, up for 83 min
@@ -718,7 +718,7 @@ class Wireless(unittest.TestCase):
         self.assertEqual(len(st["nets"]), W.MAX_NETS)
         self.assertIn("00:00:00:00:00:01", st["nets"])                       # a baseline network is dropped last
 
-    # ---- v4.13.0: history, notices, chat answers ----
+    # ---- history, notices, chat answers ----
     @staticmethod
     def _n(bssid, ssid, chan, dbm, sec="WPA2", hidden=False, up=None):
         from arislib import wireless as W
@@ -834,23 +834,23 @@ class Wireless(unittest.TestCase):
 
 
 class Bluetooth(unittest.TestCase):
-    """arislib.bluetooth (v4.11.0): the Ubertooth's advertisement text, what is kept, the baseline."""
+    """arislib.bluetooth: the Ubertooth's advertisement text, what is kept, the baseline."""
     # three advertisers (public, random-static, random-private), a tracker-type one, a scan request and a connect request
     RAW = (
-        "systime=1793768772 freq=2402 addr=8e89bed6 delta_t=3.332 ms rssi=-60\n10 23 7f\nAdvertising / AA 8e89bed6 (valid)/ 35 bytes\n"
-        "    Channel Index: 37\n    Type:  ADV_IND\n    AdvA:  84:2a:fd:30:07:7f (public)\n    AdvData: 02 01 06\n"
-        "        Type 01 (Flags)\n           00000110\n\n        Type 09 (Complete Local Name)\n           Name: Alex's iPhone\n\n"
-        "        Type ff (Manufacturer Specific Data)\n           Company: Apple, Inc.\n           Data: 10 05 01\n\n    CRC:   ce cb 14\n\n"
-        "systime=1793768773 freq=2402 addr=8e89bed6 delta_t=0.8 ms rssi=-45\n04 11\nAdvertising / AA 8e89bed6 (valid)/ 17 bytes\n"
-        "    Channel Index: 37\n    Type:  ADV_NONCONN_IND\n    AdvA:  c5:cc:17:44:db:b4 (random)\n"
+        "systime=1700000000 freq=2402 addr=8e89bed6 delta_t=3.332 ms rssi=-60\n10 23 7f\nAdvertising / AA 8e89bed6 (valid)/ 35 bytes\n"
+        "    Channel Index: 37\n    Type:  ADV_IND\n    AdvA:  f0:18:98:00:00:01 (public)\n    AdvData: 02 01 06\n"
+        "        Type 01 (Flags)\n           00000110\n\n        Type 09 (Complete Local Name)\n           Name: Test Phone\n\n"
+        "        Type ff (Manufacturer Specific Data)\n           Company: Apple, Inc.\n           Data: 10 05 01\n\n    CRC:   aa bb cc\n\n"
+        "systime=1700000001 freq=2402 addr=8e89bed6 delta_t=0.8 ms rssi=-45\n04 11\nAdvertising / AA 8e89bed6 (valid)/ 17 bytes\n"
+        "    Channel Index: 37\n    Type:  ADV_NONCONN_IND\n    AdvA:  c5:00:00:00:00:01 (random)\n"
         "        Type 02 (16-bit Service UUIDs, more available)\n           fd5a\n\n    CRC:   aa 0c a4\n\n"
-        "systime=1793768774 freq=2402 addr=8e89bed6 delta_t=0.9 ms rssi=-71\n60 1b\nAdvertising / AA 8e89bed6 (valid)/ 27 bytes\n"
-        "    Channel Index: 37\n    Type:  ADV_IND\n    AdvA:  45:cc:17:44:db:b5 (random)\n"
+        "systime=1700000002 freq=2402 addr=8e89bed6 delta_t=0.9 ms rssi=-71\n60 1b\nAdvertising / AA 8e89bed6 (valid)/ 27 bytes\n"
+        "    Channel Index: 37\n    Type:  ADV_IND\n    AdvA:  45:00:00:00:00:02 (random)\n"
         "        Type ff (Manufacturer Specific Data)\n           Company: Apple, Inc.\n           Data: 12 19 00\n\n    CRC:   1 2 3\n\n"
-        "systime=1793768775 freq=2402 addr=8e89bed6 delta_t=0.9 ms rssi=-50\n60 1b\nAdvertising / AA 8e89bed6 (valid)/ 12 bytes\n"
-        "    Channel Index: 37\n    Type:  SCAN_REQ\n    ScanA: 11:22:33:44:55:66 (random)\n    AdvA:  84:2a:fd:30:07:7f (public)\n\n"
-        "systime=1793768776 freq=2402 addr=8e89bed6 delta_t=0.9 ms rssi=-52\n60 1b\nAdvertising / AA 8e89bed6 (valid)/ 12 bytes\n"
-        "    Channel Index: 37\n    Type:  CONNECT_REQ\n    InitA: 99:88:77:66:55:44 (random)\n    AdvA:  84:2a:fd:30:07:7f (public)\n")
+        "systime=1700000003 freq=2402 addr=8e89bed6 delta_t=0.9 ms rssi=-50\n60 1b\nAdvertising / AA 8e89bed6 (valid)/ 12 bytes\n"
+        "    Channel Index: 37\n    Type:  SCAN_REQ\n    ScanA: 11:22:33:44:55:66 (random)\n    AdvA:  f0:18:98:00:00:01 (public)\n\n"
+        "systime=1700000004 freq=2402 addr=8e89bed6 delta_t=0.9 ms rssi=-52\n60 1b\nAdvertising / AA 8e89bed6 (valid)/ 12 bytes\n"
+        "    Channel Index: 37\n    Type:  CONNECT_REQ\n    InitA: 99:88:77:66:55:44 (random)\n    AdvA:  f0:18:98:00:00:01 (public)\n")
 
     def _packets(self):
         from arislib import bluetooth as B
@@ -867,23 +867,23 @@ class Bluetooth(unittest.TestCase):
     def test_only_the_advertisers_own_packets_are_read(self):
         pk = self._packets()
         self.assertEqual([x["pdu"] for x in pk], ["ADV_IND", "ADV_NONCONN_IND", "ADV_IND"])   # scan and connect requests dropped
-        self.assertEqual(pk[0]["addr"], "84:2a:fd:30:07:7f")
+        self.assertEqual(pk[0]["addr"], "f0:18:98:00:00:01")
         self.assertEqual((pk[0]["company"], pk[0]["rssi"], pk[0]["find_my"]), ("Apple, Inc.", -60, False))
         self.assertEqual(pk[1]["uuids"], ["fd5a"])
         self.assertTrue(pk[2]["find_my"])                                                    # Apple's offline-finding type 0x12
         for x in pk:
-            self.assertNotIn("Alex", json.dumps(x))                                      # a device name is never read
+            self.assertNotIn("Test Phone", json.dumps(x))                                      # a device name is never read
             self.assertNotIn("name", x)
 
     def test_address_kinds_labels_and_what_is_counted(self):
         from arislib import bluetooth as B
-        self.assertEqual(B.addr_class("84:2a:fd:30:07:7f", "public"), "public")
-        self.assertEqual(B.addr_class("c5:cc:17:44:db:b4", "random"), "static")             # top bits 11
-        self.assertEqual(B.addr_class("45:cc:17:44:db:b5", "random"), "private")            # top bits 01: resolvable, rotates
-        self.assertEqual(B.addr_class("05:cc:17:44:db:b5", "random"), "private")            # top bits 00: non-resolvable
+        self.assertEqual(B.addr_class("f0:18:98:00:00:01", "public"), "public")
+        self.assertEqual(B.addr_class("c5:00:00:00:00:01", "random"), "static")             # top bits 11
+        self.assertEqual(B.addr_class("45:00:00:00:00:02", "random"), "private")            # top bits 01: resolvable, rotates
+        self.assertEqual(B.addr_class("05:00:00:00:00:03", "random"), "private")            # top bits 00: non-resolvable
         key = b"k" * 32
-        self.assertEqual(B.label(key, "84:2a:fd:30:07:7f"), B.label(key, "84:2a:fd:30:07:7f"))
-        self.assertNotEqual(B.label(key, "84:2a:fd:30:07:7f"), B.label(b"z" * 32, "84:2a:fd:30:07:7f"))
+        self.assertEqual(B.label(key, "f0:18:98:00:00:01"), B.label(key, "f0:18:98:00:00:01"))
+        self.assertNotEqual(B.label(key, "f0:18:98:00:00:01"), B.label(b"z" * 32, "f0:18:98:00:00:01"))
         w = B.Window(key)
         for x in self._packets():
             w.add(x)
@@ -893,9 +893,9 @@ class Bluetooth(unittest.TestCase):
         self.assertEqual({k: v["distinct"] for k, v in s["trackers"].items()}, {"find_my": 1, "smarttag": 1})
         blob = json.dumps(s)
         self.assertNotRegex(blob, r"(?:[0-9a-f]{2}:){5}[0-9a-f]{2}")                       # no address anywhere in the summary
-        self.assertNotIn("Alex", blob)
+        self.assertNotIn("Test Phone", blob)
         st = [x for x in s["stable"] if x["atype"] == "public"][0]
-        self.assertEqual((st["oui"], st["company"]), ("84:2a:fd", "Apple, Inc."))           # the maker code only
+        self.assertEqual((st["oui"], st["company"]), ("f0:18:98", "Apple, Inc."))           # the maker code only
 
     def test_baseline_new_and_worth_a_look(self):
         from arislib import bluetooth as B
@@ -912,7 +912,7 @@ class Bluetooth(unittest.TestCase):
         w2 = B.Window(key)
         add = lambda addr, rssi, **kw: w2.add(dict({"rssi": rssi, "pdu": "ADV_IND", "addr": addr, "atype": "public", "company": "",
                                                      "uuids": [], "find_my": False}, **kw))
-        add("84:2a:fd:30:07:7f", -70)               # in the baseline
+        add("f0:18:98:00:00:01", -70)               # in the baseline
         add("10:00:00:00:00:01", -85)               # new, far: only new
         add("10:00:00:00:00:02", -42)               # new, very close
         add("10:00:00:00:00:03", -62, uuids=["feed"])   # new, a Tile
@@ -920,7 +920,7 @@ class Bluetooth(unittest.TestCase):
         B.update(st, w2.snapshot(t + 60), t + 60)
         by = {x["label"]: x for x in B.rows(st, t + 70)["rows"]}
         L = lambda a: B.label(key, a)
-        self.assertEqual(by[L("84:2a:fd:30:07:7f")]["status"], "baseline")
+        self.assertEqual(by[L("f0:18:98:00:00:01")]["status"], "baseline")
         self.assertEqual(by[L("10:00:00:00:00:01")]["status"], "new")
         self.assertEqual(by[L("10:00:00:00:00:02")]["status"], "look")
         self.assertIn("strong signal", by[L("10:00:00:00:00:02")]["reasons"][0])
@@ -1202,7 +1202,7 @@ class Devices(unittest.TestCase):
     T0 = 1_762_100_000.0          # 2025-11-02 in local time, whatever the zone: a fixed 'now' for the tests
 
     def test_groups_split_vehicles_sensors_and_remotes(self):
-        # v4.9.7: the Devices page's Vehicles / Sensors / Remotes buttons
+        # the Devices page's Vehicles / Sensors / Remotes buttons
         from arislib import devices as D
         t = self.T0
         dev = lambda model, ident, kind, days=1: {"model": model, "id": ident, "kind": kind, "transmissions": 3, "packets": 3,
@@ -1225,27 +1225,28 @@ class Devices(unittest.TestCase):
         self.assertTrue(D.matches(by["Somfy-RTS|#e0fd34"], "remotes") and not D.matches(by["Nexus-TH|3"], "remotes"))
 
     def test_sensor_heard_once_and_never_again_is_likely_noise(self):
-        # v4.9.11: an 'FS20' at 433.9 and a barbecue thermometer at -200 C, each heard once, sat among the real sensors
+        # a decoder's single match on noise, or a thermometer reading far below any real temperature, heard once and
+        # never again, must not sit among the real sensors
         D = devices
         t = self.T0
         dev = lambda model, ident, kind, tx, last, days=1, **kw: {
             "model": model, "id": ident, "kind": kind, "transmissions": tx, "packets": tx, "first_t": last, "last_t": last,
             "days": ["d%d" % i for i in range(days)], "dongles": ["Dongle 1"], **kw}
-        store = {"devices": {"FS20|None": dev("FS20", None, "", 1, t),                                   # once, long ago
-                             "Gasmate|1": dev("Gasmate-BA1008", 1, "temperature sensor", 1, t),
+        store = {"devices": {"Example-868|None": dev("Example-868", None, "", 1, t),                                   # once, long ago
+                             "Thermo|1": dev("Example-Thermo", 1, "temperature sensor", 1, t),
                              "Fresh|2": dev("Nexus-TH", 2, "temperature sensor", 1, t + D.NOISE_AFTER_S + 50),  # just heard
-                             "Nexus-TH|3": dev("Nexus-TH", 3, "temperature sensor", 120, t),               # repeats: real
+                             "Nexus-TH|3": dev("Nexus-TH", 3, "temperature sensor", 50, t),               # repeats: real
                              "Back|4": dev("Acurite-986", 4, "temperature sensor", 1, t, days=2),          # on 2 days: real
                              "Marked|5": dev("Marked", 5, "temperature sensor", 1, t, known="yes"),         # user said so
                              "Somfy-RTS|#e0fd34": dev("Somfy-RTS", "#e0fd34", "remote", 1, t),             # a remote: a press
                              "Citroen|1": dev("Citroen", "1", "tyre sensor (TPMS)", 1, t)}}                # a car: its own list
         r = D.rows(store, now=t + D.NOISE_AFTER_S + 100)
         noise = sorted(x["key"] for x in r["rows"] if x["noise"])
-        self.assertEqual(noise, ["FS20|None", "Gasmate|1"])
+        self.assertEqual(noise, ["Example-868|None", "Thermo|1"])
         self.assertEqual(r["noise"], 2)
 
     def _pk(self, model, ident, t, **fields):
-        return {"model": model, "id": ident, "t": t, "time": "2025-11-02 10:00:00", "aris_serial": "00001001",
+        return {"model": model, "id": ident, "t": t, "time": "2025-11-02 10:00:00", "aris_serial": "00017350",
                 "aris_freq_mhz": 433.92, **fields}
 
     def test_packets_transmissions_and_reading(self):
@@ -1321,7 +1322,7 @@ class Devices(unittest.TestCase):
 
     def test_two_cars_in_one_queue_stay_two_cars(self):
         # cars A and B each heard alone twice (two sets); then one sensor of each heard together twice (two
-        # Citroens queued at the same light): v4.8.8's union-find folded all eight into one 'car'
+        # Citroens queued at the same light): a plain union-find folds all eight into one 'car'
         st = devices.new_store()
         a, b = ("a1", "a2", "a3", "a4"), ("b1", "b2", "b3", "b4")
         for k, ids in enumerate((a, b, a, b)):
@@ -1415,7 +1416,7 @@ class Devices(unittest.TestCase):
         self.assertEqual(len(st["devices"]["Nexus-TH|1"]["days"]), devices.DAYS_MAX)
 
     def test_tyre_sensors_heard_within_5_seconds_are_one_row(self):
-        # v4.9.10: four Renault sensors heard at 18:14 were four 'passing?' rows; one make within 5 s is one row
+        # four tyre sensors of one make heard within seconds are one row, not four 'passing?' rows
         D = devices
         kind = "tyre-pressure sensor (TPMS) on a vehicle"
         st = D.new_store()
@@ -1452,7 +1453,7 @@ class Devices(unittest.TestCase):
         self.assertEqual((len(sets), sets[0]["once"], sets[0]["vehicle"]), (1, False, "car"))
 
     def test_prune_forgets_passing_tyre_sensors_first(self):
-        # v4.9.9: passing cars (new tyre-sensor IDs every time) filled the 500 slots within a day and pushed out
+        # passing cars (new tyre-sensor IDs every time) can fill the list within a day and push out
         # the devices that matter; a known device is forgotten last (it would be new again)
         D = devices
         t0 = self.T0
@@ -1539,7 +1540,7 @@ class Devices(unittest.TestCase):
         for d in (2, 1, 0):                                   # my car: three days, oldest first
             for ident in ("a1", "a2", "a3", "a4"):
                 devices.apply_packet(st, self._pk("Citroen", ident, self.T0 - d * day, pressure_kPa=230), kind=kind_t)
-        for d in range(5):                                    # the neighbour's weather station, every day
+        for d in range(5):                                    # a weather station nearby, every day
             devices.apply_packet(st, self._pk("Nexus-TH", 7, self.T0 - d * day, temperature_C=20), kind="weather station")
         devices.apply_packet(st, self._pk("Toyota", "t1", self.T0, pressure_kPa=200), kind=kind_t)    # passing cars
         devices.apply_packet(st, self._pk("Renault", "r1", self.T0, pressure_kPa=200), kind=kind_t)
@@ -1577,7 +1578,7 @@ class Devices(unittest.TestCase):
         line, rest = devices.fold_known(st, heard)
         self.assertEqual(line, "Known: Citroen car: 4 tyre sensors, Nexus-TH weather station, Acurite-Tower temperature sensor; 17 transmissions")
         # two known sensors of one make that were never heard together are not called a car; a known remote keeps
-        # its hashed label (review of v4.9.2)
+        # its hashed label
         for ident in ("z1", "z2"):
             devices.apply_packet(st, self._pk("Ford", ident, self.T0, pressure_kPa=200), kind=kind_t)
             devices.mark_known(st, f"Ford|{ident}", True)
@@ -1599,30 +1600,30 @@ class Devices(unittest.TestCase):
 
 
 class FakeDeviceSearch(unittest.TestCase):
-    """The fake rtl_* tools pick a dongle the way librtlsdr does (v4.9.5 review): strtol with base 0 first,
+    """The fake rtl_* tools pick a dongle the way librtlsdr does: strtol with base 0 first,
     so a serial with a leading 0 is read as octal and used as a device INDEX when it is below the count."""
 
-    def test_the_factory_serial_is_an_index_and_the_stations_serials_are_not(self):
+    def test_the_factory_serial_is_an_index_and_programmed_serials_are_not(self):
         import importlib.util, os
         spec = importlib.util.spec_from_file_location(
             "_fake_common", os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake", "bin", "_common.py"))
         fc = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(fc)
-        devs = ["00001001", "00003003", "00004004", "00000001"]
-        self.assertEqual(fc.resolve_dev("00000001", devs), (1, "00003003"))    # octal 1 -> the second dongle
-        self.assertEqual(fc.resolve_dev("00000000", devs), (0, "00001001"))
-        self.assertEqual(fc.resolve_dev("1", devs), (1, "00003003"))
-        self.assertEqual(fc.resolve_dev("00001001", devs), (0, "00001001"))    # 513: not an index, exact serial
-        self.assertEqual(fc.resolve_dev("00003003", devs), (1, "00003003"))
-        self.assertEqual(fc.resolve_dev("00004004", devs), (2, "00004004"))
+        devs = ["00017350", "00026410", "00035720", "00000001"]
+        self.assertEqual(fc.resolve_dev("00000001", devs), (1, "00026410"))    # octal 1 -> the second dongle
+        self.assertEqual(fc.resolve_dev("00000000", devs), (0, "00017350"))
+        self.assertEqual(fc.resolve_dev("1", devs), (1, "00026410"))
+        self.assertEqual(fc.resolve_dev("00017350", devs), (0, "00017350"))    # 7912: not an index, exact serial
+        self.assertEqual(fc.resolve_dev("00026410", devs), (1, "00026410"))
+        self.assertEqual(fc.resolve_dev("00035720", devs), (2, "00035720"))
         self.assertEqual(fc.resolve_dev("99", devs), (None, None))              # the listing-only call
-        self.assertEqual(fc.resolve_dev("4004", devs), (2, "00004004"))        # a suffix match
-        self.assertEqual(fc.resolve_dev("", devs), (0, "00001001"))            # (strtol of '' is 0: never pass one)
+        self.assertEqual(fc.resolve_dev("5720", devs), (2, "00035720"))        # a suffix match
+        self.assertEqual(fc.resolve_dev("", devs), (0, "00017350"))            # (strtol of '' is 0: never pass one)
 
 
 class DeployUnprivileged(unittest.TestCase):
     """The service runs as its own user and the installer is safe by default: static checks only (installing needs
-    root on the station, run by its owner, dry run first)."""
+    root, run by an administrator, dry run first)."""
     ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     def _read(self, *p):
@@ -2016,7 +2017,7 @@ src=${*: -2:1}; dst=${*: -1}; mkdir -p "$dst" && cp -a "$src". "$dst"     # only
         self.assertIn('mktemp -d "${TMPDIR:-/tmp}/aris-get.XXXXXXXX"', s)
         self.assertEqual(re.findall(r"\brm\b.*", s), ['rm -rf -- "$ARIS_GET_TMP" && echo "Removed the temporary folder $ARIS_GET_TMP."'])
         self.assertIn('if [[ -n ${ARIS_GET_TMP:-} && -d $ARIS_GET_TMP && $ARIS_GET_TMP == */aris-get.* ]]; then', s)
-        self.assertNotIn("/opt/aris", s)                               # the station's folders are install.sh's business
+        self.assertNotIn("/opt/aris", s)                               # an installed system's folders are install.sh's business
         self.assertNotIn("/var/lib/aris", s)
 
     def test_a_download_of_get_that_was_cut_off_runs_nothing(self):
@@ -2131,7 +2132,7 @@ src=${*: -2:1}; dst=${*: -1}; mkdir -p "$dst" && cp -a "$src". "$dst"     # only
                      "http://localhost:5000 on this computer", "http://192.0.2.10:5000 from another device",
                      "/check", "/setup", "unplug it and plug it in again", "deploy/update.sh"):
             self.assertIn(want, out)
-        with open(os.path.join(w["data"], "baseline.keep"), "w") as f:      # the station's own data
+        with open(os.path.join(w["data"], "baseline.keep"), "w") as f:      # the installed data
             f.write("mine")
         self._own(w["data"])
         open(os.path.join(w["state"], "calls.log"), "w").close()
@@ -2454,10 +2455,10 @@ class DoubtfulDecodes(unittest.TestCase):
         self.assertEqual(self.A._decode_doubts(self.dev(packets=1, best_snr_db=25.0), 433.92), [])   # one strong packet
 
     def test_the_28_8_mhz_meter_is_doubtful_three_ways(self):
-        why = self.A._decode_doubts(self.dev(packets=1, id_label="0", best_snr_db=4.0), 28.79)
+        why = self.A._decode_doubts(self.dev(packets=1, id_label="0", best_snr_db=5.0), 29.31)
         self.assertEqual(len(why), 3)
         self.assertTrue(any("outside the bands" in w for w in why))
-        self.assertTrue(any("single packet, only 4 dB" in w for w in why))
+        self.assertTrue(any("single packet, only 5 dB" in w for w in why))
         self.assertTrue(any("ID 0" in w for w in why))
 
     def test_each_rule_alone_is_enough(self):
@@ -2471,8 +2472,8 @@ class DoubtfulDecodes(unittest.TestCase):
             self.assertEqual(self.A._decode_doubts(self.dev(), f), [], f)
 
     def test_the_verdict_says_doubtful_and_never_identified(self):
-        d = self.dev(packets=1, id_label="0", best_snr_db=4.0)
-        d["doubts"] = self.A._decode_doubts(d, 28.79)
+        d = self.dev(packets=1, id_label="0", best_snr_db=5.0)
+        d["doubts"] = self.A._decode_doubts(d, 29.31)
         t = self.A._doubtful_text([d])
         self.assertTrue(t.startswith("Doubtful:"))
         self.assertNotIn("Identified", t)
@@ -2484,17 +2485,17 @@ class DoubtfulDecodes(unittest.TestCase):
         real = A._devices_note
         A._devices_note = noted.append
         try:
-            weak = self.dev(packets=1, id_label="0", best_snr_db=4.0)
+            weak = self.dev(packets=1, id_label="0", best_snr_db=5.0)
             r = {"packets_decoded_count": 1, "devices": [weak], "identified_models": ["ERT-SCM"], "decoded_packets": [],
-                 "history": [{"model": "ERT-SCM", "id": 0, "t": 1.0}], "best_packet_snr_db": 4.0, "status": "ok"}
-            m, _ = A._merge_rtl433({"00001001": r}, {}, 28.79)
+                 "history": [{"model": "ERT-SCM", "id": 0, "t": 1.0}], "best_packet_snr_db": 5.0, "status": "ok"}
+            m, _ = A._merge_rtl433({"00017350": r}, {}, 29.31)
             self.assertEqual(m["identified_models"], [])
             self.assertTrue(m["devices"][0]["doubts"])
             self.assertEqual(noted, [])                               # noise never joins the device history
             good = self.dev(packets=5, id_label="4711", best_snr_db=22.0)
             r2 = {"packets_decoded_count": 5, "devices": [good], "identified_models": ["ERT-SCM"], "decoded_packets": [],
                   "history": [{"model": "ERT-SCM", "id": 4711, "t": 2.0}], "best_packet_snr_db": 22.0, "status": "ok"}
-            m2, _ = A._merge_rtl433({"00001001": r2}, {}, 912.6)
+            m2, _ = A._merge_rtl433({"00017350": r2}, {}, 912.6)
             self.assertEqual(m2["identified_models"], ["ERT-SCM"])
             self.assertEqual(m2["devices"][0]["doubts"], [])
             self.assertEqual(len(noted), 1)
@@ -2504,22 +2505,22 @@ class DoubtfulDecodes(unittest.TestCase):
     def test_noise_is_not_saved_as_confirmed_and_marks_the_list_red(self):
         A = self.A
         A.init_db()
-        peak = {"frequency_mhz": 28.79, "probable_allocation": "Test"}
-        bad = {"frequency_mhz": 28.79, "evidence": "signal_present", "final_signal_verdict": "Doubtful: rtl_433 decoded something",
-               "doubtful": ["it is a single packet with ID 0"], "snr_db": 4.0,
+        peak = {"frequency_mhz": 29.31, "probable_allocation": "Test"}
+        bad = {"frequency_mhz": 29.31, "evidence": "signal_present", "final_signal_verdict": "Doubtful: rtl_433 decoded something",
+               "doubtful": ["it is a single packet with ID 0"], "snr_db": 5.0,
                "identified_devices": [], "stage2_rtl433_telemetry": {"identified_models": ["ERT-SCM"]}}
-        A._log_signal(peak, bad, "00001001")
+        A._log_signal(peak, bad, "00017350")
         good = {"frequency_mhz": 433.92, "evidence": "confirmed_decode", "final_signal_verdict": "Identified: a remote",
                 "snr_db": 20.0, "identified_devices": [{"model": "Generic-Remote"}],
                 "stage2_rtl433_telemetry": {"identified_models": ["Generic-Remote"]}}
-        A._log_signal({"frequency_mhz": 433.92}, good, "00001001")
+        A._log_signal({"frequency_mhz": 433.92}, good, "00017350")
         marks = dict((round(f, 2), s) for f, s in reversed(A._decode_marks()))
-        self.assertEqual(marks.get(28.79), "check")
+        self.assertEqual(marks.get(29.31), "check")
         self.assertEqual(marks.get(433.92), "ok")
         import sqlite3
         conn = sqlite3.connect(A.DB_PATH)
         try:
-            row = conn.execute("SELECT urh_analysis FROM peaks WHERE frequency_mhz = 28.79 ORDER BY id DESC").fetchone()
+            row = conn.execute("SELECT urh_analysis FROM peaks WHERE frequency_mhz = 29.31 ORDER BY id DESC").fetchone()
         finally:
             conn.close()
         self.assertNotIn("confirmed decode", row[0])                  # (not "rtl_433 confirmed decode: ERT-SCM")
@@ -2539,7 +2540,7 @@ class SavedCarrier(unittest.TestCase):
                "final_signal_verdict": "Not identified: a steady carrier", "measured_carrier_mhz": 149.31364,
                "dongle_comparison": [{"dongle": "Dongle 1", "heard": True, "line_mhz": 149.3136},
                                      {"dongle": "Dongle 2", "heard": True, "line_mhz": 149.313612}]}
-        saved = lambda o: A._log_signal({"frequency_mhz": 149.3125}, o, "00003003")["device_identification_and_decode"]
+        saved = lambda o: A._log_signal({"frequency_mhz": 149.3125}, o, "00026410")["device_identification_and_decode"]
         try:
             text = saved(out)
             self.assertTrue(text.startswith("• ARIS verdict (heuristic): Not identified: a steady carrier\n"), text)

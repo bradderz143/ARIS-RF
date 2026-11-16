@@ -5,16 +5,16 @@ and feeds it every decoded packet after _safe_packet (no remote codes; a remote'
 The rules (the Devices tab and /api/devices state them too):
 - A packet more than TRANSMISSION_GAP_S (2 s) after the device's last one starts a new transmission (also one
   that arrives with an earlier time: another dongle's copy of the same packet).
-- Heard together (v4.9.10): tyre sensors of one make heard within TOGETHER_S (5 s) of each other, even once, are one row
+- Heard together: tyre sensors of one make heard within TOGETHER_S (5 s) of each other, even once, are one row
   (`together_of`: 2 to TOGETHER_MAX linked sensors; a bigger group is a queue and stays single rows), shown as
   probably one car. Set: sensors of the same make heard within TOGETHER_S (5 s) of each other on SET_MIN_TIMES (2) or more occasions
   (occasions at least OCCASION_GAP_S = 120 s apart: a queue of traffic lasts longer than 30 s) are shown as one set
-  ("Citroen car: 4 tyre sensors"): they always transmit together. Per device the IDs it was heard with and how
+  ("BMW car: 4 tyre sensors"): they always transmit together. Per device the IDs it was heard with and how
   often, capped at SEEN_WITH_MAX (8). A pair joins a set only when a third device was heard with both (a car's
   sensors are all heard with each other), or when it is the only pair either one has: one shared pair never joins
   two cars that stood in the same queue (sets_of).
-- At most MAX_DEVICES (1500), pruned in this order (v4.9.9; before, the 500 ones heard last stayed, and on the
-  station passing cars filled them within a day): a passing tyre sensor (one sensor, one day, in no set, not
+- At most MAX_DEVICES (1500), pruned in this order (keeping only the ones heard last let passing cars' new
+  tyre-sensor IDs push out the records that matter): a passing tyre sensor (one sensor, one day, in no set, not
   marked) goes after PASSING_KEEP_S (3 days) or when more than PASSING_MAX (1000) are kept (the oldest first);
   then, over the limit, other unmarked devices not seen longest, and known devices (the rule or marked) last, so
   a known device is not forgotten (it would be new again). DAYS_MAX dates per device, READING_MAX
@@ -28,7 +28,7 @@ import re
 import time
 
 TRANSMISSION_GAP_S = 2.0
-TOGETHER_S = 5.0        # v4.9.10 (was 10): sensors of one make heard this close are one pass
+TOGETHER_S = 5.0        # sensors of one make heard this close are one pass
 TOGETHER_MAX = 5        # most sensors one 'heard together' group can hold (a car has 4, with a spare 5); more = a queue, left alone
 OCCASION_GAP_S = 120.0
 SET_MIN_TIMES = 2
@@ -39,7 +39,7 @@ PASSING_KEEP_S = 3 * 86400   # a passing sensor not heard again for this long is
 DAYS_MAX = 30
 READING_MAX = 8
 VERSION = 2        # 2: remote labels keyed (aris._safe_packet), readings of remotes without code parts (scrub)
-NOISE_AFTER_S = 900   # v4.9.11: a sensor heard once and not again for this long is "likely noise" (a real one repeats)
+NOISE_AFTER_S = 900   # a sensor heard once and not again for this long is "likely noise" (a real one repeats)
 KNOWN_DAYS = 3     # a device heard on this many different days is "known" (its own sensors, the neighbours') ...
 KNOWN_RULE = (f"Known: heard on {KNOWN_DAYS} or more different days (your own sensors, the neighbours' weather station), "
               f"or marked by you. Known devices are folded into one line in capture results and in what the AI reads, "
@@ -96,7 +96,7 @@ _WORDS = [
 ]
 _WORD_KEYS = [k for k, _ in _WORDS]
 
-# What a kind of device is called in a title: "Citroen tyre sensor 92cf949a", "Citroen car: 4 tyre sensors".
+# What a kind of device is called in a title: "BMW tyre sensor 92cf949a", "BMW car: 4 tyre sensors".
 # (doorbell before door: 'wireless doorbell' is not a door sensor)
 _SHORT = [("tyre", "tyre sensor"), ("meter", "meter"), ("energy", "energy monitor"), ("smoke", "smoke alarm"),
           ("leak", "leak sensor"), ("doorbell", "doorbell"), ("door", "door sensor"), ("motion", "motion sensor"),
@@ -310,7 +310,7 @@ def known_keys(store: dict) -> set:
 def fold_known(store: dict, heard: list) -> tuple:
     """Fold the known devices out of what was just heard. `heard`: [{"model", "id", "kind", "packets",
     "transmissions"}] (one per device). Returns (line or None, the rest): the line is one sentence for all the
-    known devices ("Known: Citroen car (4 tyre sensors), Nexus-TH temperature sensor; 40 transmissions"), the rest
+    known devices ("Known: BMW car (4 tyre sensors), LaCrosse-TX141THBv2 temperature sensor; 40 transmissions"), the rest
     are the entries of devices that are not known, in the order given."""
     devs = store.get("devices") or {}
     known, rest = [], []
@@ -459,7 +459,7 @@ def together_of(devs: dict, taken=()) -> list:
 
 
 def when_words(t, now=None) -> str:
-    """'18:40 (today)', '09:12 (yesterday)', '2 Nov 15:21', '2 Nov 2025 15:21'."""
+    """'18:40 (today)', '09:12 (yesterday)', '14 Mar 12:30', '14 Mar 2025 12:30'."""
     now = time.time() if now is None else now
     try:
         t = float(t)
@@ -490,7 +490,7 @@ def freq_text(fmin, fmax) -> str:
 
 
 def _seen_line(n, first_t, last_t, fmin, fmax, dongles, now) -> str:
-    """'Seen 14 times since 2 Nov 15:21, last 18:40 (today) | 433.92 MHz | Dongle 1'."""
+    """'Seen 14 times since 14 Mar 12:30, last 18:40 (today) | 433.92 MHz | Dongle 1'."""
     first, last = when_words(first_t, now), when_words(last_t, now)
     bits = [f"Seen once at {first}" if n == 1 else
             f"Seen {n} times since {first}" + (f", last {last}" if last != first else "")]
@@ -503,7 +503,7 @@ def _seen_line(n, first_t, last_t, fmin, fmax, dongles, now) -> str:
 
 
 def _title(model, kind, ident=None, count=None, name=None, together=False) -> str:
-    """'Citroen tyre sensor 92cf949a', 'Citroen car: 4 tyre sensors', 'Generic fixed-code remote ... #3fa2c1' (the
+    """'BMW tyre sensor 92cf949a', 'BMW car: 4 tyre sensors', 'Generic fixed-code remote ... #3fa2c1' (the
     plain name the investigation reply uses, when the store has one)."""
     short = short_kind(kind)
     m = str(name or model)
@@ -521,7 +521,7 @@ GROUPS = ("vehicle", "sensor", "remote")
 
 
 def group_of(short: str, ident, kind: str = "") -> str:
-    """Which tab of the Devices page a device belongs to (v4.9.7): 'vehicle' (tyre sensors: a car's set or one
+    """Which tab of the Devices page a device belongs to: 'vehicle' (tyre sensors: a car's set or one
     sensor of a car that passed), 'remote' (a '#' label or a remote kind: never shown with a code), 'sensor' (every
     other device a decoder names: weather, meters, alarms ...)."""
     if short == "tyre sensor":
@@ -534,8 +534,8 @@ def group_of(short: str, ident, kind: str = "") -> str:
 def _likely_noise(r: dict, now: float) -> bool:
     """A sensor row (not a vehicle, not a remote, not a set) heard exactly once, a while ago, and not marked by
     the user: a real weather station or meter transmits every minute or so, so one packet that never came back is
-    most likely a decoder reading noise or a burst of another device (v4.9.11: an 'FS20' at 433.9, a barbecue
-    thermometer at -200 C, both seen once). Only a label: nothing is hidden or dropped."""
+    most likely a decoder reading noise or a burst of another device (e.g. an 868 MHz decoder's match on noise,
+    a thermometer reading far below any real temperature). Only a label: nothing is hidden or dropped."""
     if r.get("group") != "sensor" or r.get("kind") != "device" or r.get("mark") == "yes":
         return False
     return (int(r.get("transmissions") or 0) <= 1 and int(r.get("days") or 0) < 2
@@ -568,7 +568,7 @@ def _row(key, d, now) -> dict:
 
 
 def _set_row(grp, devs, now, once=False) -> dict:
-    """One row for a set of sensors (members under it); `once`: heard together on one occasion (v4.9.10)."""
+    """One row for a set of sensors (members under it); `once`: heard together on one occasion."""
     members = [_row(k, devs[k], now) for k in grp]
     first = devs[grp[0]]
     fmins = [m["freq_min"] for m in members if m["freq_min"] is not None]
@@ -631,7 +631,7 @@ def rows(store: dict, now=None) -> dict:
 
 
 def matches(row: dict, text) -> bool:
-    """The page's filter box: 'Citroen', '433.9', '#3f', 'tpms', a dongle."""
+    """The page's filter box: 'BMW', '433.9', '#3f', 'tpms', a dongle."""
     q = str(text or "").strip().lower()
     if not q:
         return True

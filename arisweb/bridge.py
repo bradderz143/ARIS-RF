@@ -33,7 +33,7 @@ MAX_USER_CHARS = 800
 
 def not_a_chat_command(text) -> bool:
     """A console command the chat does not offer ('/run <tool> ...', '/raw', '/reset', 'exit'): never sent to the
-    console (a logged-in page could run every engine tool with any arguments through it; v4.9.4)."""
+    console (a logged-in page could run every engine tool with any arguments through it)."""
     t = re.sub(r"[\x00-\x1f\x7f]", " ", str(text or "")).strip()
     return bool(t) and not SLASH_COMMANDS.match(t) and (t.startswith("/") or t.lower() in ("exit", "quit"))
 MAX_FACT_CHARS = 1500       # the terminal line limit is 4096 chars; keep the whole prompt well under
@@ -70,8 +70,8 @@ FACT_CHARS = 220            # one saved record's verdict for the model
 
 def _fact_line(freq, snr, analysis, when=None) -> str:
     """One saved record for the model: its verdict without the band-plan guess and the advice, cut at a word
-    (v4.8.6 cut the first line at 110 characters, '1) Renault, a tyre-pr', and the model invented the other two
-    devices), plus the decoded models."""
+    (a line cut at a fixed length mid-word, '1) BMW, a tyre-pr', made the model invent the devices it could not
+    read), plus the decoded models."""
     lines = (analysis or "").splitlines()
     head = re.sub(r"^\W*ARIS verdict \(([^)]*)\):\s*", r"(\1) ", lines[0]) if lines else ""
     head = re.split(r" \(band: |\. To identify it, capture it", head)[0]
@@ -229,7 +229,7 @@ class ArisAIBridge:
             self._add("user", user_text)
             if not_a_chat_command(user_text):
                 # any other console command (/run <tool> ..., /raw, /reset, exit) stays out of the console: a
-                # logged-in page could otherwise run every engine tool with any arguments (v4.9.4)
+                # logged-in page could otherwise run every engine tool with any arguments
                 self._add("ai", "That is not a chat command here. Type /help for the ones the chat knows.")
                 return True
             self.busy = True
@@ -336,7 +336,7 @@ class ArisAIBridge:
 def _end_console(proc, wait_s) -> None:
     """End the chat console and the radio programs it started (its own process group, from setsid): SIGTERM to all
     of them, then SIGKILL for whatever is still there, and wait until they have exited (arislib/radioproc.py). The
-    rtl-sdr tools' stop can hang (librtlsdr's cancel; seen on the real PC): such a program used to outlive the
+    rtl-sdr tools' stop can hang (librtlsdr's cancel; seen on a test machine): such a program used to outlive the
     console for ever, holding its dongle, while the dongle's lock (the console's) was already free."""
     try:
         from arislib import radioproc

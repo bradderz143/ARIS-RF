@@ -9,7 +9,7 @@ A plug-in is one Python file. At start ARIS loads every `*.py` (names starting w
 A plug-in named in the config's `"plugins_disabled": ["ism_868"]` list is skipped. One that fails to load is skipped
 and listed with its error; it never stops ARIS from starting. The chat's `/status` lists what was loaded.
 
-**A plug-in runs with the station's own rights. Install only plug-ins you have read.** The project's rules apply to
+**A plug-in runs with ARIS's own rights. Install only plug-ins you have read.** The project's rules apply to
 plug-ins too: nothing may transmit, record or transcribe voice, unpack encrypted traffic, or keep replayable codes.
 
 ## The shape

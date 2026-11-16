@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ARIS Wi-Fi scan helper (v4.10.0), run by aris-wifi.service. LISTENS ONLY: `iw ... scan passive` sends no probe
+# ARIS Wi-Fi scan helper, run by aris-wifi.service. LISTENS ONLY: `iw ... scan passive` sends no probe
 # request (a normal scan does). Writes what the access points announce (name, channel, signal, security) to
 # $RUNTIME_DIRECTORY/scan.txt every $EVERY seconds; the ARIS web server reads that file. Needs CAP_NET_ADMIN only
 # (the unit gives it to an unprivileged dynamic user: no root).

@@ -8,7 +8,7 @@ from __future__ import annotations
 FM_BLOCK_FS = 2048000           # Name all: one capture covers a 2 MHz slice of the band, several stations at once
 FM_BLOCK_CHUNK = 1 << 22        # samples per FFT chunk (2.05 s): memory stays small for long looks
 FM_BLOCK_HALF_MHZ = 0.6         # a station's +-100 kHz stays within +-0.7 MHz, where the dongle's filter is flat
-                                # (v4.7.4 used 0.8: stations near the edge lost part of their signal on the real PC)
+                                # (at 0.8, stations near the edge lost part of their signal)
 FM_BLOCK_SPAN_MHZ = 1.0         # stations per capture: within 1.0 MHz (leaves room to tune away from every one)
 FM_NAME_LOOK_S = float(_env("FM_LOOK_S", "6"))      # first look at each slice: every station in it gets 6 s of RDS
 FM_NAME_RETRY_S = float(_env("FM_RETRY_S", "12"))   # RDS there but no whole name: one longer look (a name needs 4
@@ -37,13 +37,13 @@ def _fm_check_result(x, ser) -> dict:
     fixed = _known_fixed_name(car if car is not None else x.get("frequency_mhz")) if piece else None
     lone_piece = piece and not fixed
     if x.get("rds_station_name") and not clearly_off and not lone_piece:
-        if piece:            # a piece of text ('Al Aire') read on a channel whose fixed name is known: that name
+        if piece:            # a piece of text ('On Air Now') read on a channel whose fixed name is known: that name
             r.update(state="named", name=fixed, names=[fixed], scrolls=False, text=x["rds_station_name"])
         else:
             r.update(state="named", name=x["rds_station_name"], names=x.get("rds_station_names"),
                      scrolls=bool(x.get("rds_name_scrolls")))
     elif lone_piece and not clearly_off:
-        # a piece of text ('Al Aire', 'En Amor') with no station name read yet: RDS, but not a name (v4.9.3)
+        # a piece of text ('On Air Now', 'Coast FM and') with no station name read yet: RDS, but not a name
         r.update(state="rds_weak", text=x["rds_station_name"],
                  band=f"Station channel, checked: RDS read only a piece of text (\"{x['rds_station_name']}\"), no "
                       f"station name yet")
@@ -152,8 +152,8 @@ def _fm_block_analyse(raw, fs, tune_hz, chans, serial) -> dict:
 
 def _mark_hd_sidebands(res) -> None:
     """A 'not standard FM' result one or two tenths from a station that is there (named, or on its channel) is that
-    station's HD Radio digital sideband: on the live station 97.9 (carrier read at 97.8686 = 97.7 + 168.6 kHz, the
-    middle of 97.7's upper block) and 91.4 next to 91.3 were reported as 'not standard FM broadcast' signals."""
+    station's HD Radio digital sideband: a station's upper digital block (its carrier read about 170 kHz above the
+    station's, a tenth or two away) is otherwise reported as a separate 'not standard FM broadcast' signal."""
     station = {ch: r for ch, r in res.items() if r.get("state") in ("named", "no_name", "rds_weak")}
     for ch, r in res.items():
         if r.get("state") != "not_fm" or r.get("band") == _NAME_BAND["narrow"]:
@@ -232,7 +232,7 @@ def name_fm_stations(freqs, max_n=40, best=None, on_result=None, on_plan=None) -
     (fm_stations.json): named, on its channel without a name, or off the channel, so the Spectrum list shows what
     was found. on_result(partial report) is called as results come in; on_plan(seconds) when the work still to
     do changes (the retries are planned, a dongle falls back to one station at a time), so the page's time left
-    stays true (v4.8.6 said 75 s and took 172)."""
+    stays true (a fixed estimate can be off by more than half)."""
     import queue
     cfg = _load_config()
     chans = sorted({round(float(f), 1) for f in freqs if _in_fm_band(float(f))})[:int(max_n)]
@@ -314,7 +314,7 @@ def name_fm_stations(freqs, max_n=40, best=None, on_result=None, on_plan=None) -
             th = threading.Thread(target=_carry_ctx(analyse), name="fm-names-dsp", daemon=True)
             th.start()
             def one_by_one(grp, secs):
-                """The v4.7.3 way, for a dongle whose wide captures fail: 1 MS/s, one station per look."""
+                """The older way, for a dongle whose wide captures fail: 1 MS/s, one station per look."""
                 got, ok = {}, False
                 for ch in grp:
                     _check_stop()
@@ -396,7 +396,7 @@ def name_fm_stations(freqs, max_n=40, best=None, on_result=None, on_plan=None) -
         plan(max(len(t) for t in tasks.values()) * (max(FM_NAME_RETRY_S, FM_NAME_LOOK_S) + 2.0) + 5.0)
         run(tasks)
     _mark_hd_sidebands(res)
-    _remember_unheard(res)                       # not heard / too weak: remembered with the time (v4.9.3)
+    _remember_unheard(res)                       # not heard / too weak: remembered with the time
     out = _names_report(chans, res, serials, errors)
     out["took_seconds"] = round(time.time() - t0)
     return out

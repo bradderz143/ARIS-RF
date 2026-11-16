@@ -257,7 +257,7 @@ until it has a number of its own, and `/check` says so ([DEVICES.md](DEVICES.md)
 
 ```bash
 sudo systemctl stop aris
-sudo rtl_eeprom -d 0 -s 00002002     # any 8 digits that no other dongle of yours has
+sudo rtl_eeprom -d 0 -s 00051234     # any 8 digits that no other dongle of yours has
 sudo systemctl start aris
 ```
 

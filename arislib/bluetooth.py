@@ -1,10 +1,10 @@
-"""Bluetooth Low Energy advertisements (v4.11.0): the rules of the Bluetooth view, with no Flask and no radio calls.
+"""Bluetooth Low Energy advertisements: the rules of the Bluetooth view, with no Flask and no radio calls.
 
 What is read: the text `ubertooth-btle -n` prints (passive: -n only prints advertisements; the options that follow or
 interfere with connections are never used). Of each advertisement only this is kept: the kind of address, the
 manufacturer and service UUIDs the device announces, the signal strength, and whether it advertises like a tracker
 (Apple Find My, Tile, Samsung SmartTag). NOT kept, anywhere: the address itself (replaced by a keyed hash label, like a
-remote's label), device names (they are often the owner's name), payloads, and the devices that scan or connect (their
+remote's label), device names (they often carry a person's name), payloads, and the devices that scan or connect (their
 packets are dropped before anything is read from them).
 
 Phones and watches use random addresses that change every few minutes (resolvable / non-resolvable private

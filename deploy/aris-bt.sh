@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ARIS Bluetooth helper installer (v4.11.0). Run as root:
+# ARIS Bluetooth helper installer. Run as root:
 #   bash deploy/aris-bt.sh             dry run: checks and the plan, changes nothing
 #   bash deploy/aris-bt.sh --apply     install and start the helper
 #   bash deploy/aris-bt.sh --rollback  stop and remove it

@@ -72,9 +72,9 @@ def engine():
 
 def _attach_log(mod) -> None:
     """The engine's INFO lines ("band capture: rtl_433 decodes bursts in batches", resumed captures, ...) go to
-    aris.log in this process too. Only the terminal console installed the file handler before (v4.9.5, found on
-    a test station: a 433 band recording in the GUI wrote no such line anywhere; the httpx lines in aris.log came from the
-    chat console's own process)."""
+    aris.log in this process too. Without this only the terminal console has the file handler (a 433 band
+    recording in the GUI then writes no such line anywhere; the httpx lines in aris.log come from the chat console's
+    own process)."""
     import logging
     import logging.handlers
     lg = logging.getLogger("aris")

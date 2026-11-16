@@ -38,7 +38,7 @@ try:
 except ImportError as e:
     if "arisweb" in str(e) or "arislib" in str(e):
         sys.exit(f"ARIS GUI files are missing next to {os.path.realpath(__file__)} ({e}).\n"
-                 "Since v4.6 ARIS runs from its folder (git checkout). See deploy/install.sh.")
+                 "ARIS runs from its folder (a git checkout). See deploy/install.sh.")
     raise
 
 if __name__ == "__main__":

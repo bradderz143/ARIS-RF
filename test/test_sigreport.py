@@ -71,31 +71,31 @@ def no_watch(f):
     return f
 
 
-def saved(days, mhz=172.8364, carrier=None, head=STEADY) -> list:
+def saved(days, mhz=172.8231, carrier=None, head=STEADY) -> list:
     return [{"ts": day(m, d), "mhz": mhz, "carrier_mhz": carrier, "head": head, "confirmed": False, "doubtful": False}
             for m, d in days]
 
 
 def fm_facts(**fm) -> dict:
-    f = facts("6", evidence="signal_present", verdict="FM broadcast radio station on 99.3 MHz", asked_mhz=99.3)
-    f["fm"].update(dict({"name": None, "channel_mhz": 99.3}, **fm))
+    f = facts("6", evidence="signal_present", verdict="FM broadcast radio station on 98.3 MHz", asked_mhz=98.3)
+    f["fm"].update(dict({"name": None, "channel_mhz": 98.3}, **fm))
     f["history"]["fm_name"] = None
     return f
 
 
 class Clock(unittest.TestCase):
     def test_own_clock_arithmetic(self):
-        no = R.own_clock(172.8364, 0)
+        no = R.own_clock(172.8231, 0)
         self.assertEqual((no["result"], no["multiple"], no["nominal_mhz"], no["tolerance_hz"]), ("no", 6, 172.8, 309))
-        self.assertAlmostEqual(no["offset_khz"], 36.4, places=2)
+        self.assertAlmostEqual(no["offset_khz"], 23.1, places=2)
         self.assertEqual(R.own_clock(172.8, 0)["result"], "match")
-        self.assertEqual(R.own_clock(172.80138, 8)["result"], "match")       # 6 x 28.8 x (1 + 8 ppm) = 172.8013824
+        self.assertEqual(R.own_clock(172.79896, -6)["result"], "match")      # 6 x 28.8 x (1 - 6 ppm) = 172.7989632
         self.assertEqual(R.own_clock(172.8005, 0)["result"], "near")         # 500 Hz off: over 309 Hz, within 100 ppm
         self.assertEqual(R.own_clock(28.8, 0), {"result": "match", "multiple": 1, "nominal_mhz": 28.8,
                                                 "offset_khz": 0.0, "tolerance_hz": 93})
         # each dongle against its own correction: the other dongle's line is only "near"
-        self.assertEqual(R.own_clock(172.8, 8)["result"], "near")
-        self.assertEqual(R.own_clock(172.80138, 0)["result"], "near")
+        self.assertEqual(R.own_clock(172.8, -6)["result"], "near")
+        self.assertEqual(R.own_clock(172.79896, 0)["result"], "near")
         self.assertEqual(R.own_clock(921.618432, 20)["result"], "match")     # 32 x 28.8 at 20 ppm
         self.assertEqual(R.own_clock(921.6, 20)["result"], "near")
         self.assertEqual(R.own_clock(172.8 + 0.0173, 0)["result"], "no")     # just past 100 ppm
@@ -112,7 +112,7 @@ class Clock(unittest.TestCase):
         self.assertEqual((sp["own_clock"]["multiple"], sp["own_clock"]["nominal_mhz"]), (6, 172.8))
         sp = R.spur_check(facts("1a"))
         self.assertEqual((sp["own_clock"]["result"], sp["own_clock"]["tight"]), ("no", []))
-        self.assertAlmostEqual(sp["own_clock"]["offset_khz"], 36.4, places=1)
+        self.assertAlmostEqual(sp["own_clock"]["offset_khz"], 23.1, places=1)
         # a real carrier on 172.800 reads the same on every well corrected dongle: only the 0 ppm dongle "matches"
         f = facts("1a")
         set_lines(f, 172.8, 172.8, 172.8)
@@ -143,7 +143,7 @@ class Clock(unittest.TestCase):
         self.assertEqual(R._equipment_clock(200.0)["multiple"], 4)
         self.assertEqual((R._equipment_clock(171.81816)["clock_mhz"], R._equipment_clock(171.81816)["multiple"]),
                          (14.318, 12))
-        self.assertIsNone(R._equipment_clock(172.8364))
+        self.assertIsNone(R._equipment_clock(172.8231))
         self.assertIsNone(R._equipment_clock(175.0 * (1 + 70e-6)))           # past 60 ppm
         # the odds are the share of nearby spectrum the multiples cover
         self.assertTrue(20 <= R._equip_one_in(172.8) <= 400, R._equip_one_in(172.8))
@@ -158,35 +158,35 @@ class Clock(unittest.TestCase):
             self.assertFalse([x for x in r["checks"] if "equipment clock" in x], r["checks"])
 
     def test_harmonic_of_a_carrier_measured_earlier(self):
-        f = facts("1a", carriers=[57.6121, 99.9, None, "x"])
+        f = facts("1a", carriers=[57.6077, 99.9, None, "x"])
         r = build(f)
-        self.assertEqual(r["spur"]["harmonic_of"], {"mhz": 57.6121, "times": 3})
+        self.assertEqual(r["spur"]["harmonic_of"], {"mhz": 57.6077, "times": 3})
         line = [x for x in r["checks"] if "harmonic" in x][0]
-        self.assertIn("3 x 57.6121 MHz", line)
+        self.assertIn("3 x 57.6077 MHz", line)
         self.assertIn("A pattern, not a finding.", line)
         f = facts("1a")                                   # ... or from a recent check the history carries
-        f["history"]["recent"] = [{"ts": NOW - 3600, "mhz": 86.42, "carrier_mhz": 86.4182, "heard": True}]
-        self.assertEqual(build(f)["spur"]["harmonic_of"], {"mhz": 86.4182, "times": 2})
-        f = facts("1a", carriers=[57.62])                 # 3 x 57.62 = 172.86: 23.6 kHz off
+        f["history"]["recent"] = [{"ts": NOW - 3600, "mhz": 86.41, "carrier_mhz": 86.4116, "heard": True}]
+        self.assertEqual(build(f)["spur"]["harmonic_of"], {"mhz": 86.4116, "times": 2})
+        f = facts("1a", carriers=[57.6157])               # 3 x 57.6157 = 172.8471: 24 kHz off
         self.assertIsNone(build(f)["spur"]["harmonic_of"])
         self.assertFalse([x for x in build(f)["checks"] if "harmonic" in x])
         self.assertIsNone(build(facts("1a"))["spur"]["harmonic_of"])
 
     def test_zero_frequency_spike(self):
         f = facts("1a")
-        set_lines(f, 172.79641, 172.79638, 172.7968)      # the look tunes 40 kHz below the frequency picked
+        set_lines(f, 172.78311, 172.78308, 172.7835)      # the look tunes 40 kHz below the frequency picked
         r = build(f)
         self.assertEqual(r["spur"]["dc_spike"], ["Dongle 1", "Dongle 2"])    # Dongle 3 is 400 Hz off the centre
         line = [x for x in r["checks"] if "tuning centre" in x][0]
         self.assertTrue(line.startswith("Dongle 1 and Dongle 2 found it exactly on the look's own tuning centre"))
-        self.assertIn("Decode it again at 172.796 MHz", line)
+        self.assertIn("Decode it again at 172.783 MHz", line)
         self.assertEqual(build(facts("1a"))["spur"]["dc_spike"], [])
         f = facts("1a", tune_offset_hz=None)
-        set_lines(f, 172.79641, 172.79638, 172.7968)
+        set_lines(f, 172.78311, 172.78308, 172.7835)
         self.assertEqual(build(f)["spur"]["dc_spike"], [])                   # not known where the look was tuned
 
     def test_same_signal_tolerance(self):
-        for mhz, tol in ((10.0, 500), (30.0, 600), (172.8364, 3457), (915.0, 18300)):
+        for mhz, tol in ((10.0, 500), (30.0, 600), (172.8231, 3456), (915.0, 18300)):
             f = facts("1a", asked_mhz=mhz)
             set_lines(f, mhz, mhz + 0.0001, mhz + 0.0002)
             sp = R.spur_check(f)
@@ -225,7 +225,7 @@ class Clock(unittest.TestCase):
 
 
 class Drift(unittest.TestCase):
-    F = 172.8364
+    F = 172.8231
 
     def dongles(self, *slopes, looks=False):
         f = facts("1a") if looks else no_watch(facts("1a"))
@@ -320,12 +320,12 @@ class Drift(unittest.TestCase):
 
 class History(unittest.TestCase):
     def raw(self, **more) -> dict:
-        raw = {"saved": [], "list_from": day(10, 5), "list_trimmed": False, "recent": [], "baselines": [],
+        raw = {"saved": [], "list_from": day(2, 2), "list_trimmed": False, "recent": [], "baselines": [],
                "baseline_covered": False, "last_capture": None, "fm_name": None, "devices_here": None}
         raw.update(more)
         return raw
 
-    def summary(self, f=172.8364, kind="audio", carrier=None, **more) -> dict:
+    def summary(self, f=172.8231, kind="audio", carrier=None, **more) -> dict:
         return R.history_summary(self.raw(**more), f, kind, NOW, carrier)
 
     def test_the_four_statuses(self):
@@ -334,25 +334,25 @@ class History(unittest.TestCase):
         self.assertEqual(self.summary(list_from=None)["status"], "young")              # nothing kept yet
         self.assertEqual(self.summary(list_from=NOW - 2 * 86400)["status"], "young")   # too short a list to say
         self.assertEqual(self.summary(list_from=NOW - 3 * 86400)["status"], "none")
-        h = self.summary(saved=saved([(11, 12)]))
-        self.assertEqual((h["status"], h["saved_checks"], h["days"], h["first"]), ("seen", 1, 1, "2026-11-12"))
-        h = self.summary(saved=saved([(11, 9), (11, 10), (11, 12), (11, 13)]))         # 4 days, but within 4 days
+        h = self.summary(saved=saved([(3, 12)]))
+        self.assertEqual((h["status"], h["saved_checks"], h["days"], h["first"]), ("seen", 1, 1, "2026-03-12"))
+        h = self.summary(saved=saved([(3, 9), (3, 10), (3, 12), (3, 13)]))         # 4 days, but within 4 days
         self.assertEqual((h["status"], h["days"], h["span_days"]), ("seen", 4, 4))
-        h = self.summary(saved=saved([(11, 6), (11, 13)]))                             # a week apart, but 2 days
+        h = self.summary(saved=saved([(3, 6), (3, 13)]))                             # a week apart, but 2 days
         self.assertEqual(h["status"], "seen")
-        h = self.summary(saved=saved([(11, 6), (11, 10), (11, 13), (11, 13)]))
+        h = self.summary(saved=saved([(3, 6), (3, 10), (3, 13), (3, 13)]))
         self.assertEqual((h["status"], h["saved_checks"], h["days"], h["span_days"]), ("regular", 4, 3, 7))
-        old = [{"dongle": "Dongle 2", "serial": "00003003", "date": day(11, 3), "state": "present"}]
-        h = self.summary(saved=saved([(11, 12), (11, 13)]), baselines=old, baseline_covered=True)
+        old = [{"dongle": "Dongle 2", "serial": "00026410", "date": day(3, 3), "state": "present"}]
+        h = self.summary(saved=saved([(3, 12), (3, 13)]), baselines=old, baseline_covered=True)
         self.assertEqual(h["status"], "regular")                                       # a week-old baseline plus 2 days
-        young = [dict(old[0], date=day(11, 10))]
-        self.assertEqual(self.summary(saved=saved([(11, 12), (11, 13)]), baselines=young)["status"], "seen")
+        young = [dict(old[0], date=day(3, 10))]
+        self.assertEqual(self.summary(saved=saved([(3, 12), (3, 13)]), baselines=young)["status"], "seen")
         part = [dict(old[0], state="part")]
-        self.assertEqual(self.summary(saved=saved([(11, 12), (11, 13)]), baselines=part)["status"], "seen")
+        self.assertEqual(self.summary(saved=saved([(3, 12), (3, 13)]), baselines=part)["status"], "seen")
         self.assertEqual(self.summary(baselines=old)["status"], "seen")                # a baseline that had it
         self.assertEqual(self.summary(baselines=[dict(old[0], state="absent")])["status"], "none")
         self.assertEqual(self.summary(baselines=[dict(old[0], state="unclear")])["status"], "none")
-        heard = [{"ts": NOW - 9 * 3600, "mhz": 172.8364, "carrier_mhz": None, "heard": True}]
+        heard = [{"ts": NOW - 9 * 3600, "mhz": 172.8231, "carrier_mhz": None, "heard": True}]
         h = self.summary(recent=heard)
         self.assertEqual((h["status"], h["recent"]), ("seen", {"checks": 0, "heard": 0, "hours": 6, "watched_s": 0}))
         quiet = [dict(heard[0], heard=False, ts=NOW - 3600)]
@@ -364,30 +364,30 @@ class History(unittest.TestCase):
         self.assertEqual(self.summary(f=433.92, kind="other")["window_khz"], 7.2)
         self.assertEqual(self.summary(f=915.0, kind="other")["window_khz"], 9.6)
         self.assertEqual(self.summary(f=433.92, kind="sensor")["window_khz"], 60.0)
-        self.assertEqual(self.summary(f=96.9, kind="wide")["window_khz"], 60.0)
-        rows = saved([(11, 12)], mhz=172.8364 + 0.0059) + saved([(11, 11)], mhz=172.8364 - 0.0061) \
-            + saved([(11, 10)], mhz=172.8364 + 0.024) + saved([(11, 9)], mhz=172.8364 + 0.04)
+        self.assertEqual(self.summary(f=97.1, kind="wide")["window_khz"], 60.0)
+        rows = saved([(3, 12)], mhz=172.8231 + 0.0059) + saved([(3, 11)], mhz=172.8231 - 0.0061) \
+            + saved([(3, 10)], mhz=172.8231 + 0.024) + saved([(3, 9)], mhz=172.8231 + 0.04)
         h = self.summary(saved=rows)
-        self.assertEqual((h["saved_checks"], h["next_to"], h["first"]), (1, 2, "2026-11-12"))
+        self.assertEqual((h["saved_checks"], h["next_to"], h["first"]), (1, 2, "2026-03-12"))
         # both carriers measured: 3 kHz + 10 ppm (4.7 kHz at 172.8 MHz), whatever frequency was picked then
-        rows = saved([(11, 12)], carrier=172.8364 + 0.0045) + saved([(11, 11)], carrier=172.8364 + 0.0050) \
-            + saved([(11, 10)], mhz=172.9, carrier=172.83641)
-        h = self.summary(saved=rows, carrier=172.8364)
+        rows = saved([(3, 12)], carrier=172.8231 + 0.0045) + saved([(3, 11)], carrier=172.8231 + 0.0050) \
+            + saved([(3, 10)], mhz=172.9, carrier=172.82312)
+        h = self.summary(saved=rows, carrier=172.8231)
         self.assertEqual((h["saved_checks"], h["next_to"], h["days"]), (2, 1, 2))
-        # the same press again: its old rows hold the frequency picked, not the carrier found 36 kHz away
-        h = self.summary(saved=saved([(11, 12), (11, 13)]), carrier=172.8004)
+        # the same press again: its old rows hold the frequency picked, not the carrier found 23 kHz away
+        h = self.summary(saved=saved([(3, 12), (3, 13)]), carrier=172.8004)
         self.assertEqual(h["saved_checks"], 2)
         # ... but a row whose own carrier was measured elsewhere is another signal
-        h = self.summary(saved=saved([(11, 12)], carrier=172.83641), carrier=172.8004)
+        h = self.summary(saved=saved([(3, 12)], carrier=172.8331), carrier=172.8004)
         self.assertEqual((h["saved_checks"], h["next_to"]), (0, 0))
         # sensor bands and FM channels: everything within 60 kHz
-        rows = saved([(11, 12)], mhz=433.95) + saved([(11, 11)], mhz=433.87) + saved([(11, 10)], mhz=434.0)
+        rows = saved([(3, 12)], mhz=433.95) + saved([(3, 11)], mhz=433.87) + saved([(3, 10)], mhz=434.0)
         self.assertEqual(self.summary(f=433.92, kind="sensor", saved=rows)["saved_checks"], 2)
         self.assertEqual(self.summary(f=433.92, kind="other", saved=rows)["saved_checks"], 0)
 
     def test_each_time_a_steady_carrier(self):
-        self.assertTrue(self.summary(saved=saved([(11, 12), (11, 13)]))["steady_each_time"])
-        rows = saved([(11, 12)]) + saved([(11, 13)], head="• ARIS verdict (heuristic): Not identified: FSK bursts")
+        self.assertTrue(self.summary(saved=saved([(3, 12), (3, 13)]))["steady_each_time"])
+        rows = saved([(3, 12)]) + saved([(3, 13)], head="• ARIS verdict (heuristic): Not identified: FSK bursts")
         self.assertFalse(self.summary(saved=rows)["steady_each_time"])
         self.assertFalse(self.summary()["steady_each_time"])
 
@@ -406,33 +406,33 @@ class History(unittest.TestCase):
     def test_wording(self):
         f = facts("2")
         r = build(f)
-        self.assertEqual((r["history"], r["history_tag"]), ("Saved on 9 days since 24 Oct (12 checks).", "REGULAR HERE"))
-        self.assertEqual(r["history_more"][0], "12 saved checks within 6 kHz, the last on 13 Nov. Each time a "
-                                               "steady carrier. The saved list goes back to 5 Oct.")
+        self.assertEqual((r["history"], r["history_tag"]), ("Saved on 9 days since 21 Feb (12 checks).", "REGULAR HERE"))
+        self.assertEqual(r["history_more"][0], "12 saved checks within 6 kHz, the last on 13 Mar. Each time a "
+                                               "steady carrier. The saved list goes back to 2 Feb.")
         f["history"]["saved"] = f["history"]["saved"][:1]
-        self.assertTrue(build(f)["history_more"][0].startswith("1 saved check within 6 kHz, on 24 Oct. A steady carrier "
+        self.assertTrue(build(f)["history_more"][0].startswith("1 saved check within 6 kHz, on 21 Feb. A steady carrier "
                                                                "then. "), build(f)["history_more"])
         f = facts("2")
         r = build(f)
-        self.assertEqual(r["history_more"][1], "Dongle 2's baseline of 3 Nov already had a signal at or next to this "
-                                               "frequency; Dongle 1's and Dongle 3's baselines of 3 Nov are not clear "
+        self.assertEqual(r["history_more"][1], "Dongle 2's baseline of 3 Mar already had a signal at or next to this "
+                                               "frequency; Dongle 1's and Dongle 3's baselines of 3 Mar are not clear "
                                                "here.")
         self.assertEqual(r["history_more"][2], "Checked 2 times in the last 6 hours: heard every time.")
         f["history"]["list_trimmed"] = True                                  # rows were removed: "at least since"
         r = build(f)
-        self.assertEqual(r["history"], "Saved on 9 days at least since 24 Oct (12 checks).")
+        self.assertEqual(r["history"], "Saved on 9 days at least since 21 Feb (12 checks).")
         self.assertTrue(r["history_more"][0].endswith("Older entries were removed from it."))
-        self.assertIn("saved on 9 days at least since 24 Oct", r["sure"])
+        self.assertIn("saved on 9 days at least since 21 Feb", r["sure"])
 
         r = build(facts("1a"))                                               # nothing on record: with the horizon
-        self.assertEqual((r["history"], r["history_tag"]), ("No earlier record here (list from 5 Oct).",
+        self.assertEqual((r["history"], r["history_tag"]), ("No earlier record here (list from 2 Feb).",
                                                             "NO EARLIER RECORD"))
-        self.assertEqual(r["history_more"], ["No saved check within 6 kHz. The saved list goes back to 5 Oct.",
-                                             "No baseline covers 172.84 MHz, so there is no normal day to compare with."])
+        self.assertEqual(r["history_more"], ["No saved check within 6 kHz. The saved list goes back to 2 Feb.",
+                                             "No baseline covers 172.82 MHz, so there is no normal day to compare with."])
         f = facts("1a")
         f["history"]["list_from"] = NOW - 86400                              # too young a list: no pill
         r = build(f)
-        self.assertEqual((r["history"], r["history_tag"]), ("No earlier record here (list from 13 Nov).", None))
+        self.assertEqual((r["history"], r["history_tag"]), ("No earlier record here (list from 13 Mar).", None))
         f["history"]["list_from"] = None
         r = build(f)
         self.assertEqual((r["history"], r["history_tag"]), ("No history kept yet: the saved list is empty.", None))
@@ -442,23 +442,23 @@ class History(unittest.TestCase):
         self.assertEqual(build(f)["history"], "No earlier record here (list from 19 Dec 2025).")
 
         f = facts("1a")
-        f["history"]["saved"] = saved([(11, 12), (11, 12)])
+        f["history"]["saved"] = saved([(3, 12), (3, 12)])
         r = build(f)
-        self.assertEqual((r["history"], r["history_tag"]), ("Saved on 1 day, 12 Nov (2 checks).", "SEEN BEFORE"))
+        self.assertEqual((r["history"], r["history_tag"]), ("Saved on 1 day, 12 Mar (2 checks).", "SEEN BEFORE"))
         f = facts("1a")
-        f["history"]["saved"] = saved([(11, 10)], mhz=172.86)
+        f["history"]["saved"] = saved([(3, 10)], mhz=172.847)
         self.assertIn("1 more saved check within 25 kHz: a neighbouring frequency, not counted here.",
                       build(f)["history_more"])
 
     def test_no_baseline_and_not_in_the_baseline_are_different_answers(self):
         f = facts("1a")
         r = build(f)
-        self.assertTrue([x for x in r["history_more"] if x.startswith("No baseline covers 172.84 MHz")])
+        self.assertTrue([x for x in r["history_more"] if x.startswith("No baseline covers 172.82 MHz")])
         f["history"].update({"baseline_covered": True, "baselines": [
-            {"dongle": "Dongle 1", "serial": "00001001", "date": day(11, 3), "state": "absent"},
-            {"dongle": "Dongle 2", "serial": "00003003", "date": day(11, 3), "state": "absent"}]})
+            {"dongle": "Dongle 1", "serial": "00017350", "date": day(3, 3), "state": "absent"},
+            {"dongle": "Dongle 2", "serial": "00026410", "date": day(3, 3), "state": "absent"}]})
         r = build(f)
-        self.assertIn("Dongle 1's and Dongle 2's baselines of 3 Nov had none while they were recorded.",
+        self.assertIn("Dongle 1's and Dongle 2's baselines of 3 Mar had none while they were recorded.",
                       r["history_more"])
         self.assertFalse([x for x in r["history_more"] if "No baseline covers" in x])
         self.assertEqual(r["history_tag"], "NO EARLIER RECORD")
@@ -466,7 +466,7 @@ class History(unittest.TestCase):
         r = build(f)
         self.assertEqual((r["history"], r["history_tag"]), ("Not saved before, but in Dongle 2's baseline.",
                                                             "SEEN BEFORE"))
-        self.assertIn("Dongle 2's baseline of 3 Nov had one for part of its recording; Dongle 1's baseline of 3 Nov "
+        self.assertIn("Dongle 2's baseline of 3 Mar had one for part of its recording; Dongle 1's baseline of 3 Mar "
                       "had none while it was recorded.", r["history_more"])
         for s in _words(r):                                                  # no level is compared with a baseline
             self.assertIsNone(re.search(r"(stronger|weaker|louder) than", s), s)
@@ -486,12 +486,12 @@ class History(unittest.TestCase):
                                                             "known.", None))
         # FM: the station memory, never the dongle that read it
         f = fm_facts(pilot=True, rds=True)
-        f["history"]["fm_name"] = {"name": "HITS FM", "date": day(11, 12), "dongle": "Dongle 2"}
+        f["history"]["fm_name"] = {"name": "HITS FM", "date": day(3, 12), "dongle": "Dongle 2"}
         f["dongles"] = f["dongles"][:1]
         r = build(f)
-        self.assertEqual((r["history"], r["history_tag"]), ('Named "HITS FM" when its name was last read, on 12 Nov.',
+        self.assertEqual((r["history"], r["history_tag"]), ('Named "HITS FM" when its name was last read, on 12 Mar.',
                                                             None))
-        self.assertIn('Its name "HITS FM" was read here before, last on 12 Nov.', r["history_more"])
+        self.assertIn('Its name "HITS FM" was read here before, last on 12 Mar.', r["history_more"])
         for s in _words(r):
             self.assertNotIn("Dongle 2", s)
         r = build(facts("6"))                                                # read now: nothing to add on the card
@@ -503,11 +503,11 @@ class History(unittest.TestCase):
         r = build(facts("5"))
         self.assertEqual((r["history"], r["history_tag"]), (None, None))
         f = facts("5")
-        f["history"]["saved"] = saved([(11, 10), (11, 12), (11, 12)], mhz=162.55)
+        f["history"]["saved"] = saved([(3, 10), (3, 12), (3, 12)], mhz=162.55)
         r = build(f)
-        self.assertEqual((r["history"], r["history_tag"]), ("Saved on 2 days since 10 Nov (3 checks).", "SEEN BEFORE"))
-        f["history"]["last_capture"] = {"ts": day(11, 12), "outcome": "timeout", "minutes": 10}
-        self.assertIn("A capture here on 12 Nov ran 10 min: nothing was decoded.", build(f)["history_more"])
+        self.assertEqual((r["history"], r["history_tag"]), ("Saved on 2 days since 10 Mar (3 checks).", "SEEN BEFORE"))
+        f["history"]["last_capture"] = {"ts": day(3, 12), "outcome": "timeout", "minutes": 10}
+        self.assertIn("A capture here on 12 Mar ran 10 min: nothing was decoded.", build(f)["history_more"])
 
     def test_history_never_says_when_a_signal_first_appeared(self):
         for c in R.EXAMPLE_CASES:
@@ -577,17 +577,17 @@ class Ladder(unittest.TestCase):
     def test_05_station(self):
         r = self.check(facts("6"), "station", "confirmed", "IDENTIFIED", 'FM radio station "HITS FM".')
         self.assertEqual(r["sure"], "Confirmed by a decoder: its own RDS name, read with checksums.")
-        self.assertEqual(r["carrier_text"], "96.9 MHz")
+        self.assertEqual(r["carrier_text"], "97.1 MHz")
         f = facts("6")
-        f["fm"].update({"name": "Alejandro Sanz - Corazon Partio", "scrolls": True})
+        f["fm"].update({"name": "Harbor Lights - Paper Moon", "scrolls": True})
         r = self.check(f, "station", "confirmed", "IDENTIFIED",
-                       'FM radio station on 96.9 MHz. Its RDS text reads "Alejandro Sanz - Corazon Partio".')
+                       'FM radio station on 97.1 MHz. Its RDS text reads "Harbor Lights - Paper Moon".')
         self.assertIn("this is its text, not a fixed name", r["sure"])
 
     def test_06_doubtful(self):
         r = self.check(facts("4"), "doubtful", "check", "CHECK FIRST", "Probably noise, not a real device.")
-        self.assertEqual(r["sure"], 'A decoder named "ERT-SCM", but 28.790 MHz is outside the bands these devices '
-                                    "use; it is a single packet with ID 0; it is a single packet, only 4 dB above "
+        self.assertEqual(r["sure"], 'A decoder named "ERT-SCM", but 29.310 MHz is outside the bands these devices '
+                                    "use; it is a single packet with ID 0; it is a single packet, only 5 dB above "
                                     "noise.")
         self.assertEqual(r["rests_on"], [])
         self.assertNotIn("dentified", r["headline"] + r["sure"])
@@ -598,7 +598,7 @@ class Ladder(unittest.TestCase):
         self.assertEqual(r["sure"], "High confidence. Rests on: all 3 dongles within 0.3 kHz of their own 6 x 28.8 MHz "
                                     "line; no drift; no modulation. A transmitter exactly on 172.800 MHz would hide "
                                     "behind this line.")
-        self.assertEqual(r["carrier_note"], "Found at 172.800 MHz, 36.0 kHz below the frequency picked. The decoders "
+        self.assertEqual(r["carrier_note"], "Found at 172.800 MHz, 23.1 kHz below the frequency picked. The decoders "
                                             "listened there.")
         self.assertEqual(r["dongles_note"], "Each dongle makes this line itself, so all 3 hear it.")
         self.assertIn("On the dongles' own clock line: all 3 dongles within 0.3 kHz of where their own 6 x 28.8 MHz "
@@ -613,7 +613,7 @@ class Ladder(unittest.TestCase):
                                              "6 x 28.8 MHz line"), r["sure"])
         # a dongle that reads it away from its own line speaks against it: one step down, and named
         f = facts("1b")
-        set_lines(f, 172.80001, 172.80139, 172.80001)                        # Dongle 3 (2 ppm) would read 172.80035
+        set_lines(f, 172.80001, 172.79896, 172.80001)                        # Dongle 3 (2 ppm) would read 172.80035
         r = self.check(f, "own_clock", "medium", "OWN CLOCK")
         self.assertEqual(r["against"], ["Dongle 3 reads it away from its own clock line"])
         self.assertIn("Against: Dongle 3 reads it away from its own clock line.", r["sure"])
@@ -631,7 +631,7 @@ class Ladder(unittest.TestCase):
         self.check(f, "own_clock", "low", "OWN CLOCK", "Most likely the receiver's own clock: 6 x 28.8 MHz.")
         # Dongles whose corrections are alike cannot tell their own line from a transmitter exactly on the multiple
         # (such a transmitter reads on every one's own line too): never "not a transmitter", never High
-        for ppm in (0.0, 8.0):
+        for ppm in (0.0, -6.0):
             f = facts("1b")
             line = round(172.8 * (1 + ppm * 1e-6), 6)
             for d in f["dongles"]:
@@ -646,7 +646,7 @@ class Ladder(unittest.TestCase):
                              r["checks"])
             self.assertEqual(r["dongles_note"], "Each dongle's own clock line reads like this, so all 3 would show it.")
             self.assertFalse(R.spur_check(f)["own_clock"]["apart"])
-        self.assertTrue(R.spur_check(facts("1b"))["own_clock"]["apart"])     # corrections 0, 8 and 2 ppm
+        self.assertTrue(R.spur_check(facts("1b"))["own_clock"]["apart"])     # corrections 0, -6 and 2 ppm
         # not a clock line when it is keyed or modulated
         f = facts("1b")
         set_mod(f, "fm_voice")
@@ -709,14 +709,14 @@ class Ladder(unittest.TestCase):
 
     def test_11_station_without_a_name(self):
         r = self.check(fm_facts(pilot=True, rds=True), "station_noname", "medium", "HEARD",
-                       "FM radio station on 99.3 MHz. Its name was not read.")
+                       "FM radio station on 98.3 MHz. Its name was not read.")
         self.assertEqual(r["sure"], "Medium confidence. Rests on: a stereo pilot and RDS measured; on a station "
                                     "channel.")
         r = self.check(fm_facts(pilot=False, rds=True), "station_noname", "medium", "HEARD")
         self.assertIn("Rests on: RDS measured; on a station channel.", r["sure"])
         # no pilot, no RDS: the channel alone names nothing
         r = self.check(fm_facts(pilot=False, rds=False), "station_noname", "unknown", "HEARD",
-                       "Wideband FM on 99.3 MHz, a station channel. No station name was read.")
+                       "Wideband FM on 98.3 MHz, a station channel. No station name was read.")
         self.assertEqual(r["sure"], "No stereo pilot, RDS or name was read, so what sends it is not known.")
         self.assertEqual(build(fm_facts(pilot=True, wideband=False))["category"], "heard")
 
@@ -934,10 +934,10 @@ class Ladder(unittest.TestCase):
     def test_18_steady_and_regular(self):
         r = self.check(facts("2"), "steady_fixed", "medium", "NOT IDENTIFIED",
                        "Steady carrier on all 3 dongles: a fixed source, here for weeks.")
-        self.assertEqual(r["sure"], "Medium confidence. Rests on: saved on 9 days since 24 Oct, a steady carrier each "
-                                    "time; in Dongle 2's baseline of 3 Nov. What sends it is still not known.")
+        self.assertEqual(r["sure"], "Medium confidence. Rests on: saved on 9 days since 21 Feb, a steady carrier each "
+                                    "time; in Dongle 2's baseline of 3 Mar. What sends it is still not known.")
         f = facts("1a")
-        f["history"]["saved"] = saved([(11, 5), (11, 9), (11, 13)])          # 8 days: not yet "weeks"
+        f["history"]["saved"] = saved([(3, 5), (3, 9), (3, 13)])          # 8 days: not yet "weeks"
         self.assertEqual(build(f)["headline"], "Steady carrier on all 3 dongles: a fixed source, here for over a week.")
         f = facts("2", band_kind="sensor")                                   # a busy band's rows are not this carrier's
         self.assertEqual(build(f)["category"], "steady_unknown")
@@ -1028,7 +1028,7 @@ class Ladder(unittest.TestCase):
         self.assertEqual((r["confidence"], r["against"]), ("low", ["the look was overloaded on Dongle 2"]))
         self.assertIn("Against: the look was overloaded on Dongle 2.", r["sure"])
         f = facts("2")
-        set_lines(f, 172.8364, 172.8364, 172.8412)                           # 4.8 kHz apart: over 20 ppm
+        set_lines(f, 172.8231, 172.8231, 172.8279)                           # 4.8 kHz apart: over 20 ppm
         r = build(f)
         self.assertEqual((r["confidence"], r["against"]), ("low", ["the dongles read different frequencies"]))
         # a single dongle and a single look: nothing agrees with it, so its quality is B at best
@@ -1040,16 +1040,16 @@ class Ladder(unittest.TestCase):
     def test_carrier_note(self):
         self.assertIsNone(build(facts("1a"))["carrier_note"])                # within 3 kHz of the frequency picked
         f = facts("1a")
-        set_lines(f, 172.8396, 172.8396, 172.8396)
+        set_lines(f, 172.8263, 172.8263, 172.8263)
         r = build(f)
-        self.assertEqual(r["carrier_note"], "Found at 172.840 MHz, 3.2 kHz above the frequency picked.")
-        self.assertEqual(r["next"]["mhz"], 172.8396)                         # the next step acts where it was found
+        self.assertEqual(r["carrier_note"], "Found at 172.826 MHz, 3.2 kHz above the frequency picked.")
+        self.assertEqual(r["next"]["mhz"], 172.8263)                         # the next step acts where it was found
         f = facts("1b")
-        f["audio"]["tuned_mhz"] = 172.8364                                   # the decoders stayed where they were asked
+        f["audio"]["tuned_mhz"] = 172.8231                                   # the decoders stayed where they were asked
         r = build(f)
-        self.assertEqual(r["carrier_note"], "Found at 172.800 MHz, 36.0 kHz below the frequency picked. The decoders "
-                                            "listened at 172.8364 MHz, 36 kHz away.")
-        self.assertIn("whether the audio decoders would read it: they listened 36 kHz away", r["could_not_tell"])
+        self.assertEqual(r["carrier_note"], "Found at 172.800 MHz, 23.1 kHz below the frequency picked. The decoders "
+                                            "listened at 172.8231 MHz, 23 kHz away.")
+        self.assertIn("whether the audio decoders would read it: they listened 23 kHz away", r["could_not_tell"])
 
 
 class NextStep(unittest.TestCase):
@@ -1071,7 +1071,7 @@ class NextStep(unittest.TestCase):
 
     def test_02_a_capture_is_running_here(self):
         for c in ("1a", "5", "7", "4"):
-            n = self.step(facts(c, capture_running={"dongle": "Dongle 1", "mhz": 172.84}), "activity", "See the capture")
+            n = self.step(facts(c, capture_running={"dongle": "Dongle 1", "mhz": 172.82}), "activity", "See the capture")
             self.assertEqual(n["reason"], "A capture is already listening here on Dongle 1.")
             self.assertEqual(n["dongle"], "Dongle 1")
         self.step(facts("7", decoder_failed=True, capture_running={"dongle": "Dongle 1"}), "check")
@@ -1079,7 +1079,7 @@ class NextStep(unittest.TestCase):
     def test_03_doubtful(self):
         n = self.step(facts("4"), "decode", "Decode again for 1 min", 60)
         self.assertEqual(n["reason"], "One weak packet is not proof. A real device decodes again.")
-        self.assertEqual(n["say"], 'One weak packet is not proof: say "investigate 28.79 for 60 seconds". A real device '
+        self.assertEqual(n["say"], 'One weak packet is not proof: say "investigate 29.31 for 60 seconds". A real device '
                                    "decodes again.")
         self.step(facts("4", listen_s=60), "decode", "Decode again for 2 min", 120)
         self.step(facts("4", listen_s=120), "decode", "Decode again for 2 min", 120)
@@ -1088,7 +1088,7 @@ class NextStep(unittest.TestCase):
         n = self.step(facts("1b"), "decode", "Decode again (10 s)", 10)
         self.assertEqual(n["reason"], "To be sure, unplug Dongle 2's antenna first. If the level stays, it is the "
                                       "receiver.")
-        self.assertEqual(n["say"], 'To be sure, unplug Dongle 2\'s antenna and say "investigate 172.8004 for 10 '
+        self.assertEqual(n["say"], 'To be sure, unplug Dongle 2\'s antenna and say "investigate 172.8 for 10 '
                                    'seconds": if the level stays, it is the receiver.')
         f = facts("1a")
         set_lines(f, 172.8009, 172.80092, 172.80088)
@@ -1127,7 +1127,7 @@ class NextStep(unittest.TestCase):
     def test_08_station_without_a_name(self):
         n = self.step(fm_facts(pilot=True, rds=True), "capture", "Wait for its name")
         self.assertEqual(n["reason"], "A capture waits in the background until the station sends its name.")
-        self.assertEqual(n["say"], 'To read its name, say "capture 99.3": it waits in the background until the station '
+        self.assertEqual(n["say"], 'To read its name, say "capture 98.3": it waits in the background until the station '
                                    "sends it.")
 
     def test_09_to_11_nothing_heard(self):
@@ -1142,7 +1142,7 @@ class NextStep(unittest.TestCase):
         for listen, label, secs in ((10, "Decode for 30 s", 30), (30, "Decode for 1 min", 60), (60, "Decode for 2 min", 120)):
             n = self.step(dict(f, listen_s=listen), "decode", label, secs)
             self.assertEqual(n["reason"], "A longer look, in case it was silent just now.")
-            self.assertEqual(n["say"], f'To look again for longer, say "investigate 96.9 for {secs} seconds".')
+            self.assertEqual(n["say"], f'To look again for longer, say "investigate 97.1 for {secs} seconds".')
         self.step(dict(f, listen_s=120), "capture", "Wait for a transmission")
         for kind in ("sensor", "other", "audio", "air"):
             n = self.step(facts("5", band_kind=kind), "capture", "Wait for a transmission")
@@ -1150,7 +1150,7 @@ class NextStep(unittest.TestCase):
             self.assertEqual(n["say"], 'To wait for the next transmission in the background, say "capture 162.55".')
             self.assertEqual((n["mhz"], n["minutes"], n["dongle"]), (162.55, None, None))
         f = facts("5")                                    # heard here before: the reason says so
-        f["history"]["saved"] = saved([(11, 12)], mhz=162.55)
+        f["history"]["saved"] = saved([(3, 12)], mhz=162.55)
         n = self.step(f, "capture", "Wait for a transmission")
         self.assertEqual(n["reason"], "It was heard here before: a capture listens in the background until it "
                                       "transmits again.")
@@ -1187,7 +1187,7 @@ class NextStep(unittest.TestCase):
     def test_17_watch_it_for_two_minutes(self):
         n = self.step(facts("1a"), "decode", "Watch it for 2 min", 120)
         self.assertEqual(n["reason"], "To see whether it ever switches off, drifts or carries anything.")
-        self.assertEqual(n["say"], 'To watch it for longer, say "investigate 172.8364 for 120 seconds".')
+        self.assertEqual(n["say"], 'To watch it for longer, say "investigate 172.8231 for 120 seconds".')
         self.step(facts("1a", listen_s=60, listened_s=63), "decode", "Watch it for 2 min", 120)
         # only when a longer Decode really watches: this check had watchers, or the band is the airband or FM
         n = self.step(no_watch(facts("1a")), "none")
@@ -1225,7 +1225,7 @@ class NextStep(unittest.TestCase):
         self.step(f, "none")                                                 # no antennas on the Map: nothing to add
         n = self.step(dict(f, map_ready=True), "locate", "Find where it is")
         self.assertEqual(n["reason"], "It was on in every look over 123 s. The Map shows roughly where it comes from.")
-        self.assertEqual(n["say"], 'To find roughly where it comes from, say "where is 172.8364 coming from".')
+        self.assertEqual(n["say"], 'To find roughly where it comes from, say "where is 172.8231 coming from".')
         self.step(no_watch(dict(f, map_ready=True)), "none")                 # nobody watched: "it stayed on" is not known
         # Locate is never the step because one dongle hears it best
         for c in R.EXAMPLE_CASES:
@@ -1256,18 +1256,18 @@ class NextStep(unittest.TestCase):
 
 
 class BarsAndCard(unittest.TestCase):
-    ROWS = [{"dongle": "Dongle 1", "serial": "00001001", "heard": True, "snr_db": 8.0},
-            {"dongle": "Dongle 2", "serial": "00003003", "heard": True, "snr_db": 16.0},
-            {"dongle": "Dongle 3", "serial": "00004004", "heard": True, "snr_db": 10.0}]
+    ROWS = [{"dongle": "Dongle 1", "serial": "00017350", "heard": True, "snr_db": 8.0},
+            {"dongle": "Dongle 2", "serial": "00026410", "heard": True, "snr_db": 16.0},
+            {"dongle": "Dongle 3", "serial": "00035720", "heard": True, "snr_db": 10.0}]
 
     def test_bars(self):
         b = R.bars(self.ROWS, "Dongle 2")
         self.assertEqual(b, [
-            {"dongle": "Dongle 1", "serial": "00001001", "state": "heard", "db": 8.0, "pct": 20, "best": False,
+            {"dongle": "Dongle 1", "serial": "00017350", "state": "heard", "db": 8.0, "pct": 20, "best": False,
              "text": "8 dB"},
-            {"dongle": "Dongle 2", "serial": "00003003", "state": "heard", "db": 16.0, "pct": 40, "best": True,
+            {"dongle": "Dongle 2", "serial": "00026410", "state": "heard", "db": 16.0, "pct": 40, "best": True,
              "text": "16 dB"},
-            {"dongle": "Dongle 3", "serial": "00004004", "state": "heard", "db": 10.0, "pct": 25, "best": False,
+            {"dongle": "Dongle 3", "serial": "00035720", "state": "heard", "db": 10.0, "pct": 25, "best": False,
              "text": "10 dB"}])
         rows = [{"dongle": "Dongle 1", "heard": True, "snr_db": 0.4},                       # heard, at the noise
                 {"dongle": "Dongle 2", "heard": True, "snr_db": -3.0},
@@ -1331,11 +1331,11 @@ class BarsAndCard(unittest.TestCase):
                                                "step", "details"]))
         self.assertEqual((card["report_v"], card["tag"], card["tag_kind"], card["history_tag"], card["history_kind"]),
                          (1, "NOT IDENTIFIED", "signal_present", "NO EARLIER RECORD", "new"))
-        self.assertEqual(card["carrier"], {"mhz": 172.836412, "text": "172.836 MHz", "note": None})
+        self.assertEqual(card["carrier"], {"mhz": 172.823112, "text": "172.823 MHz", "note": None})
         self.assertEqual((card["headline"], card["sure"], card["confidence"], card["history_line"]),
                          (r["headline"], r["sure"], "unknown", r["history"]))
         self.assertEqual(card["bars_note"], "Above each dongle's own noise. Not a distance.")
-        self.assertEqual(card["step"], {"action": "decode", "label": "Watch it for 2 min", "mhz": 172.8364,
+        self.assertEqual(card["step"], {"action": "decode", "label": "Watch it for 2 min", "mhz": 172.8231,
                                         "reason": "To see whether it ever switches off, drifts or carries anything.",
                                         "seconds": 120, "minutes": None, "dongle": None})
         self.assertEqual([d["title"] for d in card["details"]],
@@ -1422,11 +1422,11 @@ class BarsAndCard(unittest.TestCase):
         self.assertTrue(t["did"].startswith("On for the whole 3 s look on all 3 dongles. Dongle 1 and Dongle 3 then "
                                             "looked 7 more times over 28 s: on every time."))
         self.assertIn("No modulation during the 3 s look: a bare carrier.", t["did"])
-        self.assertTrue(t["checks"].startswith("Not the dongles' own clock: 36 kHz from 6 x 28.8 MHz. No match with 13 "
+        self.assertTrue(t["checks"].startswith("Not the dongles' own clock: 23 kHz from 6 x 28.8 MHz. No match with 13 "
                                                "common equipment clocks."))
-        self.assertEqual(t["history"], "No earlier record here (list from 5 Oct). No baseline covers 172.84 MHz, so "
+        self.assertEqual(t["history"], "No earlier record here (list from 2 Feb). No baseline covers 172.82 MHz, so "
                                        "there is no normal day to compare with.")
-        self.assertEqual(t["next"], 'To watch it for longer, say "investigate 172.8364 for 120 seconds".')
+        self.assertEqual(t["next"], 'To watch it for longer, say "investigate 172.8231 for 120 seconds".')
         t = R.text_lines(build(facts("5")))                                  # the words to type keep every decimal
         self.assertIn('say "capture 162.55"', t["next"])
         self.assertEqual((t["did"], t["checks"]), ("", ""))
@@ -1435,13 +1435,13 @@ class BarsAndCard(unittest.TestCase):
             self.assertEqual(R.text_lines(junk), {"short": "", "did": "", "checks": "", "history": "", "next": ""})
 
     def test_fmt_mhz(self):
-        for f, want in ((172.8364, "172.8364"), (96.9, "96.9"), (1090, "1090"), (1090.0, "1090"), (433.92, "433.92"),
-                        (162.55, "162.55"), (172.83641234, "172.8364"), (0.1, "0.1"), (28.8, "28.8"), ("433.92", "433.92")):
+        for f, want in ((172.8231, "172.8231"), (97.1, "97.1"), (1090, "1090"), (1090.0, "1090"), (433.92, "433.92"),
+                        (162.55, "162.55"), (172.82311234, "172.8231"), (0.1, "0.1"), (28.8, "28.8"), ("433.92", "433.92")):
             self.assertEqual(R.fmt_mhz(f), want)
-        self.assertEqual(R.fmt_mhz(172.8364, 3), "172.836")
+        self.assertEqual(R.fmt_mhz(172.8231, 3), "172.823")
         self.assertEqual(R.fmt_mhz(172.8, 3, fixed=True), "172.800")
         self.assertEqual(R.fmt_mhz(100.0, 1, True), "100.0")
-        self.assertEqual(R.fmt_mhz(172.83641234, 6), "172.836412")
+        self.assertEqual(R.fmt_mhz(172.82311234, 6), "172.823112")
         self.assertEqual(R.fmt_mhz(1090, 0), "1090")
         for junk in (None, "x", float("nan"), True):
             self.assertEqual(R.fmt_mhz(junk), "?")
@@ -1451,12 +1451,12 @@ class BarsAndCard(unittest.TestCase):
 # the wording rules, over a grid of fact combinations
 # ------------------------------------------------------------------------------------------------------------------
 class SecondLook(unittest.TestCase):
-    """Rules added after an independent review of the first build."""
+    """Rules for the cases a single dongle or one correction cannot tell apart."""
 
     def test_a_watch_already_made_lately_is_not_offered_again(self):
         f = facts("1a", listen_s=10, listened_s=13)
         self.assertEqual(build(f)["next"]["label"], "Watch it for 2 min")
-        row = {"ts": NOW - 3600.0, "mhz": 172.8364, "carrier_mhz": 172.83641, "heard": True, "listened_s": 123}
+        row = {"ts": NOW - 3600.0, "mhz": 172.8231, "carrier_mhz": 172.82312, "heard": True, "listened_s": 123}
         f["history"]["recent"] = [row]
         nxt = build(f)["next"]
         self.assertEqual((nxt["action"], nxt["label"]), ("none", ""))
@@ -1469,7 +1469,7 @@ class SecondLook(unittest.TestCase):
     def test_a_look_wider_than_its_samples_names_no_carrier(self):
         f = facts("1a")
         for d in f["dongles"]:
-            d["carrier_mhz"] = 172.8564                        # the middle of two signals: nothing transmits there
+            d["carrier_mhz"] = 172.8431                        # the middle of two signals: nothing transmits there
             d["profile"].update({"folded": True, "line_mhz": None})
             d["profile"]["line"].update({"ok": False, "hz": None, "why": "no_single_line"})
             d["profile"]["width"] = {"hz": 40000.0, "share": 99, "limit": "at_least", "why": "wider_than_filter"}
@@ -1486,7 +1486,7 @@ class SecondLook(unittest.TestCase):
         f = facts("1a")
         for d in f["dongles"]:
             for i, x in enumerate(d["looks"]):                 # no direction, but 0.6 kHz apart from look to look
-                x["line_mhz"] = round(172.83641 + (300e-6 if i % 2 else -300e-6), 6)
+                x["line_mhz"] = round(172.82312 + (300e-6 if i % 2 else -300e-6), 6)
         r = build(f)
         line = next(x for x in r["behaviour"] if "frequency" in x)
         self.assertEqual(line, "Its frequency wandered by 0.6 kHz from look to look, with no steady direction, on "
@@ -1498,8 +1498,8 @@ class SecondLook(unittest.TestCase):
     def test_small_movements_and_distances_are_worded_as_they_are(self):
         self.assertEqual([R._moved(x) for x in (0, 4, 34, 96, 130, 900)],
                          ["less than 10 Hz", "less than 10 Hz", "30 Hz", "100 Hz", "0.1 kHz", "0.9 kHz"])
-        self.assertEqual([R._off(x) for x in (0.0, 0.04, 0.3, 36.0)], ["less than 0.1 kHz", "less than 0.1 kHz",
-                                                                       "0.3 kHz", "36 kHz"])
+        self.assertEqual([R._off(x) for x in (0.0, 0.04, 0.3, 23.0)], ["less than 0.1 kHz", "less than 0.1 kHz",
+                                                                       "0.3 kHz", "23 kHz"])
         f = facts("1a")                                        # on the plain multiple, on no dongle's own line
         for d in f["dongles"]:
             d["ppm"] = 20.0
@@ -1556,7 +1556,7 @@ class SecondLook(unittest.TestCase):
         # the Map is offered for a signal that stayed on through a 2 min watch, not for a regular one
         f = facts("1a", listen_s=120, listened_s=123, map_ready=True)
         self.assertEqual(build(f)["next"]["action"], "locate")
-        f["history"]["saved"] = saved([(10, 20), (10, 28), (11, 5), (11, 12)])
+        f["history"]["saved"] = saved([(2, 17), (2, 25), (3, 5), (3, 12)])
         self.assertNotEqual(build(f)["next"]["action"], "locate")
         # "crystal-controlled" needs next to no movement: 0.1 ppm (17 Hz here) over the watch
         f = facts("1a")
@@ -1674,17 +1674,17 @@ def grid():
         yield f"{c} doubtful too", facts(c, doubtful=["it is a single packet with ID 0", "it is far too weak"])
         f = facts(c)
         f["history"].update({
-            "saved": saved([(10, 20), (10, 28), (11, 2), (11, 9), (11, 13)], mhz=f["asked_mhz"])
-            + saved([(11, 1)], mhz=f["asked_mhz"] + 0.02),
+            "saved": saved([(2, 17), (2, 25), (3, 2), (3, 9), (3, 13)], mhz=f["asked_mhz"])
+            + saved([(3, 1)], mhz=f["asked_mhz"] + 0.02),
             "list_trimmed": True, "baseline_covered": True,
-            "baselines": [{"dongle": "Dongle 1", "date": day(10, 30), "state": "present"},
-                          {"dongle": "Dongle 2", "date": day(11, 2), "state": "part"},
-                          {"dongle": "Dongle 3", "date": day(11, 2), "state": "absent"},
+            "baselines": [{"dongle": "Dongle 1", "date": day(2, 27), "state": "present"},
+                          {"dongle": "Dongle 2", "date": day(3, 2), "state": "part"},
+                          {"dongle": "Dongle 3", "date": day(3, 2), "state": "absent"},
                           {"dongle": "Dongle 4", "date": None, "state": "unclear"}],
             "recent": [{"ts": NOW - 600 * i, "mhz": f["asked_mhz"], "carrier_mhz": None, "heard": i % 2 == 0}
                        for i in range(1, 5)],
-            "last_capture": {"ts": day(11, 12), "outcome": "demodulated", "minutes": 60},
-            "fm_name": {"name": "LA MEJOR", "date": day(11, 1)},
+            "last_capture": {"ts": day(3, 12), "outcome": "demodulated", "minutes": 60},
+            "fm_name": {"name": "HARBOR", "date": day(3, 1)},
             "devices_here": {"names": ["Nexus-TH", "Acurite-606TX", "third"], "more": 7}})
         yield f"{c} full history", f
         f = facts(c)
@@ -1703,9 +1703,9 @@ def grid():
                 f["rtl433"].update({"fingerprint": name, "pattern_hint": name})
             if f.get("audio"):
                 f["audio"].update({"decoders": name, "dongle": name})
-            f["history"].update({"fm_name": {"name": name, "date": day(11, 1)},
+            f["history"].update({"fm_name": {"name": name, "date": day(3, 1)},
                                  "devices_here": {"names": [name, name], "more": 2},
-                                 "baselines": [{"dongle": name, "date": day(11, 2), "state": "present"}]})
+                                 "baselines": [{"dongle": name, "date": day(3, 2), "state": "present"}]})
             f["capture_running"] = {"dongle": name} if name.startswith("x") else None
             f["verdict"] = f"Identified: {name}" if f["evidence"] == "confirmed_decode" else name
             yield f"{c} name {name[:12]!r}", f
@@ -1937,13 +1937,13 @@ class Examples(unittest.TestCase):
     def test_the_eleven_cases(self):
         self.assertEqual(R.EXAMPLE_CASES, ("1a", "1b", "2", "3", "4", "5", "6", "7", "8", "9", "10"))
         want = {
-            "1a": ("steady_unknown", "NOT IDENTIFIED", "NO EARLIER RECORD", "172.836 MHz", "unknown", "decode"),
+            "1a": ("steady_unknown", "NOT IDENTIFIED", "NO EARLIER RECORD", "172.823 MHz", "unknown", "decode"),
             "1b": ("own_clock", "OWN CLOCK", "SEEN BEFORE", "172.800 MHz", "high", "decode"),
-            "2": ("steady_fixed", "NOT IDENTIFIED", "REGULAR HERE", "172.836 MHz", "medium", "none"),
+            "2": ("steady_fixed", "NOT IDENTIFIED", "REGULAR HERE", "172.823 MHz", "medium", "none"),
             "3": ("device", "IDENTIFIED", "NEW DEVICE", "433.920 MHz", "confirmed", "devices"),
-            "4": ("doubtful", "CHECK FIRST", None, "28.790 MHz", "check", "decode"),
+            "4": ("doubtful", "CHECK FIRST", None, "29.310 MHz", "check", "decode"),
             "5": ("nothing", "NOTHING HEARD", None, "162.550 MHz", "unknown", "capture"),
-            "6": ("station", "IDENTIFIED", None, "96.9 MHz", "confirmed", "none"),
+            "6": ("station", "IDENTIFIED", None, "97.1 MHz", "confirmed", "none"),
             "7": ("bursts", "NOT IDENTIFIED", None, "433.920 MHz", "unknown", "capture"),
             "8": ("keyed", "NOT IDENTIFIED", "NO EARLIER RECORD", "151.251 MHz", "unknown", "capture"),
             "9": ("air", "HEARD", "NO EARLIER RECORD", "118.100 MHz", "medium", "none"),
@@ -1958,12 +1958,12 @@ class Examples(unittest.TestCase):
         with self.assertRaises(ValueError):
             R.example_facts("11")
 
-    def test_the_owners_case(self):
+    def test_case_1a_steady_carrier(self):
         f, r, card = self.card("1a")
         self.assertEqual(card["headline"], "Steady carrier on all 3 dongles. What sends it is not known.")
         self.assertEqual(card["sure"], "Source not known: an idle transmitter and an equipment clock look the same in a "
                                        "short look.")
-        self.assertEqual(card["history_line"], "No earlier record here (list from 5 Oct).")
+        self.assertEqual(card["history_line"], "No earlier record here (list from 2 Feb).")
         self.assertEqual([(b["dongle"], b["text"], b["pct"], b["best"]) for b in card["bars"]],
                          [("Dongle 1", "8 dB", 20, False), ("Dongle 2", "16 dB", 40, True), ("Dongle 3", "10 dB", 25, False)])
         self.assertEqual(card["bars_note"], "Above each dongle's own noise. Not a distance.")
@@ -1975,7 +1975,7 @@ class Examples(unittest.TestCase):
         self.assertEqual(r["behaviour"][3], "Very narrow: under 0.1 kHz wide. Level steady.")
         self.assertEqual(r["modulation"], "No modulation during the 3 s look: a bare carrier. The pager, APRS and tone "
                                           "decoders read nothing in 30 s on Dongle 2.")
-        self.assertEqual(r["checks"][:2], ["Not the dongles' own clock: 36 kHz from 6 x 28.8 MHz.",
+        self.assertEqual(r["checks"][:2], ["Not the dongles' own clock: 23 kHz from 6 x 28.8 MHz.",
                                            "No match with 13 common equipment clocks."])
         self.assertEqual(r["profile"]["dongle"], "Dongle 2")
         self.assertEqual((r["profile"]["pattern"], r["profile"]["scope"], r["profile"]["quality"]),
@@ -1983,7 +1983,7 @@ class Examples(unittest.TestCase):
         self.assertEqual((r["profile"]["width_hz"], r["profile"]["level_range_db"], r["profile"]["on_percent"]),
                          (80.0, 0.6, 100.0))
         self.assertEqual(r["mod"], {"kind": "none", "tone_hz": None, "rate_baud": None, "levels": None})
-        self.assertEqual(r["carrier_mhz"], 172.836412)
+        self.assertEqual(r["carrier_mhz"], 172.823112)
 
     def test_other_cards(self):
         _, r, card = self.card("3")

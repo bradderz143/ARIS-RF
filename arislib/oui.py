@@ -1,8 +1,8 @@
-"""Who made a network card or radio, from the first three bytes of its address (v4.12.0).
+"""Who made a network card or radio, from the first three bytes of its address.
 
 An offline copy of the IEEE's public list of 24-bit prefixes (MA-L, about 36,000 makers) lives in the repository
-(`arislib/data/oui.tsv.gz`, made from Debian's `ieee-data` package by `python3 -m arislib.oui SOURCE.csv`), so the
-station never looks anything up over the network (the field kit may have none). An address whose second hex digit is
+(`arislib/data/oui.tsv.gz`, made from Debian's `ieee-data` package by `python3 -m arislib.oui SOURCE.csv`), so
+ARIS never looks anything up over the network (a field set-up may have none). An address whose second hex digit is
 2, 6, A or E has the "locally administered" bit set: the device made the address up itself (a router's extra network, a
 phone hotspot, a phone's random Wi-Fi or Bluetooth address) and the prefix says nothing about the maker.
 """
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import gzip
+import io
 import re
 import sys
 from pathlib import Path
@@ -72,7 +73,9 @@ def build(src: str, dst: str = str(DATA)) -> int:
         for r in csv.DictReader(f):
             if r.get("Registry") == "MA-L" and len(r.get("Assignment", "")) == 6:
                 rows[r["Assignment"].upper()] = _short(r["Organization Name"])
-    with gzip.open(dst, "wt", encoding="utf-8", compresslevel=9) as f:
+    # no file name and no time in the gzip header: the same list gives the same bytes every time
+    with open(dst, "wb") as raw, gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0, compresslevel=9) as gz, \
+            io.TextIOWrapper(gz, encoding="utf-8") as f:
         for k in sorted(rows):
             f.write(f"{k}\t{rows[k]}\n")
     return len(rows)

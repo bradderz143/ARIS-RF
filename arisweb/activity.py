@@ -47,7 +47,7 @@ def api_signals():
     except Exception:
         rows, tag = [], "0-None"
     keys = ("id", "timestamp", "frequency_mhz", "power_db", "snr_db", "bw_khz", "urh_analysis", "notes")
-    # (no ook_hex / fsk_hex since v4.9.4: the demodulated bits of a burst are never kept or served)
+    # (no ook_hex / fsk_hex: the demodulated bits of a burst are never kept or served)
     out = []
     for r in rows:
         d = dict(zip(keys, r))

@@ -6,8 +6,8 @@ dB between dongles mostly shows gain and antenna differences, so the page can pl
 floor" instead.
 
 Levels are true dBFS (0 dB = an 8-bit full-scale sine, so every level sits at or below 0; not a calibrated
-strength). rtl_power's own numbers have no full-scale reference and can be positive (v4.8.9 plotted +10 to +15 dB
-for stations on Dongle 2): `arislib.rtlpower.fullscale_db` works the reference out from rtl_power's arithmetic,
+strength). rtl_power's own numbers have no full-scale reference and can be positive (strong stations read +10 to
++15 dB on its scale): `arislib.rtlpower.fullscale_db` works the reference out from rtl_power's arithmetic,
 and `_frame` subtracts it. Live IQ frames are referred to the same full-scale sine. Only the display converts:
 baselines, thresholds and the engine's sweeps keep rtl_power's raw numbers. Other receivers' sweeps are on their
 own scale (`arislib.radios.sweep_unit`: calibrated dBm for a Signal Hound, the receiver's own dB for SoapySDR) and

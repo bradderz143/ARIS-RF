@@ -237,7 +237,7 @@ class Watchdog:
                 "audio": "pager / APRS / tone decoders"}.get(self.engine, self.engine)
 
     def decoder_phrase(self) -> str:
-        """The decoder as it reads after 'with' (v4.8.0 said "with the rtl_adsb")."""
+        """The decoder as it reads after 'with' (never "with the rtl_adsb")."""
         return _with_decoder(self.decoder())
 
     def until_phrase(self) -> str:

@@ -1,18 +1,18 @@
-// Devices tab (v4.8.8): every device a decoder named, one row each, a vehicle's tyre sensors grouped as one row
+// Devices tab: every device a decoder named, one row each, a vehicle's tyre sensors grouped as one row
 // (the engine's device history, kept past the log's cap). Polled every 6 s while the tab is open; the list is only
 // downloaded again when it changed (?have=).
-// v4.9.2: a device heard on 3 or more days, or marked by the user, is "known"; the All / New only / Known only
+// A device heard on 3 or more days, or marked by the user, is "known"; the All / New only / Known only
 // buttons and the Known / Watch buttons on each row (POST /api/devices/mark).
-// v4.9.7: the All / Vehicles / Sensors / Remotes buttons split the list (a row's `group`); Vehicles has three sections:
-// v4.11.0: a Bluetooth button shows what an Ubertooth heard (api/bluetooth): devices with a stable address, the number
-// with rotating addresses (phones: counted, not listed), tracker-type advertisements; a baseline like the Wi-Fi one.
-// v4.10.0: a Wi-Fi button shows the networks a passive scan heard (api/wifi), with a baseline: new ones that are strong,
-// hidden or a weaker copy of a known name come first. Only what access points announce; no client devices.
-// v4.9.11: in the Sensors view a sensor heard once and not again (`noise`) goes in its own section, 'likely noise'.
-// v4.9.10: tyre sensors of one make heard within 5 s are one row even on one occasion ('probably one car').
+// The All / Vehicles / Sensors / Remotes buttons split the list (a row's `group`); Vehicles has three sections:
 // cars (a set of sensors heard together), cars that came back (one sensor on 2+ days), single sensors (most likely cars passing).
+// Tyre sensors of one make heard within 5 s are one row even on one occasion ('probably one car').
+// In the Sensors view a sensor heard once and not again (`noise`) goes in its own section, 'likely noise'.
+// A Wi-Fi button shows the networks a passive scan heard (api/wifi), with a baseline: new ones that are strong,
+// hidden or a weaker copy of a known name come first. Only what access points announce; no client devices.
+// A Bluetooth button shows what an Ubertooth heard (api/bluetooth): devices with a stable address, the number
+// with rotating addresses (phones: counted, not listed), tracker-type advertisements; a baseline like the Wi-Fi one.
 let DEV = {tag: '', rows: [], totals: null, rule: '', note: null, show: 'all', group: 'all', more: {}};
-const DEV_DRAW = 60;   // v4.9.9: rows drawn at once per list or section (the history holds up to 1500 devices; a phone draws 60 and asks)
+const DEV_DRAW = 60;   // rows drawn at once per list or section (the history holds up to 1500 devices; a phone draws 60 and asks)
 function devDraw(box, list, id, rowFn){
   const n = DEV.more[id] || DEV_DRAW;
   list.slice(0, n).forEach(r => box.appendChild((rowFn || devRow)(r)));
@@ -99,7 +99,7 @@ function wifiRow(r){
   d.appendChild(kb);
   return d;
 }
-// v4.13.0: the row's last 24 hours, one bar per quarter hour: its best signal (taller = stronger), a low red
+// The row's last 24 hours, one bar per quarter hour: its best signal (taller = stronger), a low red
 // mark where a scan did not hear it, nothing where there was no scan (the helper was not running).
 function wifiSpark(r){
   const h = r.hist || [];

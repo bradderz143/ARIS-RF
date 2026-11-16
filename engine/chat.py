@@ -167,9 +167,9 @@ def _fit_turn(messages: list) -> None:
 
 # The role of the account behind the turn in progress (the GUI's bridge marks a line '[role:viewer] ...' for an
 # extra account; a terminal console is the admin). An extra account looks, measures, captures and decodes; the
-# tools that change the station's set-up are refused for it here, in the console, whatever words or alias the
-# request used (v4.9.5 review: the web layer's phrase list missed 'set up everything', 'remove dongle 2',
-# 'calibrate the gain', '/patrol stop').
+# tools that change the set-up are refused for it here, in the console, whatever words or alias the request used
+# (a phrase list in the web layer alone misses 'set up everything', 'remove dongle 2', 'calibrate the gain',
+# '/patrol stop').
 _TURN = {"role": "admin"}
 _ADMIN_TOOLS = {"auto_setup", "calibrate_gain", "calibrate_frequency", "forget_dongle", "record_baseline",
                 "start_patrol", "stop_patrol", "assign_dongles", "set_antenna_note", "set_timing_defaults",
@@ -339,8 +339,8 @@ _WATCH_RX = re.compile(r"\b(mo[nm]+it[oe]r\w*|keep\s+(?:an\s+eye\s+on|watching|l
                        r"log\s+(?:everything|all|every\s+packet)|watch|capture|catch|"
                        r"grab|wait\s+for\s+(?:a|the|its)\s+(?:packet|signal|transmission)|until\s+(?:it|you)\s+"
                        r"(?:decode|get|capture|catch|hear)s?)\b")
-# 'stop the capture', and also 'stop the 433 band capture' / 'stop recording the ism band' (v4.8.6 sent those to a
-# band capture START: only the/all/my/that fitted between the stop word and the noun, and 'record' was missing)
+# 'stop the capture', and also 'stop the 433 band capture' / 'stop recording the ism band' (never a band capture
+# START: any of these words may stand between the stop word and the noun, and 'record' counts)
 _STOP_FILL = (r"(?:the|all|my|that|this|those|these|background|band|ism|current|running|active|whole|"
               r"\d{3}\s*-\s*\d{3,4}(?:\s*mhz)?|\d{3,4}(?:\.\d+)?(?:\s*mhz)?|mhz)")
 # ("non-stop" is not a stop: "record the 433 band non-stop")
@@ -366,7 +366,7 @@ _LOGS_RX = re.compile(r"\b(logs?|watchdog\s+(?:hear|heard|found|log|logs|caught)
 _DEVICES_RX = re.compile(r"\b(?:what|which|list|show|seen|heard|any|known|history|so\s+far|decoded|all)\b.*"
                          r"\b(?:devices?|cars?|vehicles?|tyre\s+sensors?|tpms|sensors?|remotes?)\b|"
                          r"\b(?:devices?|cars?|vehicles?|sensors?|remotes?)\b.*\b(?:seen|heard|list|history|so\s+far)\b")
-# v4.13.0: a question about the Wi-Fi networks -> wifi_networks, answered from the list without the AI
+# A question about the Wi-Fi networks -> wifi_networks, answered from the list without the AI
 _WIFI_RX = re.compile(r"\bwi-?\s?fi\b|\bwlan\b|\bssids?\b|\brouters?\b|\baccess\s+points?\b|\bhotspots?\b|"
                       r"\bnetworks?\b.*\b(?:hidden|strongest|closest|nearest|new|open|channel|named|called)\b|"
                       r"\b(?:hidden|strongest|closest|nearest|new|open)\b.*\bnetworks?\b")
@@ -399,11 +399,11 @@ _LOCATE_RX = re.compile(r"\b(locate|locali[sz]e|where\s+(?:is|'s|does|do|are)|wh
 _NOT_FREQ_AFTER_RX = re.compile(r"\s*(?:%|(?:s|secs?|segs?|seconds?|segundos?|mins?|minutes?|minutos?|h|hrs?|"
                                 r"hours?|horas?|ms|db|khz|hz|ghz|k|ks|x|times?|days?|packets?|bursts?|bits?|samples?|"
                                 r"signals?|ppm|metres?|meters?)\b)")
-# Not to be confused with _BAND_NICKNAMES (the band table above; v4.8.1 reused that name and broke every band '433').
+# Not to be confused with _BAND_NICKNAMES (the band table above; reusing that name broke every band '433').
 _BARE_BAND_NUMBERS = {315, 433, 434, 868, 915}   # 'capture 433' means the band or 433.92, not 433.000: the AI asks
 # A bare whole number is a frequency only right after the action ('capture 1090', 'investigate on 1090'): counts,
 # durations, serials and dongle numbers elsewhere in the sentence are not ('capture it for 120', 'the last 100',
-# 'check dongle 1001', 'r828d', all found by review).
+# 'check dongle 7350', 'r828d').
 _BARE_FREQ_RX = re.compile(r"\b(?:captur\w*|monitor\w*|watch\w*|record\w*|graba\w*|listen\w*|escucha\w*|"
                            r"investigat\w*|investiga|analy[sz]\w*|decode|identify|locate|find\s+out|check|look\s+at)"
                            r"\s+(?:on\s+|at\s+|to\s+|en\s+)?(\d{3,4})(?![\d.,]|\s*(?:mhz|m)\b)")
@@ -411,15 +411,15 @@ _BARE_FREQ_RX = re.compile(r"\b(?:captur\w*|monitor\w*|watch\w*|record\w*|graba\
 
 def _bare_freq(t, m):
     """A whole number without 'MHz' counts as a frequency when it comes right after the action word and is not
-    followed by a unit ('capture 1090' is 1090 MHz; 'capture for 120 seconds' is not). On the real PC 'capture 1090
-    for 5 minutes' went to the AI, which started a 433 band capture from the chat's history."""
+    followed by a unit ('capture 1090' is 1090 MHz; 'capture for 120 seconds' is not). Sent to the AI, 'capture 1090
+    for 5 minutes' could start a 433 band capture copied from the chat's history."""
     g = m.group(1)
     if "." in g or int(g) in _BARE_BAND_NUMBERS or _NOT_FREQ_AFTER_RX.match(t, m.end()):
         return False
     return any(b.start(1) == m.start(1) for b in _BARE_FREQ_RX.finditer(t))
 
 
-# '433 MHz' is the everyday name of the band, not 433.000 (below the band: v4.8.6 captured there and heard nothing).
+# '433 MHz' is the everyday name of the band, not 433.000 (below the band: a capture there hears nothing).
 # A whole band number with 'MHz' means the band's busy channel for a single frequency, the band for a capture.
 _BAND_CHANNEL = {315: 315.0, 433: 433.92, 434: 433.92, 915: 915.0}
 _BAND_MHZ_RX = re.compile(r"(?<![\d.])(315|433|434|915)\s*(?:mhz|m)\b")
@@ -468,7 +468,7 @@ def _band_word(t):
     return None
 
 
-# Band scans answered without the AI (v4.9.2): a scan word and one clear band. Rules: the band is an explicit
+# Band scans answered without the AI: a scan word and one clear band. Rules: the band is an explicit
 # range ('90-100 MHz', at most SCAN_MAX_SPAN_MHZ wide), a named band ('the FM band', 'the 433 band', 'ism band',
 # 'the 915 band'), or 433 / 915 with the word band or a unit ('scan 433 MHz'); never a bare number alone, never with
 # a question word (why / how / explain / should), a stop word, a capture word (those record the band), or the words
@@ -507,8 +507,8 @@ def _scan_band(user_text, t):
 _PATROL_ASK_RX = re.compile(r"\bpatrol\b")
 _PATROL_DO_RX = re.compile(r"\b(?:start|stop|begin|end|run|launch|turn|switch|enable|disable|pause|resume|set|change|"
                            r"why|explain|how\s+come|every|interval)\b")
-# 'what dongles do I have and what are they doing?' (v4.8.6: the AI wrote the tool call as text, then a made-up
-# 'Simulated Response' with a Dongle 3, invented signals and patrol 'Running')
+# 'what dongles do I have and what are they doing?' (a small model can write the tool call as text, then a made-up
+# 'Simulated Response' with dongles, signals and a patrol that do not exist)
 _STATUS_RX = re.compile(
     r"\b(?:what|which)\s+dongles\b(?!\s+(?:heard|hears|hear|is\s+best|are\s+best))|\bhow\s+many\s+dongles\b|"
     r"\bwhat\s+(?:are|is)\s+(?:the\s+|my\s+|all\s+(?:the\s+|my\s+)?)?(?:dongles?|radios?|receivers?|aris)\s+"
@@ -542,7 +542,7 @@ _SECONDS_RX = re.compile(r"(\d+(?:\.\d+)?)\s*-?\s*(?:s|secs?|seconds?|segs?|segu
 
 def _capture_minutes(t):
     """A capture's time limit in whole minutes from the user's words: hours, minutes, or seconds rounded up
-    ('capture 1090 for 90 s' -> 2; it had no limit at all before v4.8.2). None if no time was given."""
+    ('capture 1090 for 90 s' -> 2). None if no time was given."""
     m = _HOURS_RX.search(t)
     if m:
         return max(1, int(round(float(m.group(1)) * (60.0 if m.group(2).startswith("h") else 1.0))))
@@ -644,7 +644,7 @@ _BAND_KEYS = ("frequency_range", "start_mhz", "stop_mhz", "band", "range", "freq
 
 
 def _fix_band_args(name, args, user_text):
-    """If the user named a band ('FM band') but the model sent other edges (e.g. 95.3-98.5 MHz copied from saved
+    """If the user named a band ('FM band') but the model sent other edges (e.g. edges copied from saved
     signals), use the whole named band."""
     if name not in _BAND_TOOLS:
         return args
@@ -669,8 +669,8 @@ def _fix_band_args(name, args, user_text):
 
 
 def _fix_watchdog_args(name, args, user_text):
-    """A capture the model starts follows the user's words: no band capture unless the user named a band (on the
-    real PC 'capture 1090 for 5 minutes' became a 433 band capture copied from earlier in the chat), and the
+    """A capture the model starts follows the user's words: no band capture unless the user named a band (else
+    'capture 1090 for 5 minutes' can become a 433 band capture copied from earlier in the chat), and the
     frequency the user typed wins over the model's."""
     if name != "start_background_watchdog":
         return args
@@ -757,7 +757,7 @@ def run_turn(messages: list, raw: bool) -> None:
 
     for _ in range(MAX_TOOL_ROUNDS):
         _fit_turn(messages)
-        # the radio step's status line is over: the page shows this one while the model writes (1-4 min on a test station)
+        # the radio step's status line is over: the page shows this one while the model writes (minutes on a small computer)
         print("[AI] Writing the answer..." if messages and messages[-1].get("role") == "tool"
               else "[AI] Reading the question...")
         try:
@@ -826,7 +826,7 @@ def run_turn(messages: list, raw: bool) -> None:
 
 
 # Tools that change something: the model may call one only when the user's own words asked for that kind of
-# action (the v4.9.4 security review: everything the model reads as a tool result, including RDS names and
+# action (everything the model reads as a tool result, including RDS names and
 # device names heard over the air and the saved records the GUI appends, could otherwise talk it into forgetting a
 # dongle or running setup). `_user_words` strips the GUI's appended context, so only the typed message counts.
 _STATE_TOOLS = {
@@ -858,7 +858,7 @@ _STATE_TOOLS = {
 }
 # Tools that change the set-up never run on a question ('what does setup do?') or a negated request ('don't run
 # setup'); captures, locating and audits are asked for as questions too ('can you capture 433.92?'), so they get
-# only the negation rule (v4.9.5 review: 'what gain is dongle 1 on?' let calibrate_gain run).
+# only the negation rule ('what gain is dongle 1 on?' must not run calibrate_gain).
 _SETUP_TOOLS = _ADMIN_TOOLS
 _ASKED_QUESTION_RX = re.compile(r"\bhow\b|\bwhy\b|\bwhat\b|\bexplain\b|\bshould\b|\bwhen\b|\bdid\b|\bdoes\b|"
                                 r"\bis\b.{0,30}\?|\bare\b.{0,30}\?|\bresults?\b|\breport\b|\bshow\s+me\b")
@@ -1005,7 +1005,7 @@ def _saved_line(res) -> str:
 
 
 def _above_noise(snr) -> str:
-    """'12 dB above noise' / 'at the noise level' (v4.8.6 printed '+-3 dB')."""
+    """'12 dB above noise' / 'at the noise level' (never '+-3 dB')."""
     v = float(snr)
     return f"{v:.0f} dB above noise" if v >= 0.5 else "at the noise level"
 
@@ -1076,8 +1076,8 @@ def _investigation_text(res) -> str:
     was saved to Signals, and what to do next when nothing was identified. A result with a signal report (a Decode,
     'investigate X') also gets its lines: 'In short' (the headline and how sure), 'What it did', 'History', 'Checks',
     and 'Next' (the report's one step) in place of the older advice. Plain words only: no result field names,
-    no bracket inside a bracket. (v4.8.7 and before: the 7B model wrote this reply in 1-4 min on a test station, at times
-    with raw fields.)"""
+    no bracket inside a bracket. (A small model takes minutes to write this reply, at times with raw
+    fields.)"""
     from arislib import sigreport
     c = _investigation_card(res)
     report = res.get("signal_report") if isinstance(res.get("signal_report"), dict) else None
@@ -1210,7 +1210,7 @@ _DIRECT = {     # routed requests whose result is already plain English: answere
     "patrol_status": lambda r: _patrol_reply(r),
     "read_background_watchdog": lambda r: _logs_reply(r),
     "list_devices": lambda r: _devices_reply(r),
-    "wifi_networks": lambda r: r.get("answer"),                          # (v4.13.0: from the Wi-Fi list)
+    "wifi_networks": lambda r: r.get("answer"),                          # (from the Wi-Fi list)
     "investigate_single_frequency": lambda r: _investigation_text(r),   # (the radio takes seconds; the model minutes)
 }
 
@@ -1235,12 +1235,12 @@ _TOOL_WORDS = {   # what to type instead of a tool name the small model sometime
     "run_decoder_selftest": "/selftest",
     "get_last_investigation": '"explain the last investigation"', "list_nodes": "/nodes",
 }
-# (a plural after the name or its backtick goes too: v4.8.6 left 'a capture (say "capture" and the frequency)s')
+# (a plural after the name or its backtick goes too: never 'a capture (say "capture" and the frequency)s')
 _TOOL_WORDS_RX = re.compile(r"(?:\b(?:the|a)\s+)?`?\b(" + "|".join(sorted(_TOOL_WORDS, key=len, reverse=True))
                             + r")(?:e?s)?\b(?:\(\))?`?(?:e?s\b)?(?:\s+(?:command|tool|function)s?)?", re.I)
 
 
-_RAW_WORDS = {   # raw result fields and values the small model copies into replies (real PC, v4.8.0: "The broadcast
+_RAW_WORDS = {   # raw result fields and values the small model copies into replies (e.g. "The broadcast
     # station confirmed this is a public radio station (confirmed_decode).") -> plain words. All have an underscore,
     # so ordinary words are never touched; program names (rtl_433, rtl_adsb) are not in the list.
     "confirmed_decode": "confirmed by a decoder", "signal_present": "heard, but not identified by a decoder",
@@ -1388,8 +1388,8 @@ def _setup_summary(rep: dict) -> str:
 
 def _status_reply(st: dict) -> str:
     """'what dongles do I have and what are they doing?' / 'status', answered from system_status without the AI
-    round. The live station's AI (v4.8.6) wrote the call as text and then a made-up 'Simulated Response' with a
-    Dongle 3 that is gone, signals nobody measured and patrol 'Running'."""
+    round. A small model can write the call as text and then a made-up 'Simulated Response' with a dongle
+    that is gone, signals nobody measured and patrol 'Running'."""
     ds = st.get("dongles") or {}
     here = [(n, d) for n, d in ds.items() if d.get("present") is not False]
     gone = [n for n, d in ds.items() if d.get("present") is False]
@@ -1606,7 +1606,7 @@ def _cli_cleanup() -> None:
 
 def _file_log_handler(path: Path = None, max_bytes: int = None, keep: int = None) -> logging.Handler:
     """aris.log's handler: a new file starts at LOG_ROTATE_BYTES and LOG_ROTATE_KEEP old ones are kept (aris.log.1,
-    .2), so the text log never grows past about 15 MB. Before v4.8.8 it only grew (trimmed by maintenance alone)."""
+    .2), so the text log never grows past about 15 MB (without it, it only grew, trimmed by maintenance alone)."""
     return logging.handlers.RotatingFileHandler(str(path or LOG_FILE), maxBytes=max_bytes or LOG_ROTATE_BYTES,
                                                 backupCount=LOG_ROTATE_KEEP if keep is None else keep)
 

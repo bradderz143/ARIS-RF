@@ -10,7 +10,7 @@ from __future__ import annotations
 # CONFIGURATION
 # ============================================================================
 def _env(name, default):
-    return os.environ.get("ARIS_" + name, os.environ.get("ARGON_" + name, default))
+    return os.environ.get("ARIS_" + name, default)
 
 
 MODEL = _env("MODEL", "Qwen2.5:7b")
@@ -111,7 +111,6 @@ LOG_FILE = DATA_DIR / "aris.log"
 WATCHDOG_LOG = Path(_env("WATCHDOG_LOG", str(DATA_DIR / "ism_events.jsonl")))
 DEVICES_FILE = DATA_DIR / "devices.json"     # device history (arislib.devices): every decoded device, past the log cap
 DB_PATH = str(_env("DB", str(DATA_DIR / "signals.db")))
-OLD_DB_PATHS = [str(Path.home() / "aris_sigint.db"), str(Path.home() / "argon_sigint.db")]   # copied into DB_PATH once
 
 MIN_MHZ, MAX_MHZ = 24.0, 1766.0      # an RTL-SDR (R820T) tuner; other receivers widen it (_refresh_tuner_range)
 MAX_SPAN_MHZ = 200.0
@@ -177,7 +176,7 @@ SYSTEM_PROMPT = (
     "A DIFFERENT ANTENNA, so each hears some bands better than others.\n\n"
     "WHAT NORMALLY TRANSMITS WHERE (the Americas, ITU Region 2; other regions differ). Use this knowledge in every "
     "answer:\n"
-    "- 88-108 MHz FM broadcast radio (stations on odd tenths, e.g. 96.9). Cheap FM bugs, wireless mics and car "
+    "- 88-108 MHz FM broadcast radio (stations on odd tenths, e.g. 97.1). Cheap FM bugs, wireless mics and car "
     "FM transmitters also use it.\n"
     "- 108-118 aircraft navigation beacons; 118-137 aircraft voice (AM); 137-138 weather satellites.\n"
     "- 144-148 2 m amateur radio (APRS 144.39); 148-174 business/public-service radio, marine VHF 156-162.\n"
@@ -649,8 +648,8 @@ BUSY_BANDS = [(698.0, 806.0), (824.0, 849.0), (1710.0, 1780.0), (1850.0, 1915.0)
 
 def _between_channels(mhz) -> str:
     """Where an off-plan FM carrier sits: 'between the station channels 94.7 and 94.9' (the odd tenths are the
-    channels, so a carrier nearest an even tenth is between two), or 'N kHz from channel 94.9'. (v4.8.7 printed
-    '-0.0 kHz from 94.8', the distance to a tenth that is no channel.)"""
+    channels, so a carrier nearest an even tenth is between two), or 'N kHz from channel 94.9' (never
+    '-0.0 kHz from 94.8', the distance to a tenth that is no channel)."""
     tenth = int(round(float(mhz) * 10))
     if tenth % 2 == 0:
         return f"between the station channels {(tenth - 1) / 10:.1f} and {(tenth + 1) / 10:.1f}"
@@ -702,15 +701,15 @@ def _gain_for(serial, start_mhz=None, stop_mhz=None, cfg=None) -> float:
 
 
 def _short(serial) -> str:
-    """'00002002' -> 'Dongle 2'."""
+    """'00043160' -> 'Dongle 2'."""
     return DONGLE_NAMES.get(str(serial), str(serial)).split(" (")[0]
 
 
 def _generic_serial(serial) -> bool:
     """The serial every RTL-SDR dongle carries from the factory (00000001; some batches 00000000 or all zeros)
-    until rtl_eeprom gives it its own. ARIS never uses such a dongle (v4.9.5 review): the rtl-sdr tools read
-    `-d` with strtol(s, 0) first, so a leading 0 means octal and '00000001' is device INDEX 1 (the station's own
-    serials parse as 513, 1539 and 2052, above any device count, which is why bare serials work for them); with two
+    until rtl_eeprom gives it its own. ARIS never uses such a dongle: the rtl-sdr tools read `-d` with
+    strtol(s, 0) first, so a leading 0 means octal and '00000001' is device INDEX 1 (serials such as 00017350 parse
+    as 7912 and up, above any device count, which is why bare serials work for them); with two
     or more dongles plugged in, every tool asked for 00000001 would open the second dongle instead, outside its
     lock. Two such dongles cannot be told apart either."""
     s = str(serial or "").strip()
@@ -720,8 +719,8 @@ def _generic_serial(serial) -> bool:
 def _factory_serial_note(serial) -> str:
     return (f"{_short(serial)} still has the factory serial {serial}, which the radio programs read as a device "
             f"number, not a serial (they would open another dongle), so ARIS does not use it. Give it its own serial "
-            f"with rtl_eeprom (e.g. 0000k00k like the others, with the station stopped and only that dongle plugged "
-            f"in), unplug and replug it, and run /check again.")
+            f"with rtl_eeprom (e.g. 00012345, a number no other dongle uses, with ARIS stopped and only that dongle "
+            f"plugged in), unplug and replug it, and run /check again.")
 
 
 def _working_serials(cfg=None) -> list:
@@ -925,8 +924,8 @@ def _known_stations() -> dict:
             data = {}
         data = data if isinstance(data, dict) else {}
         for st in data.values():
-            # entries saved by v4.8.6 and earlier merged pieces of scrolling text into 'names' (106.5: '106.5', '90s y',
-            # 'En 106.5', 'MIX y en'): they are scrolling text, not names
+            # entries saved by older versions merged pieces of scrolling text into 'names' ('103.9', 'On 103.9',
+            # 'ROCK and the', 'and the'): they are scrolling text, not names
             if isinstance(st, dict) and st.get("name") and not st.get("scrolls") and _name_fragments(st.get("names")):
                 st.update(scrolls=True, text=" / ".join(list(dict.fromkeys(st["names"]))[:4]))
                 st["name"] = st["text"]
@@ -948,8 +947,8 @@ def _known_near(known, f_mhz, within_mhz=0.06):
 
 
 # Function words (Spanish and English) that a station's name never starts or ends with: a piece of scrolling text
-# cut at a word boundary does ('En Amor', '95.3 y', 'y en', 'En 106.5' on the live station). At the START only the
-# words no name begins with count: 'TOP 40', 'La Mega', 'La K', 'El Clasico', 'Top 40 Hits', 'The Beat' are
+# cut at a word boundary does ('In Concert', '103.9 y', 'de la', 'Coast FM and', 'Con Todo'). At the START only the
+# words no name begins with count: 'TOP 40', 'The Coast', 'La Nube', 'El Faro', 'Top 40 Hits', 'The Beat' are
 # names. At the END all of them count.
 _FRAG_END_WORDS = {"y", "e", "o", "u", "en", "de", "del", "la", "el", "los", "las", "con", "por", "para", "a", "al",
                    "que", "and", "the", "of", "in", "on", "with", "for", "to", "at", "an", "or"}
@@ -958,14 +957,14 @@ _FRAG_START_WORDS = {"y", "e", "o", "u", "en", "de", "del", "con", "por", "para"
 
 
 def _fragment_name(name) -> bool:
-    """One remembered name that is a piece of scrolling text by its words alone: it is only function words ('y en'),
-    ends with one ('95.3 y', 'MIX y en'), or starts with one that no station name starts with ('En Amor',
-    'En 106.5'). Whole words, any case. 'TOP 40', 'La Mega', 'El Clasico', 'Top 40 Hits' are names."""
+    """One remembered name that is a piece of scrolling text by its words alone: it is only function words ('de la'),
+    ends with one ('103.9 y', 'Coast FM and'), or starts with one that no station name starts with ('In Concert',
+    'On 103.9'). Whole words, any case. 'TOP 40', 'La Nube', 'El Faro', 'Top 40 Hits' are names."""
     words = re.findall(r"[^\W_]+", str(name or "").lower())
     if not words:
         return False
     if len(words) == 2 and len(words[1]) == 1 and words[0].isalpha() and words[0] not in _FRAG_START_WORDS:
-        return False     # one letter after a real word is a name ('La U', 'Plan A'); after a number, text ('95.3 y')
+        return False     # one letter after a real word is a name ('Plan A', 'Studio B'); after a number, text ('103.9 y')
     return (all(w in _FRAG_END_WORDS for w in words) or words[-1] in _FRAG_END_WORDS
             or words[0] in _FRAG_START_WORDS)
 
@@ -981,8 +980,8 @@ def _known_fixed_name(mhz):
 
 def _name_fragments(names) -> bool:
     """Pieces of one scrolling text rather than a station's name(s): three or more different names; one inside
-    another ('y en' in 'MIX y en', '106.5' in 'En 106.5'); or a piece that starts or ends with a function word
-    (_fragment_name: 'En Amor' / '95.3 y', 95.3 on the live station). Two different names that are none of these
+    another ('and the' in 'ROCK and the', '103.9' in 'On 103.9'); or a piece that starts or ends with a function
+    word (_fragment_name: 'In Concert' / '103.9 y'). Two different names that are none of these
     stay rotating names ('NOVA' / 'ECHO')."""
     ns = [str(n).strip() for n in dict.fromkeys(names or []) if str(n or "").strip()]
     if len(ns) >= 3:
@@ -997,7 +996,7 @@ def _remember_station(channel_mhz, name, pi, serial, names=None, carrier_mhz=Non
     """What an IQ check found on an FM channel: an RDS station name (checksummed), or a broadcast-style carrier on
     the channel that sent no name, or one off the channel. A name stays when a later look cannot read it.
     Scrolling text never replaces a station's fixed name (same PI): it is kept beside it ('text'). Pieces of
-    scrolling text collected over several looks (2 per look: 'HOUR', 'RUSH', 'OWNTEMPO') make the channel
+    scrolling text collected over several looks (2 per look: 'Morning', 'Drive', 'Traffic') make the channel
     'scrolls' once they are 3 or more, or one is inside another (_name_fragments)."""
     ch = f"{float(channel_mhz):.1f}"
     with _STATIONS_LOCK:
@@ -1013,7 +1012,7 @@ def _remember_station(channel_mhz, name, pi, serial, names=None, carrier_mhz=Non
             words = lambda s: set(str(s).lower().replace("/", " ").split())
             # (a 'fixed' name that is inside the text was only a piece of it)
             if scrolls and fixed and not _name_fragments(had) and not words(fixed) <= words(name):
-                # v4.8.6 replaced 93.7's 'Gema' by 'Noche Alejandr o Sanz' (a song): the name stays
+                # a song title scrolled through the name field does not replace the station's name: the name stays
                 new.update(name=fixed, names=had or [fixed], pi=pi or cur.get("pi"), scrolls=False, text=name)
             elif scrolls:
                 new.update(name=name, names=[name], pi=pi, scrolls=True, text=name)
@@ -1022,29 +1021,29 @@ def _remember_station(channel_mhz, name, pi, serial, names=None, carrier_mhz=Non
             elif cur.get("scrolls") and same_pi and not any(
                     words(name) == words(x) for x in had + str(cur.get("text") or "").split(" / ")):
                 # a station that scrolls text showed a new piece twice in one look: one more piece, not its name
-                # (91.3 live, v4.8.7: 'Lopez', then 'Empire', then 'Boone', each stored as the name in turn); only
+                # (else 'Alpha', then 'Bravo', then 'Delta' would each be stored as the name in turn); only
                 # a look that reads a fixed name coming back between the pieces (rds.decode) names it
                 more = list(dict.fromkeys([x.strip() for x in str(cur.get("text") or "").split(" / ") if x.strip()]
                                           + [name] + list(names or [])))
                 new.update(name=" / ".join(more[-4:]), names=more[-6:], pi=pi, scrolls=True,
                            text=" / ".join(more[-4:]))
             else:
-                # pieces of text kept beside no name yet (a lone 'Al Aire' earlier) count with the new reading
+                # pieces of text kept beside no name yet (a lone 'On Air Now' earlier) count with the new reading
                 pieces = ([x.strip() for x in str(cur.get("text") or "").split(" / ") if x.strip()]
                           if same_pi and not cur.get("name") and not cur.get("scrolls") else [])
                 merged = list(dict.fromkeys([name] + list(names or [])
                                             + ([] if cur.get("scrolls") else had) + pieces))
                 if fixed and not _fragment_name(fixed) and _fragment_name(name) and not _name_fragments(had):
-                    # a slogan or a piece of text beside the station's name ('HITS FM', then 'Al Aire'): the name
-                    # stays, the piece is kept as text (v4.8.7 made it 'Al Aire / HITS FM', scrolling)
+                    # a slogan or a piece of text beside the station's name ('HITS FM', then 'On Air Now'): the
+                    # name stays, the piece is kept as text (never 'On Air Now / HITS FM', scrolling)
                     new.update(name=fixed, names=had or [fixed], pi=pi or cur.get("pi"), scrolls=False, text=name)
                 elif not fixed and pieces and not _fragment_name(name) and all(_fragment_name(x) for x in pieces) \
                         and not _name_fragments([name] + list(names or [])):
                     # the station's fixed name, read after pieces of its text: the name, the pieces stay text
                     new.update(name=name, names=[name], pi=pi, scrolls=False, text=" / ".join(pieces))
                 elif not fixed and len(merged) == 1 and _fragment_name(name):
-                    # a lone piece of text ('Al Aire', 'En Amor') with no station name yet: kept as text, never as
-                    # the name (v4.9.3: the list shows it as RDS read, no name); a second piece makes the
+                    # a lone piece of text ('On Air Now', 'In Concert') with no station name yet: kept as text, never
+                    # as the name (the list shows it as RDS read, no name); a second piece makes the
                     # channel scrolling text, a fixed name read later takes over
                     new.update(name=None, names=None, pi=pi or cur.get("pi"), scrolls=False, text=name)
                 elif _name_fragments(merged):
@@ -1055,8 +1054,8 @@ def _remember_station(channel_mhz, name, pi, serial, names=None, carrier_mhz=Non
                                text=cur.get("text") if not cur.get("scrolls") else cur.get("name"))
         rds_now = True if name else rds
         if rds_now is False and cur.get("rds") and time.time() - float(cur.get("epoch") or 0) < 3600:
-            rds_now = True       # one look without RDS does not undo one with it (Name all's 99.3: rds_weak, then
-            #                      stored as 'sends no RDS name' from its last look)
+            rds_now = True       # one look without RDS does not undo one with it (a weak station read with RDS in
+            #                      one look is not stored as 'sends no RDS name' from the next)
         for k, v in (("carrier_mhz", round(float(carrier_mhz), 4) if carrier_mhz is not None else None),
                      ("stereo", stereo), ("rds", rds_now)):
             new[k] = v if v is not None else cur.get(k)
@@ -1080,8 +1079,8 @@ def _remember_station(channel_mhz, name, pi, serial, names=None, carrier_mhz=Non
 def _remember_unheard(results, serials=None) -> int:
     """Name all's stations that gave no reading this time (state not_heard or too_weak) are remembered with the
     time, so the Spectrum list says 'Checked: not heard in the last check (date)' instead of calling them unchecked
-    and offering them to Name all again at once (live, v4.8.9: five such rows said only "FM band, station channel"
-    and the button still counted them). A named station is never touched; a later reading that hears the
+    and offering them to Name all again at once (otherwise such rows say only "FM band, station channel" and
+    the button still counts them). A named station is never touched; a later reading that hears the
     channel replaces the note. Returns how many channels were written."""
     n = 0
     with _STATIONS_LOCK:
@@ -1122,8 +1121,8 @@ _NOT_FM_WORDS = ("not standard broadcast FM", "not standard FM broadcast")
 
 def _relabel_named_signals(stations) -> int:
     """Saved signals on a channel whose RDS name has since been read that called it 'not standard broadcast FM'
-    (the v4.7.4-4.7.5 capture problems: 101.7 'TOP 40' stayed saved as 'worth a closer look', and the AI then
-    flagged it and investigated it again) are relabelled as that station. Returns how many rows changed."""
+    (a station checked badly once stays saved as 'worth a closer look', and the AI then flags it and
+    investigates it again) are relabelled as that station. Returns how many rows changed."""
     named = []
     for ch, st in (stations or {}).items():
         try:
@@ -1166,7 +1165,7 @@ def _relabel_named_signals(stations) -> int:
 
 HD_SIDEBAND_MHZ = (0.11, 0.21)     # where an HD Radio station's digital blocks sit, from its carrier
 FM_OFFPLAN_MIN_SNR_DB = 12.0       # a sweep calls a signal off the station channels only above this: a weak hump's
-#                                   centre wanders with noise and programme, and flipped between passes (live, v4.8.6)
+#                                   centre wanders with noise and programme, and flips between passes
 
 
 def _group_broadcast(peaks, step_khz=None):
@@ -1185,7 +1184,7 @@ def _group_broadcast(peaks, step_khz=None):
             continue
         centre = float(p.get("centroid_mhz") or p.get("center_mhz") or p["frequency_mhz"])
         # HD Radio (IBOC) stations send flat digital blocks 129-198 kHz either side of their carrier, often only
-        # 5-10 dB below it per bin: on the live station 91.3's upper block showed as '91.4 off-plan' (6.4 dB weaker)
+        # 5-10 dB below it per bin: an upper block otherwise shows as a separate signal a tenth away, off-plan
         near = next((s for s in groups if abs(s["channel_mhz"] - centre) <= 0.12 or
                      (abs(s["channel_mhz"] - centre) <= 0.25 and p["snr_db"] <= s["snr_db"] - 10.0) or
                      (HD_SIDEBAND_MHZ[0] <= abs(s["channel_mhz"] - centre) <= HD_SIDEBAND_MHZ[1]
@@ -1219,7 +1218,7 @@ def _fm_channel_fields(p, centre, coarse, known):
                  probable_allocation=f"FM broadcast station {ch:.1f} MHz, \"{st['name']}\" (RDS name decoded)")
     elif st and st.get("on_channel") is not False and _unheard_state(st):
         # checked, nothing readable: not heard, or too weak here. It stays a station channel: a weak station's
-        # sweep centre wanders (review: the sweep's own plan check turned such rows into 'off-plan' flags);
+        # sweep centre wanders (the sweep's own plan check would turn such rows into 'off-plan' flags);
         # a transmitter remembered off the channels keeps its off-channel label below
         state, epoch, when = _unheard_state(st)
         p.update(on_standard_fm_channel=True, checked=state, checked_epoch=epoch,
@@ -1283,8 +1282,8 @@ _CANON: dict = {}            # alias -> the registered name (the gates look tool
 
 
 def _canonical(name) -> str:
-    """'start_capture' -> 'start_background_watchdog': the name a tool was registered under (review,
-    v4.9.5: the user-asked gate and the argument fixes missed calls made through an alias)."""
+    """'start_capture' -> 'start_background_watchdog': the name a tool was registered under (the
+    user-asked gate and the argument fixes must not miss calls made through an alias)."""
     return _CANON.get(str(name), str(name))
 
 # Small local models often invent argument names; map the common ones.

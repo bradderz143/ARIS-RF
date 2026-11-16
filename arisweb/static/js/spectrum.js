@@ -821,7 +821,7 @@ function specPeaks(){
   const fresh = unnamed.filter(m => !m.checked || m.checked === 'rds_weak'
                                     || (['no_name', 'not_heard', 'too_weak'].includes(m.checked) && (m.checked_epoch || 0) < day));
   // Name all reads the channels the list shows, so it is offered only where the sweep can place a station on its
-  // channel (a fine step): a coarse sweep lists 92.1 as 92.2, and reading that would call a station "not FM"
+  // channel (a fine step): a coarse sweep lists 99.1 as 99.2, and reading that would call a station "not FM"
   if (unnamed.length && j.fm_plan_checked){
     const row = el('div', 'name-row');
     const b = el('button', 'btn-ghost', SP.naming ? 'Naming stations...' : (fresh.length ?
@@ -1139,7 +1139,7 @@ function specMarkChecked(list){
       m.checked = x.state; if (x.band) m.band = x.band; m.checked_epoch = x.epoch || (Date.now() / 1000);   // (now: Name all)
       if (x.state === 'off_channel'){ m.flag = true; m.kind = 'fm_offplan'; if (x.carrier_mhz) m.mhz = Number(x.carrier_mhz); }
       else if (x.state === 'no_name' || x.state === 'rds_weak' || x.state === 'hd_sideband'){ m.flag = false; m.kind = 'fm'; }
-      // not heard / too weak (v4.9.3): remembered with the time, offered to Name all again after a day
+      // not heard / too weak: remembered with the time, offered to Name all again after a day
       else if (x.state === 'not_heard' || x.state === 'too_weak'){ m.kind = 'fm'; if (!x.band) m.band = 'Checked: ' + (x.state === 'too_weak' ? 'too weak here to read' : 'not heard') + ' in the last check'; }
     });
   });

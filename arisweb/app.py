@@ -118,7 +118,7 @@ def chat_send():
     return jsonify({"ok": True})
 
 
-# Chat requests an extra account may not make: the ones that delete or change the station's set-up. A first line
+# Chat requests an extra account may not make: the ones that delete or change the set-up. A first line
 # only; the console enforces the role on every tool and command (engine _ADMIN_TOOLS, _ADMIN_COMMANDS).
 _ADMIN_CHAT_RX = re.compile(r"^/(?:cleanup|clear-signals|setup|patrol)\b|\bclear\s+(?:the\s+)?(?:data|logs|signals)\b|"
                             r"\b(?:run|do|start|redo|re-?run)\s+(?:the\s+|a\s+)?(?:full\s+|auto\s+)?set\s?-?up\b|"
@@ -244,7 +244,7 @@ def main() -> None:
         BRIDGE["ai"]._add("ai", "Reset Scanner restarted the web server to free a dongle that a stuck task held. "
                                 "The dongles are free again.")
     resumed = jobs.resume()          # captures run in this process from now on (after the chat, so it sees the notice)
-    wifi.start_watch()               # v4.13.0: Wi-Fi history and notices also when no page is open
+    wifi.start_watch()               # Wi-Fi history and notices also when no page is open
     atexit.register(lambda: stop_child(BRIDGE["ai"]))
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     print(f"ARIS v{version()} GUI ready. Open one of these in a browser:")

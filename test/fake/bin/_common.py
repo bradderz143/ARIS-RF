@@ -23,13 +23,13 @@ def opt(args, flag, default=None):
 def listing():
     """The dongles rtl_test lists: the simulated station's three, plus FAKE_EXTRA, minus FAKE_MISSING, plus
     FAKE_DUP (a second dongle with a serial already listed)."""
-    devs = ["00001001", "00003003", "00004004"] + [x for x in os.environ.get("FAKE_EXTRA", "").split(",") if x]
+    devs = ["00017350", "00026410", "00035720"] + [x for x in os.environ.get("FAKE_EXTRA", "").split(",") if x]
     miss = [x for x in os.environ.get("FAKE_MISSING", "").split(",") if x]
     devs = [d for d in devs if d not in miss]
     return devs + [x for x in os.environ.get("FAKE_DUP", "").split(",") if x]
 def resolve_dev(dev, devs=None):
     """librtlsdr's verbose_device_search (convenience.c), which every rtl_* tool but rtl_433 uses for -d: the
-    string is first read with strtol(s, 0) (a leading 0 means octal: '00001001' is 513, '00000001' is 1) and, when
+    string is first read with strtol(s, 0) (a leading 0 means octal: '00017350' is 7912, '00000001' is 1) and, when
     all of it parsed and the number is below the device count, it is a device INDEX; else the exact serial, then
     a serial starting with it, then one ending with it. Returns (index, serial) or (None, None)."""
     devs = listing() if devs is None else devs
@@ -49,7 +49,7 @@ def resolve_dev(dev, devs=None):
     return None, None
 def soapy_as_rtl(args):
     """rx_tools arguments -> the simulated rtl_* tool's: "-d driver=X,serial=Y" names the receiver FAKE_SOAPY lists
-    as X:Y, which hears like the dongle FAKE_SOAPY_AS (default 00004004); rx_sdr's "-F CU8" is dropped (CU8 is what
+    as X:Y, which hears like the dongle FAKE_SOAPY_AS (default 00035720); rx_sdr's "-F CU8" is dropped (CU8 is what
     rtl_sdr writes). An unknown receiver exits like rx_sdr does."""
     out, i = [], 0
     listed = [x.split(":", 1) for x in os.environ.get("FAKE_SOAPY", "").split(",") if ":" in x]
@@ -60,7 +60,7 @@ def soapy_as_rtl(args):
             if not any(kv.get("driver") == d and kv.get("serial", s) == s for d, s in listed):
                 print(f"SoapySDR::Device::make() no match for {args[i + 1]}", file=sys.stderr)
                 sys.exit(1)
-            out += ["-d", os.environ.get("FAKE_SOAPY_AS", "00004004")]
+            out += ["-d", os.environ.get("FAKE_SOAPY_AS", "00035720")]
             i += 2
             continue
         if a == "-F" and i + 1 < len(args) and args[i + 1].upper() == "CU8":
@@ -75,7 +75,7 @@ def band_of(f_hz):
     return "fm" if f_hz < 300e6 else ("433" if f_hz < 700e6 else ("915" if f_hz < 1000e6 else "1090"))
 def _distance_db(dev, f_hz):
     """Room simulation for locate tests: FAKE_SRC_POS='433.92:7:2' (transmitter at x=7 m, y=2 m) and
-    FAKE_NODE_POS='00001001:1:1;00003003:9:1' (antenna positions). Path loss exponent 2.7, 0 dB at 1 m."""
+    FAKE_NODE_POS='00017350:1:1;00026410:9:1' (antenna positions). Path loss exponent 2.7, 0 dB at 1 m."""
     import math
     src = [s.split(":") for s in os.environ.get("FAKE_SRC_POS", "").split(",") if s.strip()]
     pos = dict((p.split(":")[0], p.split(":")[1:]) for p in os.environ.get("FAKE_NODE_POS", "").split(";")
@@ -90,7 +90,7 @@ def _distance_db(dev, f_hz):
 
 def atten(dev, f_hz):
     """dB added to a signal's strength on this dongle (its antenna), or None if it cannot hear it at all.
-    FAKE_ANT='00001001:fm=0,433=-10;00003003:433=0,915=-5'. Legacy FAKE_ANTENNA='00001001,00003003'."""
+    FAKE_ANT='00017350:fm=0,433=-10;00026410:433=0,915=-5'. Legacy FAKE_ANTENNA='00017350,00026410'."""
     a = _atten_ant(dev, f_hz)
     return None if a is None else a + _distance_db(dev, f_hz)
 
@@ -114,7 +114,7 @@ def _atten_ant(dev, f_hz):
 
 
 def sigint_hang(before=None, sigs=("SIGINT", "SIGTERM")):
-    """FAKE_SIGINT_HANG=<seconds>: a stop that hangs, like librtlsdr's async cancel on the real PC (2026-11-02:
+    """FAKE_SIGINT_HANG=<seconds>: a stop that hangs, like librtlsdr's async cancel can (seen on real hardware:
     `timeout -s INT -k 3 5 rtl_sdr ...` stopped writing at Ctrl+C but was still running 3 s later; SIGKILL, exit
     137). On SIGINT or SIGTERM (the rtl-sdr tools handle both the same way) the tool stops sending anything, then
     exits only after that many seconds; 'never' (or 'inf'): only SIGKILL ends it. before() runs first (what the

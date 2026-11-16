@@ -1,4 +1,4 @@
-"""Phone-width screenshots of the v4.8.8 Activity tab: the "On disk" line with the Clear logs button, and the tab
+"""Phone-width screenshots of the Activity tab: the "On disk" line with the Clear logs button, and the tab
 after Clear logs while a capture keeps running. Needs serve.py running.  python3 shot48.py [port] [outdir]"""
 import asyncio
 import os
@@ -31,12 +31,12 @@ async def main():
         await pg.wait_for_selector("#act-clear-logs", timeout=30000)
         await pg.wait_for_selector(".act-row:has-text('RUN')", timeout=30000)
         await pg.wait_for_timeout(300)
-        await pg.screenshot(path=f"{OUT}/v488_activity_disk.png", full_page=False)
+        await pg.screenshot(path=f"{OUT}/activity_disk.png", full_page=False)
         await pg.click("#act-clear-logs")
         await pg.wait_for_selector(".infobox:has-text('Logs cleared')", timeout=30000)
         await pg.wait_for_selector(".act-row:has-text('RUN')", timeout=30000)
         await pg.wait_for_timeout(300)
-        await pg.screenshot(path=f"{OUT}/v488_activity_cleared.png", full_page=False)
+        await pg.screenshot(path=f"{OUT}/activity_cleared.png", full_page=False)
         await pg.evaluate("apiGet('/api/activity').then(a => Promise.all((a.watchdog.watchdogs_running || [])"
                           ".map(x => post('/api/capture/stop', {serial: x.serial}))))")
         print("page errors:", errors or "none")

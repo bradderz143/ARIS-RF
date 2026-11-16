@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# ARIS Wi-Fi scan helper installer (v4.10.0). Run as root:
+# ARIS Wi-Fi scan helper installer. Run as root:
 #   bash deploy/aris-wifi.sh --iface NAME             dry run: checks and the plan, changes nothing
 #   bash deploy/aris-wifi.sh --iface NAME --apply     install and start the helper
 #   bash deploy/aris-wifi.sh --rollback               stop and remove it
 # What it does: installs one small systemd unit (aris-wifi.service) that runs `iw dev NAME scan passive` every minute
 # (it listens only: no probe requests, nothing is sent) and writes the result to /run/aris-wifi/scan.txt, which the
 # ARIS web server reads for the Wi-Fi view of the Devices tab. The unit runs as an unprivileged dynamic user with the
-# single capability CAP_NET_ADMIN; the main ARIS service is not changed. Use the USB adapter, NOT the interface this PC
-# is connected through: the dry run refuses an interface that has a connection. Nothing is deleted.
+# single capability CAP_NET_ADMIN; the main ARIS service is not changed. Use a second Wi-Fi adapter (for example a USB
+# one), NOT the interface this computer is connected through: the dry run refuses an interface that has a
+# connection. Nothing is deleted.
 set -euo pipefail
 MODE=dry; IFACE=""
 while [[ $# -gt 0 ]]; do
@@ -29,11 +30,11 @@ command -v iw >/dev/null && ok "iw is installed" || bad "iw is not installed (su
 [[ -f $SRC/aris-wifi-scan.sh && -f $SRC/aris-wifi.service ]] && ok "the helper files are in $SRC" \
   || bad "the helper files are not in $SRC: update ARIS first (sudo bash /opt/aris/deploy/update.sh)"
 if [[ -z $IFACE ]]; then
-  bad "no interface given. Wi-Fi interfaces here: $(iw dev 2>/dev/null | awk '$1=="Interface"{print $2}' | tr '\n' ' ')(use --iface NAME with the USB adapter)"
+  bad "no interface given. Wi-Fi interfaces here: $(iw dev 2>/dev/null | awk '$1=="Interface"{print $2}' | tr '\n' ' ')(use --iface NAME with a spare adapter)"
 else
   if iw dev "$IFACE" info >/dev/null 2>&1; then ok "interface $IFACE exists"; else bad "interface $IFACE not found (iw dev lists them)"; fi
   if iw dev "$IFACE" link 2>/dev/null | grep -q "^Connected to"; then
-    bad "$IFACE is connected to a network: use another adapter, so this PC's own connection is not disturbed"
+    bad "$IFACE is connected to a network: use another adapter, so this computer's own connection is not disturbed"
   else ok "$IFACE has no connection of its own"; fi
 fi
 systemctl is-active --quiet aris.service && ok "the aris service runs (it will read /run/aris-wifi/scan.txt)" || bad "the aris service is not running"

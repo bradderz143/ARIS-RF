@@ -18,7 +18,7 @@ and through `aris` it can:
   - aris.notice(text)   a message in the chat;
   - aris.log, aris.data_dir, aris.version, aris.radios (arislib.radios), and aris.engine (everything else, for
     plug-ins that know what they are doing).
-A plug-in runs with the station's own rights: install only plug-ins you have read. One that fails to load is
+A plug-in runs with ARIS's own rights: install only plug-ins you have read. One that fails to load is
 skipped and listed with its error (/status, `/plugins`); it never stops ARIS from starting.
 """
 

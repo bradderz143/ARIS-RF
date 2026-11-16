@@ -72,12 +72,12 @@ class Flow(unittest.TestCase):
         self.fail(f"no reply containing {until!r} to {text!r}; got {ai}")
 
     def test_1_capture_reports_by_itself(self):
-        ai = self.chat("/capture 96.9", "Capturing 96.9 MHz")
-        ai = self.chat("/captures", "96.9", limit=5) if not any("finished" in t for t in ai) else ai
+        ai = self.chat("/capture 97.1", "Capturing 97.1 MHz")
+        ai = self.chat("/captures", "97.1", limit=5) if not any("finished" in t for t in ai) else ai
         t0 = time.time()
         while time.time() - t0 < 60:                       # the result arrives as its own chat message
             msgs = [m["text"] for m in self.get("/api/chat_state?seq=-1")["messages"] if m["role"] == "ai"]
-            done = [t for t in msgs if t.startswith("Capture on 96.9 MHz")]
+            done = [t for t in msgs if t.startswith("Capture on 97.1 MHz")]
             if done:
                 break
             time.sleep(0.5)

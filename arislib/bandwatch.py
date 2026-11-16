@@ -38,7 +38,7 @@ class BurstDetector:
     stands `thresh_db` over that bin's noise floor (the bin's median, followed slowly, so a steady carrier becomes part
     of the floor and is never a "burst"). Active cells next to each other in frequency, and less than `gap_s` apart in
     time, belong to one burst. Only the flat part of the capture (`edge` of the band edge) is used. The bins next to
-    0 Hz (the receiver's own DC spike) are used with a threshold `dc_extra_db` higher: v4.8.6 left them out, a 14 kHz
+    0 Hz (the receiver's own DC spike) are used with a threshold `dc_extra_db` higher: leaving them out made a 14 kHz
     blind spot right where the 433 band's devices crowd (433.863-433.877 at its tuning of 433.87)."""
 
     DC_EXTRA_DB = 6.0
@@ -117,10 +117,10 @@ class BurstDetector:
         act = (S > self.floor * self.kbin) & self.use
         # The floor follows slowly and never jumps up with a burst-filled block. Where a burst is on, it does not
         # rise at all: a remote held down fills its bins' median, and a floor that rose 3 dB per block cut it off
-        # after 3 blocks (0.75 s, found on the real PC). A signal on for longer than max_s is a carrier: _close ends
+        # after 3 blocks (0.75 s). A signal on for longer than max_s is a carrier: _close ends
         # it, mutes its bins for the rest of the block and has them join the floor at the next one (`_absorb`).
         # It falls at once: a burst can only raise a block's median, so a lower median is the noise. Falling 15% per
-        # block left a channel deaf for seconds after a carrier or a held remote ended (v4.8.6: a remote pressed again
+        # block left a channel deaf for seconds after a carrier or a held remote ended (a remote pressed again
         # 0.3-2 s after a 3.5 s press was not heard, nor 5 s after a 40 dB carrier). Never below a quarter of the
         # band's own noise level in one block (a block of zeros must not make every bin a burst).
         # When the whole band falls at once (samples missing for a block, a gain step) it is not a burst ending:
@@ -169,9 +169,9 @@ class BurstDetector:
 
     def _close(self, now, force_long=False, final=False) -> list:
         """Ends the bursts that are over. Called for each active row (force_long: only signals on for longer than
-        max_s, carriers) and at the end of each block (every burst whose gap ran out). v4.8.6 also closed ended
-        bursts row by row: with any other signal on in the band, each FSK tone closed at its own row and the two
-        were never joined (one tyre-sensor burst logged as two, each cut to one tone)."""
+        max_s, carriers) and at the end of each block (every burst whose gap ran out). Closing ended bursts row by
+        row failed: with any other signal on in the band, each FSK tone closed at its own row and the two were never
+        joined (one tyre-sensor burst logged as two, each cut to one tone)."""
         closing, keep = [], []
         for b in self.open:
             ended = (not force_long) and b["last"] < now - self.gap
@@ -258,8 +258,8 @@ class BurstDetector:
 
     def _one_burst(self, a, b) -> bool:
         """Two bursts that are one FSK transmission's tones: they start and end together (within JOIN_FRAMES) and
-        lie within TONES_HZ. Two devices that only overlap in time are not (v4.8.6 joined any pair sharing half the
-        shorter one's time: two remotes 120 kHz apart became one burst between them that neither decoder read)."""
+        lie within TONES_HZ. Two devices that only overlap in time are not (joining any pair sharing half the
+        shorter one's time failed: two remotes 120 kHz apart became one burst between them that neither decoder read)."""
         step = self.fs / self.nfft
         if a is b or abs(a["first"] - b["first"]) > self.JOIN_FRAMES or abs(a["last"] - b["last"]) > self.JOIN_FRAMES:
             return False
@@ -267,7 +267,7 @@ class BurstDetector:
         return (max(ahi, bhi) - min(alo, blo) - 4) * step <= self.TONES_HZ
 
     def _join_tones(self, closing) -> list:
-        """An FSK burst shows up as one burst per tone (on the real PC: 433.888 and 433.955 MHz at the same moment,
+        """An FSK burst shows up as one burst per tone (e.g. tones about 70 kHz apart at the same moment,
         each 14 kHz wide). Bursts closing together that are one transmission (_one_burst) are joined, so it is
         decoded once and with both tones."""
         out = []

@@ -14,7 +14,7 @@ print("Found Rafael Micro R820T tuner")
 if not devs:
     print("No devices found!"); sys.exit(0)
 i = 0
-for drv, ser in [("rtlsdr", "00001001")] + devs:
+for drv, ser in [("rtlsdr", "00017350")] + devs:
     print(f"Found device {i}")
     print(f"  driver = {drv}")
     print(f"  label = {drv.upper()} #{i} {ser}")

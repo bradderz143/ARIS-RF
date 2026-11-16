@@ -794,7 +794,7 @@ def check_system():
                      + ". Run /setup to calibrate it (gains, frequency correction, baselines).")
     elif not all(r["set_up"] for r in dongles.values() if r.get("state") != "missing" or _generic_serial(r["serial"])):
         notes.append("Some dongles have not been set up yet: run /setup.")
-    for x in here:                                   # every time, not only when it was just added (review)
+    for x in here:                                   # every time, not only when it was just added
         if _generic_serial(x):
             notes.append(_factory_serial_note(x))
     problems += [f"decoder {n}: {r['detail']}" for n, r in dec.items() if r.get("ok") is False]

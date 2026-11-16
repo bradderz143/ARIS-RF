@@ -15,7 +15,7 @@ bp = Blueprint("devices", __name__)
 def api_devices():
     """The device history, rows sorted by last seen, with the totals (devices, sets, packets) and the grouping
     rule in words. A row is one device (model + ID: title, seen_line, reading_words, frequencies, dongles) or a
-    set ("Citroen car: 4 tyre sensors": sensors of one make heard within 10 s of each other on 2 or more
+    set ("BMW car: 4 tyre sensors": sensors of one make heard within 10 s of each other on 2 or more
     occasions; its members are listed under it). ?have=<tag> from the last reply answers {"unchanged": true}
     when nothing was decoded or forgotten since."""
     try:

@@ -21,7 +21,7 @@ Install the rtl-sdr tools (`apt install rtl-sdr`; its udev rule gives the group 
 
 - **Give every dongle its own serial.** New dongles all carry `00000001`, and the rtl-sdr tools read a number they
   can parse as a device *index*, so two such dongles cannot be told apart and the wrong one would be opened. With only
-  the new dongle plugged in: `rtl_eeprom -d 0 -s 00002002` (any 8 digits that no other dongle uses), unplug, replug.
+  the new dongle plugged in: `rtl_eeprom -d 0 -s 00051234` (any 8 digits that no other dongle uses), unplug, replug.
   ARIS lists a dongle with a factory serial but never opens it until it has its own.
 - Three or more dongles need a **powered USB hub**; on a plain hub they lose samples.
 - Covers about 24-1766 MHz (R820T / R828D tuners).

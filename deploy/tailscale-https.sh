@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# ARIS over HTTPS through Tailscale (v4.9.7). Run as root:
+# ARIS over HTTPS through Tailscale. Run as root:
 #   bash deploy/tailscale-https.sh            dry run: checks and the plan, changes nothing
-#   bash deploy/tailscale-https.sh --apply    HTTPS front + ARIS listens on this PC only
+#   bash deploy/tailscale-https.sh --apply    HTTPS front + ARIS listens on this computer only
 #   bash deploy/tailscale-https.sh --rollback back to plain HTTP on every address
 # What it does: `tailscale serve` takes the port 443 of this machine's tailnet name (a real certificate, no browser
 # warning, only devices in the tailnet can reach it: not Funnel, not the internet) and passes requests to ARIS on
 # 127.0.0.1:5000; a systemd drop-in makes ARIS listen on 127.0.0.1 only, so the plain-HTTP port is no longer open
-# on the Wi-Fi, the hotspot or Tailscale. Other devices on your tailnet (a phone, a laptop) then use https://<this machine's name>.<tailnet>.ts.net
+# on the local network or the tailnet. Other devices on your tailnet (a phone, a laptop) then use https://<this machine's name>.<tailnet>.ts.net
 # (it needs Tailscale switched on). Nothing is deleted. Undoes itself when the HTTPS address does not answer.
 set -euo pipefail
 MODE=dry; [[ ${1:-} == --apply ]] && MODE=apply; [[ ${1:-} == --rollback ]] && MODE=rollback
@@ -24,8 +24,8 @@ fi
 echo "1. Checks"
 command -v tailscale >/dev/null && ok "tailscale is installed" || bad "tailscale is not installed"
 systemctl is-active --quiet aris.service && ok "the aris service runs" || bad "the aris service is not running"
-grep -qs 'def via_proxy' /opt/aris/arisweb/auth.py && ok "the installed ARIS knows it sits behind a proxy (v4.9.7 or later)" \
-  || bad "the installed ARIS is older than v4.9.7: its login lockout and capture endpoint would treat every remote browser as this computer. Update first: sudo bash /opt/aris/deploy/update.sh"
+grep -qs 'def via_proxy' /opt/aris/arisweb/auth.py && ok "the installed ARIS knows it sits behind a proxy" \
+  || bad "the installed ARIS is too old to sit behind a proxy: its login lockout and capture endpoint would treat every remote browser as this computer. Update first: sudo bash /opt/aris/deploy/update.sh"
 NAME=""; CERTS=""
 if command -v tailscale >/dev/null; then
   read -r NAME CERTS < <(tailscale status --json 2>/dev/null | python3 -c '

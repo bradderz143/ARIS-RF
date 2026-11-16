@@ -215,7 +215,7 @@ async def robust(pg):
             m = await draw(pg, k)
             if not m.get("card") or not m["tag"] or m["sideways"] or m["wide"] or m["rep"] != (key != "report_v"):
                 bad(f"1a with {key} {how}: {m}")
-    k = {"freq_mhz": 172.8364, "report_v": 1}               # nothing but the mark that a report exists
+    k = {"freq_mhz": 172.8231, "report_v": 1}               # nothing but the mark that a report exists
     m = await draw(pg, k)
     if not m.get("card") or not m["tag"]:
         bad(f"a card with only report_v: {m}")

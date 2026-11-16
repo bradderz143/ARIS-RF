@@ -79,8 +79,8 @@ def hop_bins(hop):
 
 
 def old_bias_hz(lower_hz, upper_hz, max_bin_hz, crop=0.0):
-    """How far ARIS before v4.7.2 placed this sweep's bins from their true frequencies (old minus true, Hz): it read
-    bin j as Hz low + j * step. The same for every hop of one sweep."""
+    """How far older versions of ARIS placed this sweep's bins from their true frequencies (old minus true, Hz): they
+    read bin j as Hz low + j * step. The same for every hop of one sweep."""
     hops = plan(lower_hz, upper_hz, max_bin_hz, crop)
     if not hops:
         return 0.0

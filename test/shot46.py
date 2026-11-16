@@ -9,7 +9,7 @@ PORT = sys.argv[1] if len(sys.argv) > 1 else "5097"
 OUT = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("ARIS_TEST_DIR", ".")
 B = f"http://127.0.0.1:{PORT}"
 PW = os.environ.get("ARIS_TEST_PASSWORD", "test-password-123")
-POS = {"00001001": (1, 1), "00003003": (9, 1), "00004004": (5, 7)}
+POS = {"00017350": (1, 1), "00026410": (9, 1), "00035720": (5, 7)}
 
 
 async def main():
@@ -31,14 +31,14 @@ async def main():
         await pg.wait_for_function("SP.data !== null", timeout=60000)
         await pg.click("text=Sweep once"); await pg.wait_for_timeout(300)
         await pg.wait_for_function("!SP.busy", timeout=60000)
-        await pg.screenshot(path=f"{OUT}/v46_spectrum_wide.png", full_page=True)
+        await pg.screenshot(path=f"{OUT}/spectrum_wide.png", full_page=True)
         await pg.click("#sp-scale button[data-v=rel]")
-        await pg.screenshot(path=f"{OUT}/v46_spectrum_wide_rel.png", full_page=True)
+        await pg.screenshot(path=f"{OUT}/spectrum_wide_rel.png", full_page=True)
         await pg.click("#sp-presets .chip[data-id=fm]")
         await pg.click("text=Sweep once")
         await pg.wait_for_function("SP.data !== null && !SP.busy", timeout=60000)
         await pg.click(".pk >> nth=0"); await pg.click(".pk >> nth=1")
-        await pg.screenshot(path=f"{OUT}/v46_spectrum_fm.png", full_page=True)
+        await pg.screenshot(path=f"{OUT}/spectrum_fm.png", full_page=True)
         # Map: place the antennas through the API, then measure from the page
         await pg.click("#tab-map")
         await pg.wait_for_function("MAP.st !== null")
@@ -50,14 +50,14 @@ async def main():
             await mapLoad(); mapMode('place');
         }""", POS)
         await pg.wait_for_timeout(300)
-        await pg.screenshot(path=f"{OUT}/v46_map_place.png", full_page=True)
+        await pg.screenshot(path=f"{OUT}/map_place.png", full_page=True)
         await pg.click("#map-modes .chip[data-m=locate]")
         await pg.fill("#mp-freq", "433.92")
         await pg.select_option("#mp-dwell", "3")
         await pg.click("#map-panel button.btn:text-is('Measure')")
         await pg.wait_for_function("MAP.result !== null && !MAP.busy", timeout=90000)
         await pg.wait_for_timeout(300)
-        await pg.screenshot(path=f"{OUT}/v46_map_locate.png", full_page=True)
+        await pg.screenshot(path=f"{OUT}/map_locate.png", full_page=True)
         print("page errors:", errors or "none")
         await br.close()
 

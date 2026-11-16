@@ -7,9 +7,9 @@ parts before this one are available here without imports, and everything defined
 from __future__ import annotations
 
 # ============================================================================
-# SAVED SIGNALS (SQLite): heuristic fingerprint + log of every investigated signal
-# (formerly aris_urh.py). The "candidate ID" fields are guesses made by slicing the first bytes of a
-# captured frame; random noise produces them too. Only trust them when a real decoder confirmed it.
+# SAVED SIGNALS (SQLite): heuristic fingerprint + log of every investigated signal.
+# The "candidate ID" fields of older rows were guesses made by slicing the first bytes of a captured frame;
+# random noise produces them too. Only trust them when a real decoder confirmed it.
 # ============================================================================
 _DB_LOCK = threading.Lock()
 PROTOCOL_SIGNATURES = [
@@ -34,20 +34,12 @@ _DB_READY: set = set()
 def init_db():
     if DB_PATH in _DB_READY and os.path.exists(DB_PATH):
         return
-    if not os.path.exists(DB_PATH):
-        for old in OLD_DB_PATHS:
-            if os.path.exists(old):
-                try:
-                    shutil.copy2(old, DB_PATH)            # carry the old Saved Signals list over once
-                except OSError:
-                    pass
-                break
     conn = sqlite3.connect(DB_PATH, timeout=10)
     try:
         conn.execute("CREATE TABLE IF NOT EXISTS peaks (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp TEXT, "
                      "frequency_mhz REAL, power_db REAL, snr_db REAL, bw_khz REAL, ook_hex TEXT, fsk_hex TEXT, "
                      "multimon_frames TEXT, urh_analysis TEXT, notes TEXT)")
-        # rows from before v4.9.4 carried the demodulated bursts as hex (a remote's code): wiped once, for good
+        # rows from older versions carried the demodulated bursts as hex (a remote's code): wiped once, for good
         conn.execute("UPDATE peaks SET ook_hex = NULL, fsk_hex = NULL WHERE ook_hex IS NOT NULL OR fsk_hex IS NOT NULL")
         for rid, card in conn.execute("SELECT id, urh_analysis FROM peaks WHERE urh_analysis LIKE '%Candidate ID%'").fetchall():
             kept = [ln for ln in str(card or "").split("\n")
@@ -61,8 +53,8 @@ def init_db():
 
 def _fingerprint(freq, mod_type, sync_word=None, allocation=""):
     """Band-plan device guess plus, in the sensor bands only, a radio-chip sync-word match. The demodulated bits
-    never reach this (v4.9.4): before, the card showed a 'Candidate ID' from the first bytes of the burst, which
-    for a fixed-code remote is the code."""
+    never reach this: a 'Candidate ID' from the first bytes of the burst would be, for a fixed-code remote, the
+    code."""
     mod_type = mod_type or "CARRIER"
     if not allocation and _in_fm_band(freq):
         allocation = "FM broadcast band (88-108 MHz)"
@@ -156,7 +148,7 @@ def _log_signal(peak_info, out, serial):
                 conn.execute("INSERT INTO peaks (timestamp, frequency_mhz, power_db, snr_db, bw_khz, ook_hex, fsk_hex, "
                              "multimon_frames, urh_analysis, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                              (_now(), freq, float(peak_info.get("peak_db") or 0.0), float(out.get("snr_db") or 0.0),
-                              float(peak_info.get("occupied_bw_khz") or 0.0), None, None,     # (no bits, v4.9.4)
+                              float(peak_info.get("occupied_bw_khz") or 0.0), None, None,     # (no bits)
                               json.dumps(mm)[:3000], text, f"{_short(serial)} | {verdict}"))
                 # the one file in the data folder that grew for ever (patrol investigates HIGH findings every hour)
                 conn.execute("DELETE FROM peaks WHERE id NOT IN (SELECT id FROM peaks ORDER BY id DESC LIMIT ?)",
@@ -175,8 +167,8 @@ _BITS_KEYS = ("native_bitstream_extractor", "ook_ask_binary_prefix", "ook_ask_he
 
 
 def _scrub_last_report() -> bool:
-    """last_investigation.json written before v4.9.4 holds the demodulated bursts as hex (a remote's code) until
-    the next investigation overwrites it: dropped at start (v4.9.5 review). True when it was rewritten."""
+    """last_investigation.json written by an older version holds the demodulated bursts as hex (a remote's
+    code) until the next investigation overwrites it: dropped at start. True when it was rewritten."""
     try:
         text = LAST_REPORT.read_text()
     except OSError:
@@ -587,7 +579,7 @@ def stop_everything(wait_s: float = 10.0) -> dict:
     cfg = _load_config()
     free, busy, stuck, missing = [], [], False, []
     plugged = {str(d.get("serial")) for d in _list_devices()}    # lists them without opening any (rtl_test -d 99);
-    for s in list(DONGLE_NAMES):                                  # v4.8.5 called an unplugged dongle free
+    for s in list(DONGLE_NAMES):                                  # an unplugged dongle is never called free
         d = _dongle_cfg(s, cfg)
         if d.get("present") is False or (plugged and s not in plugged):
             missing.append(_short(s))
@@ -621,7 +613,7 @@ def _earlier_checks(freq, within_mhz=0.06, hours=6.0):
 
 
 def _cut_at_word(text, n) -> str:
-    """text cut to about n characters at a word, marked with '...' when cut (v4.8.6 cut mid-word: '2-bi')."""
+    """text cut to about n characters at a word, marked with '...' when cut (never mid-word: '2-bi')."""
     t = str(text or "")
     if len(t) <= n:
         return t
@@ -662,7 +654,7 @@ WATCH_END_S = 1.5                # a look must be over this long before the deco
 
 
 def _text_epoch(ts):
-    """A saved time ('2026-11-14 01:24:07', local time) as an epoch, or None."""
+    """A saved time ('2026-03-14 12:00:00', local time) as an epoch, or None."""
     try:
         return time.mktime(time.strptime(str(ts), "%Y-%m-%d %H:%M:%S"))
     except (TypeError, ValueError, OverflowError):
@@ -957,7 +949,7 @@ _RECEPTION_KEYS = {"t", "time", "aris_serial", "aris_heard_by", "snr", "rssi", "
 
 def _history_once(per_dongle: dict) -> list:
     """The packets an investigation decoded, once each, for the device history. The dongles ran at the same time,
-    so (v4.8.8 before this) every transmission reached the history once per dongle: 2-3 x the packets, and the
+    so without this every transmission would reach the history once per dongle: 2-3 x the packets, and the
     second dongle's copy, a second earlier by rtl_433's clock, counted as a new transmission. Copies with the same
     content from several dongles are one: the dongle that heard most of them gives the count, and the packet says
     which dongles heard it (aris_heard_by)."""
@@ -1319,7 +1311,7 @@ def _investigate(peak_info, serials, listen_s=None, timed=None, report=False):
                 table[ser]["error"] = str(r)[:140]
             else:
                 # rtl_adsb checks no checksums: only verified squitters show an aircraft is there (noise and short
-                # replies also come out as "messages", the real PC: "0 aircraft, 4 messages" saved as a decode)
+                # replies also come out as "messages": "0 aircraft, 4 messages" must not be saved as a decode)
                 table[ser].update(heard=bool(r.get("valid_messages")), adsb_messages=r.get("messages", 0),
                                   adsb_verified=r.get("valid_messages", 0), aircraft=r.get("aircraft_heard", 0))
         ok = [s for s in serials if table[s].get("adsb_verified")]

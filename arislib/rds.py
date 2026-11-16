@@ -208,7 +208,7 @@ def _groups(bits):
                 groups.append((g // 104, blk))
             g += 104
         # always move past this anchor: a pair near the end of the capture whose group cannot be read whole would
-        # otherwise send the search back to the same anchor for ever (v4.7.3 hung on real, noisy stations)
+        # otherwise send the search back to the same anchor for ever (an earlier version hung there on noisy stations)
         pos = max((lost if lost is not None else g) + 1, a + 1)
         ai = int(np.searchsorted(anchors, pos))
     return groups, exact, corrected
@@ -325,8 +325,7 @@ def decode(mpx, fs: float, min_groups: int = 2) -> dict:
         # three or more different names in one look: the station scrolls text through its name (a slogan, the song,
         # a word at a time). One piece of it is not the station's name: keep the text it showed instead, and a fixed
         # name only when one clearly comes back between the pieces. Two names count as a station rotating its name
-        # only when each comes back (v4.8.6 stored 'RUSH' / 'HOUR' and 'Grandes' / 'Yo Y La', each seen once, as
-        # names).
+        # only when each comes back (two words of a slogan, each seen once, are not names).
         cnt = sorted(names.values(), reverse=True) + [0.0]
         fixed = names.most_common(1)[0][0] if cnt[0] >= 2.0 and cnt[0] >= 2.0 * cnt[1] else None
         out["ps_scrolling"] = scrolling_text([nm for nm in names if nm != fixed], full=full)
@@ -351,9 +350,8 @@ def scrolling_text(parts, limit=40, full=()) -> str:
     """The pieces a scrolling name showed, in order, joined back into text: a piece that overlaps the end of the
     text so far (3 characters or more) continues it, otherwise it is the next word. After a piece that filled all
     8 characters (in `full`) the text goes straight on when the next piece starts with a small letter: coders that
-    cut the text into 8-character blocks split words there ('Alejandr' + 'o Sanz', shown as 'Alejandr o Sanz'
-    before). A capital starts a new word ('Iglesias' + 'Y Santos' + 'Bravos' is three words: the live station
-    showed 'IglesiasY SantosBravos' and 'Nada conLuis Miguel' for a while)."""
+    cut the text into 8-character blocks split words there ('Sunflowe' + 'r Hour', not 'Sunflowe r Hour'). A
+    capital starts a new word ('Thompson' + 'And Sons' + 'Tonight' is three words, not 'ThompsonAnd SonsTonight')."""
     text, prev = "", None
     for p in (x.strip() for x in parts):
         if not p or p in text:

@@ -608,7 +608,7 @@ def _fm(audio):
 
 
 class SecondLook(unittest.TestCase):
-    """What an independent review's experiments showed after the first build."""
+    """Edge cases of the look: folded signals, FSK levels, clicks and hum."""
 
     def test_a_filter_wider_than_the_samples_hold_gives_no_line(self):
         # two carriers 60 kHz apart round the frequency picked reach the 50 kS/s look folded to +-20 kHz: a line

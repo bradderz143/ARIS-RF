@@ -40,7 +40,7 @@ with open(path, "w") as f:
         for h in range(12):
             lo = 902e6 + h * 2.2e6
             vals = ", ".join(f"{random.uniform(-40, -20):.2f}" for _ in range(220))
-            f.write(f"2026-11-01, 10:00:{r:02d}, {lo:.0f}, {lo + 2.2e6:.0f}, 10000.00, 4096, {vals}\n")
+            f.write(f"2026-03-01, 10:00:{r:02d}, {lo:.0f}, {lo + 2.2e6:.0f}, 10000.00, 4096, {vals}\n")
 t("parse rtl_power CSV (30 rows x 2640 bins)", lambda: A._parse_rtl_power_csv(path))
 acc, hops = A._parse_rtl_power_csv(path)
 t("collapse to baseline grid", lambda: A._collapse(acc, 10000.0))
@@ -53,7 +53,7 @@ for band, (s, e) in {"433": (433.0, 435.0), "915": (902.0, 928.0), "fm": (88.0, 
         A._atomic_write_json(A.BASELINE_DIR / f"{s:g}-{e:g}MHz_{ser}.json", {
             "version": 6, "band": {"start_mhz": s, "stop_mhz": e}, "serial": ser, "grid_hz": 10000.0,
             "bins": {str(i): [round(v["mean"], 2), round(v["max"], 2), round(v["std"], 2)] for i, v in grid.items()}})
-t("find baseline (1 lookup, 9 files)", lambda: A._find_baseline(902.0, 928.0, "00003003"))
+t("find baseline (1 lookup, 9 files)", lambda: A._find_baseline(902.0, 928.0, "00026410"))
 t("patrol round baseline lookups (18)", lambda: [A._find_baseline(s, e, ser) for s, e in
                                                  ((433, 435), (902, 928), (88, 108)) for ser in A.DONGLE_NAMES
                                                  for _ in range(2)])
@@ -76,7 +76,7 @@ big_f = [24 + i * 0.01 for i in range(100000)]
 big_d = [random.uniform(-50, -40) for _ in big_f]
 t("spectrum pool 100000 points to 1600", lambda: S._pool(big_f, big_d, 1600))
 
-# v4.7: RDS station name from a 3 s look (256 kS/s MPX), rtl_433 output of a busy 60 s listen
+# RDS station name from a 3 s look (256 kS/s MPX), rtl_433 output of a busy 60 s listen
 from arislib import rds as R  # noqa: E402
 fs_mpx = 256000.0
 tt = np.arange(int(fs_mpx * 3.0)) / fs_mpx
@@ -91,7 +91,7 @@ pkg = ("Detected OOK package\t@0.1s\n" + '{"model" : "Acurite-Tower", "id" : 42,
 big = pkg * 600
 t("parse rtl_433 output (600 packages)", lambda: A._parse_rtl433(big))
 
-# v4.21: the Decode's report. A look's profile (per dongle and look: full for the first look, light for the watch
+# the Decode's report. A look's profile (per dongle and look: full for the first look, light for the watch
 # looks), the frequency history's lookups (5000 saved rows, 60 recent checks, 3 baselines), the report and the card.
 import sqlite3  # noqa: E402
 from arislib import siglook as SL, sigreport as SR  # noqa: E402

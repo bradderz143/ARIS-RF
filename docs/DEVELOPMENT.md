@@ -4,8 +4,10 @@
 
 ```
 bash test/run_all.sh            # everything, on simulated radios (no hardware needed), about 10 minutes
-bash test/run_all.sh --shots    # also screenshots at phone and desktop width (needs Playwright and Chromium)
+bash test/run_all.sh --shots    # also phone-width screenshots of the tabs (needs Playwright and Chromium)
 ```
+
+The README's screenshots come from `test/shot_readme.py` (its first lines say how to start the simulator for it).
 
 `test/fake/bin` has simulated `rtl_*` tools, `SoapySDRUtil` and rx_tools, `multimon-ng`, `atest` and a scripted
 Ollama (`test/fake/mods`). The simulated rtl_sdr streams real FM with real RDS, ISM bursts, band-edge roll-off and the
