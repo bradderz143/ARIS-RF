@@ -810,6 +810,60 @@ class Ladder(unittest.TestCase):
         f["dongles"][0]["looks"][2]["heard"] = False
         self.assertEqual(build(f)["headline"], "Aviation-band transmission: AM, on in 9 of 10 looks.")
 
+    def test_14_navigation_band(self):
+        # 108 to 117.975 MHz carries VOR and ILS localizer beacons everywhere: steady AM carriers, no voice
+        r = self.check(facts("11"), "nav", "medium", "HEARD",
+                       "Aeronautical navigation band: a steady AM carrier here is typical of a VOR or ILS beacon.")
+        self.assertEqual(r["sure"], "Medium confidence. Rests on: AM measured on Dongle 1; on in all 8 looks; a "
+                                    "frequency in the aeronautical navigation band. A pattern, not an identification.")
+        self.assertEqual(r["modulation"], "AM, measured on Dongle 1. Nothing is listened to or recorded.")
+        # a bare carrier fits too: the look tests AM from 300 Hz up, below a beacon's own tones; Low, it rests on less
+        f = facts("11")
+        set_mod(f, "none")
+        r = self.check(f, "nav", "low", "HEARD",
+                       "Aeronautical navigation band: a steady carrier here is typical of a VOR or ILS beacon.")
+        self.assertEqual(r["sure"], "Low confidence. Rests on: on in all 8 looks; a frequency in the aeronautical "
+                                    "navigation band. A pattern, not an identification.")
+        self.assertEqual(r["modulation"], "No modulation during the 3 s look: a bare carrier. A beacon's own tones, 30 "
+                                          "Hz, 90 and 150 Hz and 9960 Hz, lie outside the 300 to 3400 Hz the look "
+                                          "tests for AM.")
+        f = no_watch(facts("11", air=None))                                  # one look only: it says so
+        self.assertIn("on for the whole 3 s look", build(f)["sure"])
+        # what does not look like a beacon is not said to be one
+        f = facts("11", air={"looks": 8, "looks_heard": 3})
+        r = self.check(f, "air", "unknown", "HEARD", "AM transmission in the aeronautical navigation band, on in 3 "
+                                                     "of 8 looks.")
+        self.assertEqual(r["sure"], "Beacons there stay on, but this was not on in every look (a weak beacon can be "
+                                    "missed in a look). What sends it is not known.")
+        f = facts("11")
+        set_key(f, "bursts")
+        self.assertEqual(build(f)["sure"], "Beacons there stay on, but this was not steady during the look. What "
+                                           "sends it is not known.")
+        for kind in ("fm_voice", "tone"):
+            f = facts("11")
+            set_mod(f, kind, tone_hz=123.0)
+            r = self.check(f, "air", "unknown", "HEARD", "FM signal in the aeronautical navigation band, on in all "
+                                                         "8 looks.")
+            self.assertEqual(r["sure"], "Beacons there send AM, not FM, so it does not look like one. What sends it "
+                                        "is not known.")
+        f = facts("11")
+        set_mod(f, "fsk4")                                                   # data with no clear rate
+        self.check(f, "air", "unknown", "HEARD", "Modulated signal in the aeronautical navigation band, on in all 8 "
+                                                 "looks.")
+        # the edges: the band ends at 117.975 MHz, where aircraft voice begins; only the airband's own kind counts
+        for mhz, nav in ((108.05, True), (111.95, True), (117.95, True), (117.975, False), (118.1, False)):
+            r = build(facts("11", asked_mhz=mhz))
+            self.assertEqual(r["category"] == "nav", nav, mhz)
+            self.assertEqual("aircraft voice band" in r["sure"], not nav, mhz)
+        self.assertNotEqual(build(facts("11", band_kind="audio"))["category"], "nav")
+        # the frequency decides; the engine's own flag (the same range) only when there is no frequency
+        self.assertEqual(build(facts("11", asked_mhz=118.1, nav=True))["category"], "air")
+        self.assertEqual(build(facts("11", nav=False))["category"], "nav")
+        self.assertTrue(R._in_nav("air", None, True))
+        self.assertFalse(R._in_nav("air", None, None))
+        self.assertFalse(R._in_nav("audio", 113.35, True))
+        self.assertEqual((R.NAV_LO_MHZ, R.NAV_HI_MHZ), (108.0, 117.975))
+
     def test_15_free_running(self):
         f = no_watch(facts("1a"))
         set_slope(f, 300.0, 305.0, 295.0)
@@ -1162,6 +1216,16 @@ class NextStep(unittest.TestCase):
         self.assertEqual(n["reason"], "A voice channel. ARIS never records or decodes voice.")
         n = self.step(facts("9"), "none")
         self.assertEqual(n["reason"], "Aircraft voice is not decoded and never recorded.")
+        n = self.step(facts("11"), "none")                                   # a beacon: nothing to do, and no voice
+        self.assertEqual(n["reason"], "Navigation beacons carry no voice; nothing to do.")
+        f = facts("11")
+        set_mod(f, "none")
+        self.step(f, "none")
+        f = facts("11", listen_s=10, listened_s=10)                          # not "Watch it for 2 min": a beacon stays
+        self.step(f, "none")
+        # on the navigation band a transmission that came and went is waited for; aircraft voice is never named
+        n = self.step(facts("11", air={"looks": 8, "looks_heard": 3}), "capture", "Wait for a transmission")
+        self.assertNotIn("voice", n["reason"] + n["say"])
 
     def test_14_and_15_bursts_and_keying(self):
         n = self.step(facts("7"), "capture", "Capture until decoded")
@@ -1537,7 +1601,7 @@ class SecondLook(unittest.TestCase):
         self.assertNotIn("No saved check", " ".join(r["history_more"]))
 
     def test_the_pages_example_cards_are_what_the_rules_give(self):
-        """The eleven example cards in fixtures_decode_cards.json (the page's screenshots draw them, an engine test
+        """The twelve example cards in fixtures_decode_cards.json (the page's screenshots draw them, an engine test
         compares a real card's shape with them) come from the rules. After a change to a rule or a sentence, run
         python3 test/make_decode_fixtures.py and look at shot52's screenshots."""
         import make_decode_fixtures as M
@@ -1816,8 +1880,24 @@ class Words(unittest.TestCase):
         self.assertGreater(n, 1000)
         self.assertEqual(seen, {"decoder_failed", "device", "frame", "aircraft", "station", "doubtful", "own_clock",
                                 "near_clock", "nothing", "fm_offplan", "station_noname", "voice_channel",
-                                "data_pattern", "air", "free_running", "bursts", "keyed", "steady_fixed",
+                                "data_pattern", "air", "nav", "free_running", "bursts", "keyed", "steady_fixed",
                                 "steady_unknown", "modulated", "heard"})          # every rung of the ladder
+
+    def test_the_navigation_band_never_speaks_of_aircraft_voice(self):
+        n = 0
+        for name, f in grid():
+            asked = R._mhz(f.get("asked_mhz"))
+            if f.get("band_kind") != "air" or not asked or not R.NAV_LO_MHZ <= asked < R.NAV_HI_MHZ:
+                continue
+            n += 1
+            r = build(f)
+            nxt = r["next"]
+            for s in [r["headline"], r["sure"], nxt["reason"], nxt["say"]] + r["rests_on"] + r["against"]:
+                self.assertIsNone(re.search(r"voice", s.replace("carry no voice", ""), re.I), f"{name}: {s!r}")
+            for s in _words(r, None, R.text_lines(r)):
+                self.assertIsNone(re.search(r"aircraft voice|voice band|aviation band|AM voice", s, re.I),
+                                  f"{name}: {s!r}")
+        self.assertGreater(n, 50)
 
     def test_names_heard_over_the_air_are_quoted_or_cut(self):
         long = "A STATION NAME THAT GOES ON AND ON AND ON AND ON AND ON AND ON"
@@ -1926,7 +2006,7 @@ class Words(unittest.TestCase):
 
 
 class Examples(unittest.TestCase):
-    """The eleven example cards, as the page's fixtures and the engine's tests use them."""
+    """The twelve example cards, as the page's fixtures and the engine's tests use them."""
 
     def card(self, c):
         f = R.example_facts(c)
@@ -1934,8 +2014,8 @@ class Examples(unittest.TestCase):
         return f, r, R.card_fields(r, f["dongles"], f["strongest"], {"verdict": f["verdict"], "band": f["band_label"],
                                                                      "saved": f["evidence"] == "signal_present"})
 
-    def test_the_eleven_cases(self):
-        self.assertEqual(R.EXAMPLE_CASES, ("1a", "1b", "2", "3", "4", "5", "6", "7", "8", "9", "10"))
+    def test_the_twelve_cases(self):
+        self.assertEqual(R.EXAMPLE_CASES, ("1a", "1b", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"))
         want = {
             "1a": ("steady_unknown", "NOT IDENTIFIED", "NO EARLIER RECORD", "172.823 MHz", "unknown", "decode"),
             "1b": ("own_clock", "OWN CLOCK", "SEEN BEFORE", "172.800 MHz", "high", "decode"),
@@ -1947,7 +2027,8 @@ class Examples(unittest.TestCase):
             "7": ("bursts", "NOT IDENTIFIED", None, "433.920 MHz", "unknown", "capture"),
             "8": ("keyed", "NOT IDENTIFIED", "NO EARLIER RECORD", "151.251 MHz", "unknown", "capture"),
             "9": ("air", "HEARD", "NO EARLIER RECORD", "118.100 MHz", "medium", "none"),
-            "10": ("aircraft", "IDENTIFIED", None, "1090 MHz", "confirmed", "none")}
+            "10": ("aircraft", "IDENTIFIED", None, "1090 MHz", "confirmed", "none"),
+            "11": ("nav", "HEARD", "NO EARLIER RECORD", "113.350 MHz", "medium", "none")}
         for c in R.EXAMPLE_CASES:
             f, r, card = self.card(c)
             self.assertEqual((r["category"], r["tag"], r["history_tag"], r["carrier_text"], r["confidence"],
@@ -1956,7 +2037,7 @@ class Examples(unittest.TestCase):
             self.assertLessEqual(len([d for d in card["details"]]), 6)
             self.assertEqual(R.example_facts(c), R.example_facts(c))         # the same facts every time
         with self.assertRaises(ValueError):
-            R.example_facts("11")
+            R.example_facts("12")
 
     def test_case_1a_steady_carrier(self):
         f, r, card = self.card("1a")

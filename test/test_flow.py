@@ -128,7 +128,7 @@ class Flow(unittest.TestCase):
             time.sleep(0.3)
         self.assertTrue(ai, seen)
         self.assertIn("433.92 MHz, listened", ai[-1])
-        self.assertIn("Band plan: 433.92 MHz ISM Band", ai[-1])
+        self.assertIn("Band plan: Remotes, weather stations, tyre sensors", ai[-1])   # (not an ISM band here)
         self.assertIn("Dongle 1:", ai[-1])
         self.assertNotIn("[fake AI]", ai[-1])                              # the scripted Ollama was never asked
         self.assertFalse([s for s in seen if s.startswith("[AI]")], seen)

@@ -12,15 +12,8 @@ from __future__ import annotations
 # random noise produces them too. Only trust them when a real decoder confirmed it.
 # ============================================================================
 _DB_LOCK = threading.Lock()
-PROTOCOL_SIGNATURES = [
-    (433.0, 434.79, "FSK", "433 MHz FSK telemetry sensor (weather station / tyre pressure / smart home)"),
-    (433.0, 434.79, "OOK", "433 MHz OOK remote / door-window contact / keyfob"),
-    (868.0, 870.0, "FSK", "868 MHz Wireless M-Bus / smart meter / security sensor"),
-    (870.0, 895.0, "ANY", "Cellular base station downlink / trunked radio carrier"),
-    (902.0, 928.0, "FSK", "915 MHz ISM smart utility meter (ERT/AMR) or LoRa/industrial sensor"),
-    (902.0, 928.0, "OOK", "915 MHz OOK remote or simple sensor"),
-    (928.0, 932.0, "ANY", "929-931 MHz commercial pager downlink (FLEX / POCSAG)"),
-]
+# Band-plan device guesses (low MHz, high MHz, OOK | FSK | ANY, words) come from the region's "device_hints"
+# (arislib.regions): 868 MHz meters in Europe, 902-928 MHz meters in the Americas, 920 MHz in Japan ...
 KNOWN_SYNC_HEADERS = {
     "2DD4": "HopeRF RFM69 / SX1231 / CC1101 transceiver (0x2DD4)",
     "D391": "TI CC1101 / CC2500 sub-GHz transceiver (0xD391)",
@@ -57,9 +50,9 @@ def _fingerprint(freq, mod_type, sync_word=None, allocation=""):
     code."""
     mod_type = mod_type or "CARRIER"
     if not allocation and _in_fm_band(freq):
-        allocation = "FM broadcast band (88-108 MHz)"
+        allocation = "FM broadcast band ({:g}-{:g} MHz)".format(*_region_band("fm"))
     device_class = allocation or f"Unclassified {mod_type} transmitter at {freq:.4f} MHz"
-    for f_low, f_high, m_req, desc in PROTOCOL_SIGNATURES:
+    for f_low, f_high, m_req, desc in _region().device_hints:
         if f_low <= freq <= f_high and (m_req == "ANY" or m_req == mod_type):
             device_class = desc
             break
@@ -205,7 +198,7 @@ def upgrade_signal_db():
                          f"versions wrongly called it a sensor; scan again to confirm")
                 conn.execute("UPDATE peaks SET urh_analysis=?, notes=? WHERE id=?",
                              (f"• ARIS verdict (relabelled): {label}\n• Probable device type (band-plan guess): "
-                              f"FM broadcast band (88-108 MHz)",
+                              "FM broadcast band ({:g}-{:g} MHz)".format(*_region_band("fm")),
                               str(notes or "").split(" | ", 1)[0] + f" | FM band signal near {f:.1f} MHz (relabelled)",
                               row_id))
         conn.commit()
@@ -1371,7 +1364,9 @@ def _investigate(peak_info, serials, listen_s=None, timed=None, report=False):
         elif heard_on:
             evidence = "signal_present"
             wave_txt = s1.get("physical_waveform_classification") if s1.get("signal_present_during_capture") else None
-            if kind == "air":
+            if kind == "air" and _in_nav_band(freq):
+                verdict = "Signal in the aeronautical navigation band (VOR and ILS beacons; content not recorded)"
+            elif kind == "air":
                 verdict = "Aviation-band transmission (AM voice or data; content not recorded)"
             elif ctcss != "none":
                 verdict = f"Analog FM voice channel with CTCSS tone {ctcss} (content not recorded)"
@@ -1522,6 +1517,7 @@ def _report_facts(out, serials, cfg, ctx) -> dict:
     new, known = _new_and_known(out.get("identified_devices"), ctx["began"])
     listened = int(out.get("listened_seconds") or 0)
     return {"asked_mhz": f, "band_kind": kind, "band_label": out.get("probable_allocation"),
+            "nav": _in_nav_band(f),            # aeronautical navigation (VOR / ILS beacons): no voice there
             "evidence": out.get("evidence"), "verdict": out.get("verdict_core") or out.get("final_signal_verdict"),
             "doubtful": out.get("doubtful") or [], "decoder_failed": bool(s2.get("all_failed")),
             "listen_s": int(ctx["listen"] or (audio or {}).get("seconds") or ctx.get("rtl433_s") or listened),

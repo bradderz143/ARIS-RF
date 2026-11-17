@@ -1,0 +1,1013 @@
+{
+ "id": "americas",
+ "name": "Americas (ITU Region 2)",
+ "short": "Americas",
+ "base": "world",
+ "fm": {
+  "lo": 87.5,
+  "hi": 108.0,
+  "first": 88.1,
+  "last": 107.9,
+  "raster_khz": 200,
+  "plan": "odd_tenths",
+  "label": "FM radio broadcasting (stations on odd tenths: 88.1, 88.3 ... 107.9)"
+ },
+ "sensor_bands": [
+  [
+   314.0,
+   316.0
+  ],
+  [
+   433.05,
+   434.79
+  ],
+  [
+   902.0,
+   928.0
+  ]
+ ],
+ "busy_bands": [
+  [
+   698.0,
+   806.0
+  ],
+  [
+   824.0,
+   849.0
+  ],
+  [
+   1710.0,
+   1780.0
+  ],
+  [
+   1850.0,
+   1915.0
+  ],
+  [
+   2400.0,
+   2483.5
+  ],
+  [
+   5150.0,
+   5875.0
+  ],
+  [
+   5925.0,
+   7125.0
+  ]
+ ],
+ "hop_bands": [
+  [
+   902.0,
+   928.0,
+   "smart electricity or water meters, LoRa and other frequency-hopping devices"
+  ],
+  [
+   2400.0,
+   2483.5,
+   "Bluetooth and other frequency-hopping devices"
+  ],
+  [
+   5725.0,
+   5850.0,
+   "digital links that change channel (drone video, wireless bridges)"
+  ]
+ ],
+ "ism_bands": {
+  "433": [
+   433.05,
+   434.79,
+   "433 MHz band (433.05-434.79)"
+  ],
+  "915": [
+   902.0,
+   928.0,
+   "902-928 MHz ISM band"
+  ],
+  "315": [
+   314.0,
+   316.0,
+   "315 MHz band (314-316)"
+  ]
+ },
+ "ism_default": "433",
+ "setup": {
+  "low": "433-435",
+  "subghz": "902-928",
+  "fm": "88-108"
+ },
+ "gain_band": [
+  880.0,
+  960.0
+ ],
+ "presets": [
+  {
+   "id": "fm",
+   "name": "FM 88-108",
+   "start": 88.0,
+   "stop": 108.0
+  },
+  {
+   "id": "433",
+   "name": "433 MHz",
+   "start": 433.0,
+   "stop": 435.0
+  },
+  {
+   "id": "915",
+   "name": "915 MHz",
+   "start": 902.0,
+   "stop": 928.0
+  },
+  "air",
+  {
+   "id": "2m",
+   "name": "2 m ham",
+   "start": 144.0,
+   "stop": 148.0
+  },
+  {
+   "id": "vhf",
+   "name": "VHF 148-174",
+   "start": 148.0,
+   "stop": 174.0
+  },
+  {
+   "id": "uhf",
+   "name": "UHF 450-470",
+   "start": 450.0,
+   "stop": 470.0
+  },
+  {
+   "id": "pager",
+   "name": "Pagers",
+   "start": 929.0,
+   "stop": 932.0
+  },
+  "adsb",
+  {
+   "id": "live433",
+   "name": "Live 433.92",
+   "start": 433.52,
+   "stop": 434.32
+  },
+  {
+   "id": "live915",
+   "name": "Live 915.0",
+   "start": 914.6,
+   "stop": 915.4
+  },
+  {
+   "id": "phones",
+   "name": "Phones 700-900",
+   "start": 698.0,
+   "stop": 894.0
+  },
+  "gnss",
+  {
+   "id": "phones2",
+   "name": "Phones 1.7-1.9 GHz",
+   "start": 1710.0,
+   "stop": 1910.0
+  },
+  "ism24",
+  "wifi5",
+  "ism58"
+ ],
+ "device_hints": [
+  [
+   433.0,
+   434.79,
+   "FSK",
+   "433 MHz FSK telemetry sensor (weather station / tyre pressure / smart home)"
+  ],
+  [
+   433.0,
+   434.79,
+   "OOK",
+   "433 MHz OOK remote / door-window contact / keyfob"
+  ],
+  [
+   869.0,
+   894.0,
+   "ANY",
+   "850 MHz mobile phone tower (downlink) carrier"
+  ],
+  [
+   902.0,
+   928.0,
+   "FSK",
+   "915 MHz smart utility meter (ERT/AMR) or LoRa / industrial sensor"
+  ],
+  [
+   902.0,
+   928.0,
+   "OOK",
+   "915 MHz OOK remote or simple sensor"
+  ],
+  [
+   929.0,
+   932.0,
+   "ANY",
+   "929-932 MHz paging transmitter (FLEX / POCSAG), where pagers are used"
+  ]
+ ],
+ "named": {
+  "2m": [
+   144.0,
+   148.0
+  ]
+ },
+ "allocations": [
+  [
+   129.1125,
+   129.1375,
+   "ACARS aircraft data (USA, Canada)",
+   [
+    "US",
+    "CA"
+   ]
+  ],
+  [
+   130.0125,
+   130.0375,
+   "ACARS aircraft data (USA, Canada)",
+   [
+    "US",
+    "CA"
+   ]
+  ],
+  [
+   130.4375,
+   130.4625,
+   "ACARS aircraft data (USA, Canada)",
+   [
+    "US",
+    "CA"
+   ]
+  ],
+  [
+   131.1125,
+   131.1375,
+   "ACARS aircraft data (USA)",
+   [
+    "US"
+   ]
+  ],
+  [
+   131.5375,
+   131.5625,
+   "ACARS aircraft data (main channel, USA and Canada)",
+   [
+    "US",
+    "CA"
+   ]
+  ],
+  [
+   162.3875,
+   162.5625,
+   "Weather-radio channels: USA weather broadcasts, Mexico early-warning alerts",
+   [
+    "US",
+    "CA",
+    "MX"
+   ]
+  ],
+  [
+   161.625,
+   161.9625,
+   "Marine VHF coast stations (below 161.6 is railroad radio in USA, Canada)"
+  ],
+  [
+   26.96,
+   27.41,
+   "CB radio, 40 channels (USA, Canada, Mexico); 27.12 MHz ISM band inside",
+   [
+    "US",
+    "CA",
+    "MX"
+   ]
+  ],
+  [
+   314.5,
+   315.5,
+   "Car key fobs, tyre pressure sensors, gate and garage remotes (315 MHz)"
+  ],
+  [
+   433.05,
+   434.79,
+   "Remotes, weather stations, tyre sensors (433.92 MHz); inside the 70 cm ham band"
+  ],
+  [
+   977.0,
+   979.0,
+   "USA: ADS-B UAT aircraft position broadcasts (978 MHz)",
+   [
+    "US"
+   ]
+  ],
+  [
+   222.0,
+   225.0,
+   "Amateur radio 1.25 m band (USA, Canada)",
+   [
+    "US",
+    "CA"
+   ]
+  ],
+  [
+   929.0,
+   932.0,
+   "Paging transmitters (pagers) in some countries, e.g. the USA"
+  ],
+  [
+   50.0,
+   54.0,
+   "Amateur radio 6 m band"
+  ],
+  [
+   144.0,
+   148.0,
+   "Amateur radio 2 m band"
+  ],
+  [
+   420.0,
+   430.0,
+   "USA: amateur radio 70 cm band (secondary, shared with radar)",
+   [
+    "US"
+   ]
+  ],
+  [
+   430.0,
+   440.0,
+   "Amateur radio 70 cm band"
+  ],
+  [
+   440.0,
+   450.0,
+   "Amateur radio 70 cm band (USA, Canada; mostly repeaters)",
+   [
+    "US",
+    "CA"
+   ]
+  ],
+  [
+   2390.0,
+   2400.0,
+   "USA: amateur radio 13 cm band",
+   [
+    "US"
+   ]
+  ],
+  [
+   806.0,
+   824.0,
+   "800 MHz two-way radio, mobile side (trunked, public safety; plan per country)"
+  ],
+  [
+   851.0,
+   869.0,
+   "800 MHz two-way radio, base side (trunked, public safety; plan per country)"
+  ],
+  [
+   88.0,
+   108.0,
+   "FM radio broadcasting (stations on odd tenths: 88.1, 88.3 ... 107.9)"
+  ],
+  [
+   450.0,
+   470.0,
+   "UHF two-way radio: business, utilities, public safety"
+  ],
+  [
+   150.8,
+   174.0,
+   "VHF two-way radio: business, utilities, police, fire, government"
+  ],
+  [
+   824.0,
+   849.0,
+   "850 MHz mobile phones transmit (uplink)"
+  ],
+  [
+   869.0,
+   894.0,
+   "850 MHz mobile phone towers transmit (downlink)"
+  ],
+  [
+   902.0,
+   928.0,
+   "Licence-free: LoRa, meters, Z-Wave, alarms, RFID (Brazil: not 907.5-915); ham 33 cm"
+  ],
+  [
+   335.4,
+   399.9,
+   "Military aviation and other military radio (UHF military aircraft band)"
+  ],
+  [
+   1710.0,
+   1780.0,
+   "Mobile phones transmit (AWS in USA/Canada/Mexico; band 3 in Brazil)"
+  ],
+  [
+   225.0,
+   328.6,
+   "Military aviation and other military radio (UHF military aircraft band)"
+  ],
+  [
+   698.0,
+   806.0,
+   "700 MHz mobile broadband and public safety (layout differs by country)"
+  ],
+  [
+   1850.0,
+   1995.0,
+   "Mobile phone bands: phones and towers (layout differs by country)"
+  ],
+  [
+   2496.0,
+   2690.0,
+   "2.5 GHz mobile broadband (USA: TDD band 41; others: band 7 and TDD)"
+  ],
+  [
+   3450.0,
+   3700.0,
+   "5G mobile in most of the region (USA: CBRS shared band 3550-3700)"
+  ],
+  [
+   5925.0,
+   7125.0,
+   "6 GHz Wi-Fi (Wi-Fi 6E / 7); the upper part not in every country"
+  ]
+ ],
+ "tv": [
+  {
+   "lo": 54.0,
+   "hi": 72.0,
+   "width_mhz": 6,
+   "first_channel": 2,
+   "standard": "ATSC 1.0 / 3.0",
+   "skip": [],
+   "countries": [
+    "US",
+    "CA",
+    "MX"
+   ],
+   "centre_offset_mhz": 0.0,
+   "note": "72-76 MHz is not TV; channels 5-6 continue at 76."
+  },
+  {
+   "lo": 76.0,
+   "hi": 88.0,
+   "width_mhz": 6,
+   "first_channel": 5,
+   "standard": "ATSC 1.0 / 3.0",
+   "skip": [],
+   "countries": [
+    "US",
+    "CA",
+    "MX"
+   ],
+   "centre_offset_mhz": 0.0
+  },
+  {
+   "lo": 174.0,
+   "hi": 216.0,
+   "width_mhz": 6,
+   "first_channel": 7,
+   "standard": "ATSC 1.0 / 3.0",
+   "skip": [],
+   "countries": [
+    "US",
+    "CA",
+    "MX"
+   ],
+   "centre_offset_mhz": 0.0
+  },
+  {
+   "lo": 470.0,
+   "hi": 608.0,
+   "width_mhz": 6,
+   "first_channel": 14,
+   "standard": "ATSC 1.0 / 3.0",
+   "skip": [],
+   "countries": [
+    "US",
+    "CA",
+    "MX"
+   ],
+   "centre_offset_mhz": 0.0,
+   "note": "Channel 37 (608-614) is radio astronomy, never TV. 614-698 is now the 600 MHz mobile band (Mexico cleared 2018, USA 2020, Canada about 2020-2022)."
+  },
+  {
+   "lo": 174.0,
+   "hi": 216.0,
+   "width_mhz": 6,
+   "first_channel": 7,
+   "standard": "ISDB-Tb",
+   "skip": [],
+   "countries": [
+    "BR"
+   ],
+   "centre_offset_mhz": 0.142857,
+   "note": "Signal centre is the channel centre + 1/7 MHz."
+  },
+  {
+   "lo": 470.0,
+   "hi": 698.0,
+   "width_mhz": 6,
+   "first_channel": 14,
+   "standard": "ISDB-Tb",
+   "skip": [
+    [
+     608.0,
+     614.0
+    ]
+   ],
+   "countries": [
+    "BR"
+   ],
+   "centre_offset_mhz": 0.142857,
+   "note": "Channel 37 (608-614) not used (radio astronomy). 698-806 is mobile (700 MHz band), not TV."
+  }
+ ],
+ "dab": [],
+ "countries": {
+  "US": {
+   "name": "United States",
+   "allocations": [
+    [
+     49.82,
+     49.9,
+     "USA: baby monitors and toy walkie-talkies (49 MHz, licence-free)"
+    ],
+    [
+     162.3875,
+     162.5625,
+     "USA: NOAA Weather Radio, continuous weather broadcasts and alerts"
+    ],
+    [
+     462.55,
+     462.725,
+     "USA, Canada: FRS / GMRS family walkie-talkies"
+    ],
+    [
+     467.55,
+     467.725,
+     "USA, Canada: FRS walkie-talkies and GMRS repeater inputs"
+    ],
+    [
+     75.4,
+     76.0,
+     "USA: radio-control model cars and boats (75 MHz)"
+    ],
+    [
+     72.0,
+     73.0,
+     "USA: radio-control model aircraft (72 MHz)"
+    ],
+    [
+     319.0,
+     320.0,
+     "USA: wireless home alarm sensors often use 319.5 MHz"
+    ],
+    [
+     344.5,
+     345.5,
+     "USA: wireless home alarm sensors often use 345 MHz"
+    ],
+    [
+     815.0,
+     817.0,
+     "USA: 800 MHz expansion and guard band, mobile side"
+    ],
+    [
+     860.0,
+     862.0,
+     "USA: 800 MHz expansion and guard band, base side"
+    ],
+    [
+     806.0,
+     809.0,
+     "USA: public safety radio, mobile side (NPSPAC, after rebanding)"
+    ],
+    [
+     851.0,
+     854.0,
+     "USA: public safety radio, base side (NPSPAC, after rebanding)"
+    ],
+    [
+     929.0,
+     932.0,
+     "USA: paging transmitters (pagers)"
+    ],
+    [
+     88.0,
+     92.0,
+     "USA: FM channels reserved for non-commercial and public radio"
+    ],
+    [
+     896.0,
+     901.0,
+     "USA: 900 MHz two-way radio and private LTE, mobile side"
+    ],
+    [
+     935.0,
+     940.0,
+     "USA: 900 MHz two-way radio and private LTE, base side"
+    ],
+    [
+     769.0,
+     775.0,
+     "USA: public safety two-way radio, base side (700 MHz narrowband)"
+    ],
+    [
+     799.0,
+     805.0,
+     "USA: public safety two-way radio, mobile side (700 MHz narrowband)"
+    ],
+    [
+     809.0,
+     815.0,
+     "USA: two-way radio, mobile side (public safety, business, utilities)"
+    ],
+    [
+     854.0,
+     860.0,
+     "USA: two-way radio, base side (public safety, business, utilities)"
+    ],
+    [
+     817.0,
+     824.0,
+     "USA: LTE handsets (former Nextel ESMR, band 26)"
+    ],
+    [
+     862.0,
+     869.0,
+     "USA: LTE base stations (former Nextel ESMR, band 26)"
+    ],
+    [
+     746.0,
+     756.0,
+     "USA: 700 MHz mobile towers transmit (band 13)"
+    ],
+    [
+     758.0,
+     768.0,
+     "USA: public safety broadband towers (band 14, FirstNet)"
+    ],
+    [
+     777.0,
+     787.0,
+     "USA: 700 MHz mobile phones transmit (band 13)"
+    ],
+    [
+     788.0,
+     798.0,
+     "USA: public safety broadband handsets (band 14)"
+    ],
+    [
+     1920.0,
+     1930.0,
+     "USA: DECT 6.0 cordless phones (licence-free)"
+    ],
+    [
+     699.0,
+     716.0,
+     "USA: 700 MHz mobile phones transmit (bands 12/17)"
+    ],
+    [
+     729.0,
+     746.0,
+     "USA: 700 MHz mobile towers transmit (bands 12/17)"
+    ],
+    [
+     617.0,
+     652.0,
+     "USA: 600 MHz mobile towers transmit (band 71 downlink)"
+    ],
+    [
+     663.0,
+     698.0,
+     "USA: 600 MHz mobile phones transmit (band 71 uplink)"
+    ],
+    [
+     470.0,
+     512.0,
+     "USA: UHF TV channels 14-20; also police and business radio in some big cities"
+    ],
+    [
+     1850.0,
+     1915.0,
+     "USA: PCS 1900 mobile phones transmit"
+    ],
+    [
+     1930.0,
+     1995.0,
+     "USA: PCS 1900 mobile towers transmit"
+    ],
+    [
+     3450.0,
+     3550.0,
+     "USA: 5G mobile (3.45 GHz band)"
+    ],
+    [
+     3550.0,
+     3700.0,
+     "USA: CBRS shared band (private LTE/5G; navy radar has priority)"
+    ],
+    [
+     3700.0,
+     3980.0,
+     "USA: 5G mobile (C-band)"
+    ]
+   ],
+   "sensor_bands": [
+    [
+     314.0,
+     316.0
+    ],
+    [
+     319.0,
+     320.0
+    ],
+    [
+     344.5,
+     345.5
+    ],
+    [
+     433.05,
+     434.79
+    ],
+    [
+     902.0,
+     928.0
+    ]
+   ]
+  },
+  "CA": {
+   "name": "Canada",
+   "allocations": [
+    [
+     162.3875,
+     162.5625,
+     "Canada: former Weatheradio channels (closed March 2026); US stations near border"
+    ],
+    [
+     462.55,
+     462.725,
+     "USA, Canada: FRS / GMRS family walkie-talkies"
+    ],
+    [
+     467.55,
+     467.725,
+     "USA, Canada: FRS walkie-talkies and GMRS repeater inputs"
+    ],
+    [
+     821.0,
+     824.0,
+     "Canada: public safety radio, mobile side"
+    ],
+    [
+     866.0,
+     869.0,
+     "Canada: public safety radio, base side"
+    ],
+    [
+     769.0,
+     775.0,
+     "Canada: public safety two-way radio, base side (700 MHz narrowband)"
+    ],
+    [
+     799.0,
+     805.0,
+     "Canada: public safety two-way radio, mobile side (700 MHz narrowband)"
+    ],
+    [
+     746.0,
+     756.0,
+     "Canada: 700 MHz mobile towers transmit (band 13)"
+    ],
+    [
+     758.0,
+     768.0,
+     "Canada: public safety broadband towers (band 14)"
+    ],
+    [
+     777.0,
+     787.0,
+     "Canada: 700 MHz mobile phones transmit (band 13)"
+    ],
+    [
+     788.0,
+     798.0,
+     "Canada: public safety broadband handsets (band 14)"
+    ],
+    [
+     806.0,
+     821.0,
+     "Canada: trunked and conventional two-way radio, mobile side"
+    ],
+    [
+     851.0,
+     866.0,
+     "Canada: trunked and conventional two-way radio, base side"
+    ],
+    [
+     699.0,
+     716.0,
+     "Canada: 700 MHz mobile phones transmit (bands 12/17)"
+    ],
+    [
+     729.0,
+     746.0,
+     "Canada: 700 MHz mobile towers transmit (bands 12/17)"
+    ],
+    [
+     617.0,
+     652.0,
+     "Canada: 600 MHz mobile towers transmit (band 71 downlink)"
+    ],
+    [
+     663.0,
+     698.0,
+     "Canada: 600 MHz mobile phones transmit (band 71 uplink)"
+    ],
+    [
+     1850.0,
+     1910.0,
+     "Canada: PCS 1900 mobile phones transmit"
+    ],
+    [
+     1930.0,
+     1990.0,
+     "Canada: PCS 1900 mobile towers transmit"
+    ],
+    [
+     3450.0,
+     3650.0,
+     "Canada: 5G mobile (3500 MHz band)"
+    ]
+   ]
+  },
+  "MX": {
+   "name": "Mexico",
+   "allocations": [
+    [
+     162.3875,
+     162.5625,
+     "Mexico: early-warning alerts incl. earthquake alerts (SASMEX), SAME data"
+    ],
+    [
+     806.0,
+     814.0,
+     "Mexico: public safety and national security radio, mobile side"
+    ],
+    [
+     851.0,
+     859.0,
+     "Mexico: public safety and national security radio, base side"
+    ],
+    [
+     814.0,
+     824.0,
+     "Mexico: commercial trunked radio, mobile side; offered for mobile broadband"
+    ],
+    [
+     859.0,
+     869.0,
+     "Mexico: commercial trunked radio, base side; offered for mobile broadband"
+    ],
+    [
+     703.0,
+     748.0,
+     "Mexico: 700 MHz mobile phones transmit (APT band 28 uplink)"
+    ],
+    [
+     758.0,
+     803.0,
+     "Mexico: 700 MHz mobile towers transmit (APT band 28 downlink)"
+    ],
+    [
+     1850.0,
+     1910.0,
+     "Mexico: PCS 1900 mobile phones transmit"
+    ],
+    [
+     1930.0,
+     1990.0,
+     "Mexico: PCS 1900 mobile towers transmit"
+    ]
+   ]
+  },
+  "BR": {
+   "name": "Brazil",
+   "allocations": [
+    [
+     806.0,
+     809.0,
+     "Brazil: trunked radio (SME, ex-Nextel), mobile side"
+    ],
+    [
+     821.0,
+     824.0,
+     "Brazil: public safety; since 2022 also mobile broadband (mobile side)"
+    ],
+    [
+     851.0,
+     854.0,
+     "Brazil: trunked radio (SME, ex-Nextel), base side"
+    ],
+    [
+     866.0,
+     869.0,
+     "Brazil: public safety; since 2022 also mobile broadband (base side)"
+    ],
+    [
+     809.0,
+     814.0,
+     "Brazil: public safety, civil and national defence radio, mobile side"
+    ],
+    [
+     854.0,
+     859.0,
+     "Brazil: public safety, civil and national defence radio, base side"
+    ],
+    [
+     814.0,
+     821.0,
+     "Brazil: trunked radio (SME, ex-Nextel), mobile side"
+    ],
+    [
+     859.0,
+     866.0,
+     "Brazil: trunked radio (SME, ex-Nextel), base side"
+    ],
+    [
+     76.0,
+     88.0,
+     "Brazil: extended FM radio band (eFM), AM stations moved to FM"
+    ],
+    [
+     703.0,
+     748.0,
+     "Brazil: 700 MHz mobile phones transmit (APT band 28 uplink)"
+    ],
+    [
+     758.0,
+     803.0,
+     "Brazil: 700 MHz mobile towers transmit (APT band 28 downlink)"
+    ],
+    [
+     1920.0,
+     1980.0,
+     "Brazil: 2.1 GHz mobile phones transmit (band 1)"
+    ],
+    [
+     1710.0,
+     1785.0,
+     "Brazil: 1800 MHz mobile phones transmit (band 3)"
+    ],
+    [
+     1805.0,
+     1880.0,
+     "Brazil: 1800 MHz mobile towers transmit (band 3)"
+    ],
+    [
+     2300.0,
+     2390.0,
+     "Brazil: 2.3 GHz mobile broadband (TDD)"
+    ],
+    [
+     3300.0,
+     3700.0,
+     "Brazil: 5G mobile (3.5 GHz)"
+    ]
+   ],
+   "fm": {
+    "lo": 76.0,
+    "hi": 108.0,
+    "first": 76.1,
+    "last": 107.9,
+    "raster_khz": 200,
+    "plan": "odd_tenths",
+    "label": "FM radio broadcasting (76-108 MHz: eFM 76-88 for AM stations moved to FM)"
+   }
+  }
+ },
+ "notes": [
+  "USA, Canada, Mexico, Brazil: FM stations only on odd tenths.",
+  "USA: 88.1-91.9 MHz reserved for non-commercial radio.",
+  "Without a country, the 700 / 800 MHz, 1.8-2 GHz and 3.5 GHz bands get one neutral label: the layouts differ by country."
+ ],
+ "prompt": [
+  "88-108 MHz FM broadcast radio (stations on odd tenths, e.g. 97.1). Cheap FM bugs, wireless mics and car FM transmitters also use it.",
+  "108-118 aircraft navigation beacons (VOR, ILS: steady AM carriers, no voice); 118-137 aircraft voice (AM); 137-138 weather satellites.",
+  "144-148 2 m amateur radio (APRS 144.39); 148-174 business/public-service radio, marine VHF 156-162.",
+  "54-88, 174-216 and 470-608 digital TV; 300-320 car keyfobs, garage remotes, tyre sensors (315).",
+  "225-400 military radio; 420-450 70 cm amateur; 433.05-434.79 low-power devices: weather stations, remotes, door/window sensors.",
+  "450-470 business radios and walkie-talkies; 698-806 and 824-894 mobile phone bands; 806-824 and 851-869 trunked and public-safety radio.",
+  "902-928 ISM: smart meters, LoRa, industrial sensors, some remotes; 1090 aircraft ADS-B."
+ ]
+}

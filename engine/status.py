@@ -424,6 +424,8 @@ def system_status():
     except OSError:
         log_lines = 0
     dongles = {}
+    fm = _setup_band("fm") or _fm_band()
+    sub = _setup_band("subghz") or _region().gain_band or (902.0, 928.0)   # "915": the region's sub-GHz band
     for ser in DONGLE_NAMES:
         d = _dongle_cfg(ser, cfg)
         cap = next((w for w in wds if str(w.get("serial")) == ser), None)
@@ -431,12 +433,15 @@ def system_status():
             "serial": ser, "tuner": d.get("tuner"), "usb_ok": d.get("usb_ok"),
             "present": (ser in serials) if found else (False if d.get("present") is False else None),
             "doing": (_capture_doing(cap) if cap else "busy with a job" if _dongle_in_use(ser) else "free"),
-            "gains_db": {"433_and_other": _gain_for(ser, cfg=cfg), "915": _gain_for(ser, 902.0, 928.0, cfg),
-                         "fm": _gain_for(ser, 88.0, 108.0, cfg)},
+            "gains_db": {"433_and_other": _gain_for(ser, cfg=cfg), "915": _gain_for(ser, *sub, cfg),
+                         "fm": _gain_for(ser, *fm, cfg)},
             "ppm": _ppm_of(ser, cfg), "hears_per_band": d.get("reception") or "not measured yet (run /setup)",
             "antenna_note": d.get("antenna_note"), "busy": _device_lock(ser).locked()}
+    rs = _region_state()
     return {
         "version": VERSION,
+        "region": {"id": rs["id"], "name": rs["name"], "country": rs["country"], "guessed": rs["guessed"],
+                   "line": regions.describe(rs)},
         "setup_done": cfg.get("setup_done"),
         "dongles_found": [d["serial"] for d in found],
         "dongles_missing": [_short(s) for s in DONGLE_NAMES if found and s not in serials],

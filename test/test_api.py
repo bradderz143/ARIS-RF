@@ -725,6 +725,62 @@ class DecodeAndCapture(unittest.TestCase):
         self.assertEqual((card["step"]["action"], card["step"]["seconds"]), ("decode", 10))
         self.assertTrue(all(isinstance(x, str) for x in card["dongles"]))
 
+    def test_decode_can_be_stopped_on_its_own(self):
+        """The Stop in a running Decode's progress card stops that job only: it ends as "stopped" with the message
+        "Stopped.", no card and nothing saved, and its dongles are free; a capture running beside it keeps running.
+        A second Stop, an unknown job, a Stop without the header and a Stop for Name all are refused in plain words."""
+        eng = __import__("arisweb.engine", fromlist=["x"]).engine()
+        c = client()
+        r = c.post("/api/capture/start", json={"freq_mhz": 433.92, "mode": "continuous"}, headers=H)
+        self.assertEqual(r.status_code, 200, r.get_json())
+        t0 = time.time()
+        while time.time() - t0 < 30 and not c.get("/api/activity").get_json()["watchdog"]["watchdogs_running"]:
+            time.sleep(0.3)
+        cap = c.get("/api/activity").get_json()["watchdog"]["watchdogs_running"]
+        self.assertTrue(cap)
+        try:
+            before = c.get("/api/signals").get_json()["tag"]
+            r = c.post("/api/decode", json={"freq_mhz": 97.1, "seconds": 30}, headers=H)
+            self.assertEqual(r.status_code, 200, r.get_json())
+            job = r.get_json()["job"]
+            t0 = time.time()
+            while time.time() - t0 < 40:                      # listening: past the start, still running
+                j = c.get(f"/api/decode/{job}").get_json()
+                if j["state"] != "running" or j["elapsed"] >= 4:
+                    break
+                time.sleep(0.3)
+            self.assertEqual(j["state"], "running", j)
+            self.assertEqual(c.post(f"/api/decode/{job}/stop").status_code, 403)          # the X-ARIS header
+            self.assertEqual(c.post("/api/decode/nosuchjob/stop", headers=H).status_code, 404)
+            t_stop = time.time()
+            r = c.post(f"/api/decode/{job}/stop", headers=H)
+            self.assertEqual(r.status_code, 200, r.get_json())
+            self.assertTrue(r.get_json()["stopping"])
+            j = self._wait(c, job, limit=30)
+            self.assertLess(time.time() - t_stop, 20)          # well before the 30 s it was asked for
+            self.assertEqual((j["state"], j["message"], j["error"]), ("stopped", "Stopped.", None), j)
+            self.assertNotIn("card", j)
+            self.assertNotIn("stopping", j)
+            self.assertEqual(c.get("/api/signals").get_json()["tag"], before)            # nothing saved
+            again = c.post(f"/api/decode/{job}/stop", headers=H)
+            self.assertEqual(again.status_code, 409)
+            self.assertEqual(again.get_json()["error"], "This Decode has already ended.")
+            # only that job: the capture still runs, and every other dongle is free at once
+            run = c.get("/api/activity").get_json()["watchdog"]["watchdogs_running"]
+            self.assertEqual([w["serial"] for w in run], [w["serial"] for w in cap])
+            for s in [s for s in eng.DONGLE_NAMES if s not in {w["serial"] for w in cap}]:
+                lk = eng._device_lock(s)
+                self.assertTrue(lk.acquire(1.0, "test"), f"{s} still held after the Stop")
+                lk.release()
+            nm = c.post("/api/fm_names", json={"freqs": [97.1]}, headers=H).get_json()["job"]
+            r = c.post(f"/api/decode/{nm}/stop", headers=H)
+            self.assertEqual(r.status_code, 400)
+            self.assertIn("Reset Scanner", r.get_json()["error"])
+            self.assertEqual(self._wait(c, nm)["state"], "done")
+        finally:
+            c.post("/api/capture/stop", json={"serial": cap[0]["serial"]}, headers=H)
+        self.assertFalse(c.get("/api/activity").get_json()["watchdog"]["watchdogs_running"])
+
     def test_capture_api_and_activity(self):
         c = client()
         r = c.post("/api/capture/start", json={"freq_mhz": 97.1}, headers=H)
@@ -1388,6 +1444,83 @@ class Devices(unittest.TestCase):
         r2 = c.get("/api/devices").get_json()
         self.assertEqual(r2["rows"], [])
         self.assertNotEqual(r2["tag"], r["tag"])
+
+
+def _region_eng():
+    from arisweb.engine import engine
+    return engine()
+
+
+class RegionApi(unittest.TestCase):
+    """GET /api/region (which band plan labels the frequencies) and POST /api/region (admin only, X-ARIS, plain 400
+    for an unknown region or a country of another region); the Spectrum answers carry the region and each trace the
+    gain of every piece Auto gain cut the sweep into."""
+
+    def setUp(self):
+        from arisweb import auth
+        self.auth = auth
+        auth._write_secrets({"admin_user": "admin", "admin_hash": generate_password_hash(PW), "secret_key": "k" * 32})
+
+    def tearDown(self):
+        _region_eng()._set_region("americas", None)
+        try:
+            self.auth.SECRETS_PATH.unlink()
+        except OSError:
+            pass
+
+    def test_read_and_set_the_region(self):
+        c = client()
+        j = c.get("/api/region").get_json()
+        self.assertEqual((j["id"], j["country"], j["guessed"], j["source"]), ("americas", None, False, "config"))
+        self.assertEqual(j["name"], "Americas (ITU Region 2)")
+        self.assertEqual(len(j["choices"]), 6)
+        self.assertIn({"id": "US", "name": "United States", "region": "americas"}, j["countries"])
+        self.assertEqual(c.post("/api/region", json={"id": "europe"}).status_code, 403)          # no X-ARIS header
+        r = c.post("/api/region", json={"id": "narnia"}, headers=H)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("There is no region", r.get_json()["error"])
+        r = c.post("/api/region", json={"id": "europe", "country": "US"}, headers=H)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("no layout of its own", r.get_json()["error"])
+        j = c.post("/api/region", json={"id": "europe", "country": None}, headers=H).get_json()
+        self.assertEqual((j["id"], j["country"], j["guessed"]), ("europe", None, False))
+        presets = {p["id"]: p for p in c.get("/api/spectrum/meta").get_json()["presets"]}
+        self.assertEqual(presets["fm"]["name"], "FM 87.5-108")
+        self.assertIn("868", presets)
+        self.assertEqual(c.get("/api/spectrum/meta").get_json()["region"]["id"], "europe")
+        j = c.post("/api/region", json={"id": "americas", "country": "us"}, headers=H).get_json()
+        self.assertEqual((j["id"], j["country"], j["country_name"]), ("americas", "US", "United States"))
+        self.assertEqual(c.get("/api/spectrum/meta").get_json()["presets"][1]["name"], "FM 88-108")
+
+    def test_an_extra_account_may_read_but_not_change_it(self):
+        import io
+        self.auth.cmd_add_user("viewer", io.StringIO(generate_password_hash("a-long-random-secret") + "\n"))
+        c = APP.test_client()
+        self.assertEqual(c.post("/login", data={"username": "viewer", "password": "a-long-random-secret"},
+                                environ_base={"REMOTE_ADDR": "10.7.7.9"}).status_code, 302)
+        self.assertEqual(c.get("/api/region").status_code, 200)
+        self.assertEqual(c.post("/api/region", json={"id": "europe"}, headers=H).status_code, 403)
+        self.assertEqual(c.post("/api/chat_send", json={"message": "/region europe"}, headers=H).status_code, 403)
+        self.assertEqual(_region_eng()._region_state()["id"], "americas")
+
+    def test_spectrum_traces_carry_their_gain_pieces(self):
+        eng, c = _region_eng(), client()
+        cfg = eng._load_config()
+        old = dict(cfg["dongles"].get("00017350") or {})
+        cfg["dongles"]["00017350"] = dict(old, gain_db=19.7, fm_gain_db=8.7)
+        eng._save_config(cfg)
+        try:
+            j = c.get("/api/spectrum?dongle=1&start=80&stop=120&step_khz=100").get_json()
+        finally:
+            cfg = eng._load_config()
+            cfg["dongles"]["00017350"] = old
+            eng._save_config(cfg)
+        self.assertEqual(j["region"]["id"], "americas")
+        t = j["traces"][0]
+        self.assertEqual(t["gain_pieces"], [[80.0, 87.5, 19.7], [87.5, 108.0, 8.7], [108.0, 120.0, 19.7]])
+        j = c.get("/api/spectrum?dongle=1&start=140&stop=170&gain=20").get_json()          # one gain: one piece
+        self.assertEqual(len(j["traces"][0]["gain_pieces"]), 1)
+        self.assertEqual(j["traces"][0]["gain_pieces"][0][:2], [140.0, 170.0])
 
 
 if __name__ == "__main__":

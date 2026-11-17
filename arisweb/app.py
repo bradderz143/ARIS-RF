@@ -12,7 +12,7 @@ from datetime import timedelta
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
-from . import activity, auth, bluetooth, devices, jobs, mapapi, spectrum, update, wifi
+from . import activity, auth, bluetooth, devices, jobs, mapapi, region, spectrum, update, wifi
 from .engine import engine as _engine, version
 
 HOST = os.environ.get("ARIS_GUI_HOST", "0.0.0.0")
@@ -30,6 +30,7 @@ app.register_blueprint(devices.bp)
 app.register_blueprint(wifi.bp)
 app.register_blueprint(bluetooth.bp)
 app.register_blueprint(update.bp)
+app.register_blueprint(region.bp)
 SECRETS = {}
 BRIDGE = {"ai": None}
 
@@ -89,7 +90,7 @@ def dashboard():
     if not auth.authed():
         return redirect(url_for("login"))
     v = version()
-    return render_template("index.html", version=v, asset_v=v)
+    return render_template("index.html", version=v, asset_v=v, role=auth.role())
 
 
 @app.route("/api/chat_state")
@@ -120,7 +121,8 @@ def chat_send():
 
 # Chat requests an extra account may not make: the ones that delete or change the set-up. A first line
 # only; the console enforces the role on every tool and command (engine _ADMIN_TOOLS, _ADMIN_COMMANDS).
-_ADMIN_CHAT_RX = re.compile(r"^/(?:cleanup|clear-signals|setup|patrol)\b|\bclear\s+(?:the\s+)?(?:data|logs|signals)\b|"
+_ADMIN_CHAT_RX = re.compile(r"^/(?:cleanup|clear-signals|setup|patrol)\b|^/region\s+\S|"
+                            r"\bclear\s+(?:the\s+)?(?:data|logs|signals)\b|"
                             r"\b(?:run|do|start|redo|re-?run)\s+(?:the\s+|a\s+)?(?:full\s+|auto\s+)?set\s?-?up\b|"
                             r"\bset\s?-?up\s+(?:everything|it\s+all|the\s+(?:whole\s+)?(?:system|dongles|station))\b|"
                             r"\bset\s+(?:everything|it\s+all|the\s+(?:whole\s+)?(?:system|dongles|station))\s+up\b|"

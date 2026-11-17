@@ -27,7 +27,8 @@ ABOUT_SAVED = re.compile(r"\b(signals?|saved|found|detected|records?|devices?|bu
 _NUM_TIME = r"\s+\d+(?:\.\d+)?\s*(?:mhz)?(?:\s+\d+(?:\.\d+)?\s*[a-z]*)?"
 SLASH_COMMANDS = re.compile(r"^/(setup|status|help|selftest|check|nodes|plugins|clear-signals|cleanup(?: confirm)?|"
                             r"patrol(?: (?:start|stop|status))?|captures|capture(?: stop(?: all)?| status|"
-                            + _NUM_TIME + r")?|investigate" + _NUM_TIME + r"|devices(?: .+)?)$", re.I)
+                            + _NUM_TIME + r")?|investigate" + _NUM_TIME + r"|devices(?: .+)?|"
+                            r"region(?: [a-z_]{2,20}(?: [a-z]{2})?)?)$", re.I)
 MAX_USER_CHARS = 800
 
 

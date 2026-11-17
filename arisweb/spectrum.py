@@ -35,31 +35,25 @@ from .engine import engine as _engine, version
 
 bp = Blueprint("spectrum", __name__)
 
-SPECTRUM_PRESETS = [
-    {"id": "full", "name": "Full 0-6 GHz", "start": _sp.VIEW_MIN_MHZ, "stop": _sp.VIEW_MAX_MHZ},
-    {"id": "fm", "name": "FM 88-108", "start": 88.0, "stop": 108.0},
-    {"id": "433", "name": "433 MHz", "start": 433.0, "stop": 435.0},
-    {"id": "915", "name": "915 MHz", "start": 902.0, "stop": 928.0},
-    {"id": "air", "name": "Airband", "start": 118.0, "stop": 137.0},
-    {"id": "2m", "name": "2 m ham", "start": 144.0, "stop": 148.0},
-    {"id": "vhf", "name": "VHF 148-174", "start": 148.0, "stop": 174.0},
-    {"id": "uhf", "name": "UHF 450-470", "start": 450.0, "stop": 470.0},
-    {"id": "pager", "name": "Pagers", "start": 929.0, "stop": 932.0},
-    {"id": "adsb", "name": "ADS-B", "start": 1085.0, "stop": 1095.0},
-    {"id": "live433", "name": "Live 433.92", "start": 433.52, "stop": 434.32},
-    {"id": "live915", "name": "Live 915.0", "start": 914.6, "stop": 915.4},
-    {"id": "phones", "name": "Phones 700-900", "start": 698.0, "stop": 894.0},
-    {"id": "gnss", "name": "GPS 1575", "start": 1565.0, "stop": 1585.0},
-    # above an RTL-SDR's reach: listed all the same, and api_meta says whether a receiver here tunes them
-    {"id": "phones2", "name": "Phones 1.7-1.9 GHz", "start": 1710.0, "stop": 1910.0},
-    {"id": "ism24", "name": "2.4 GHz", "start": 2400.0, "stop": 2483.5},
-    {"id": "wifi5", "name": "5 GHz Wi-Fi", "start": 5150.0, "stop": 5350.0},
-    {"id": "ism58", "name": "5.8 GHz", "start": 5725.0, "stop": 5875.0},
-]
+FULL_PRESET = {"id": "full", "name": "Full 0-6 GHz", "start": _sp.VIEW_MIN_MHZ, "stop": _sp.VIEW_MAX_MHZ}
+
+
+def _presets(eng):
+    """The Spectrum chips: the full span first, then the region's (arislib.regions "presets": FM 88-108, 433 MHz,
+    915 MHz ... in the Americas; FM 87.5-108, 868 MHz, DAB ... in Europe), the generic ones (airband, ADS-B, GPS,
+    2.4 / 5 GHz) among them. Ones above an RTL-SDR's reach are listed all the same; api_meta says whether a
+    receiver here tunes them."""
+    return [dict(FULL_PRESET)] + eng._region().presets()
+
+
+def _gain_edges(eng):
+    """Where Auto gain changes within a sweep: the FM band's edges and the region's sub-GHz gain band's (880 / 960
+    MHz in the Americas, 860 / 875 in Europe: engine _gain_for)."""
+    return tuple(eng._fm_band()) + tuple(eng._region().gain_band or ())
+
 LIVE_MAX_SPAN_MHZ = 0.8          # one IQ capture: the window sits 0.05-0.85 MHz below the tuning point, so the
 LIVE_TUNE_ABOVE_MHZ = 0.05       # receiver's own centre spike is always just outside it
 LIVE_FS = 2048000                # ... at this sample rate; a receiver that cannot stream it sweeps narrow views instead
-GAIN_EDGES_MHZ = (880.0, 960.0)     # where the dongle's own 915 MHz gain starts and ends (engine _gain_for)
 DECODE_MATCH_MHZ = 0.03             # a saved decode this close to a signal marks it (green: identified, red: doubtful)
 MAX_POINTS = 1600
 COARSE_STEP_KHZ = 200.0          # the widest step the automatic choice uses. A coarser one (the user's own choice)
@@ -160,8 +154,8 @@ def _sweep_piece(eng, serial, s_mhz, e_mhz, step_khz, gain):
     # rtl_power's single pass ends at the next whole second: "-i 1" can mean one 3 ms look per hop, in which an
     # FM station's bass swings it tens of kHz off its channel. Where the FM channel plan is checked, integrate
     # 1-2 s (several rounds per hop) so stations sit on their channels.
-    fm_check = s_mhz < eng.FM_BROADCAST[1] and e_mhz > eng.FM_BROADCAST[0] and \
-        step_khz <= eng.FM_PLAN_MAX_STEP_KHZ
+    fm_lo, fm_hi = eng._fm_band()
+    fm_check = s_mhz < fm_hi and e_mhz > fm_lo and step_khz <= eng.FM_PLAN_MAX_STEP_KHZ
     acc, hop_hz = eng._rtl_power(s_mhz, e_mhz, step_khz, gain, serial, integration_s=2 if fm_check else 1,
                                  lock_timeout=3, holder="spectrum view")
     hops = [h / 1e6 for h in hop_hz]
@@ -192,10 +186,11 @@ def _frame(eng, serial, s_mhz, e_mhz, gain, step_khz=None, points=MAX_POINTS, li
     gain_of = gain if callable(gain) else (lambda lo, hi: gain)
     if live is None:
         live = span <= LIVE_MAX_SPAN_MHZ + 1e-6
-    hops, cleaned, gains = [], 0, []
+    hops, cleaned, gains, pieces = [], 0, [], []
     if live:
         mode, unit = "live", "dBFS"
         gains.append(gain_of(s_mhz, e_mhz))
+        pieces.append([s_mhz, e_mhz, gains[0]])
         freqs, db, step_khz = _live_frame(eng, serial, s_mhz, e_mhz, gains[0])
         if remove_gain:
             db = [round(v - gains[0], 1) for v in db]
@@ -203,13 +198,17 @@ def _frame(eng, serial, s_mhz, e_mhz, gain, step_khz=None, points=MAX_POINTS, li
         mode, unit = "sweep", _radios.sweep_unit(serial)
         step_khz = float(step_khz or _nice_step_khz(span))
         freqs, db = [], []
-        # Auto gain differs by band (the FM band has its own, 880-960 MHz too): cut at those edges, so a quiet band
-        # next to the FM band is not measured at the FM band's low gain
-        edges = sorted({s_mhz, e_mhz} | ({x for x in (*eng.FM_BROADCAST, *GAIN_EDGES_MHZ) if s_mhz < x < e_mhz}
+        # Auto gain differs by band (the FM band has its own, the region's sub-GHz band too: 880-960 MHz in the
+        # Americas): cut at those edges, so a quiet band next to the FM band is not measured at the FM band's low gain
+        edges = sorted({s_mhz, e_mhz} | ({x for x in _gain_edges(eng) if s_mhz < x < e_mhz}
                                          if callable(gain) else set()))
-        regions = [r for a, b in zip(edges, edges[1:]) for r in _sp.cut(a, b, eng.MAX_SPAN_MHZ)]
-        for lo, hi in regions:
+        parts = [r for a, b in zip(edges, edges[1:]) for r in _sp.cut(a, b, eng.MAX_SPAN_MHZ)]
+        for lo, hi in parts:
             g = gain_of(lo, hi)
+            if pieces and pieces[-1][2] == g and abs(pieces[-1][1] - lo) < 1e-9:
+                pieces[-1][1] = hi                       # the next piece at the same gain: one region
+            else:
+                pieces.append([lo, hi, g])
             f, v, h, c = _sweep_piece(eng, serial, lo, hi, step_khz, g)
             if remove_gain and unit == "dBFS":
                 v = [round(x - g, 1) for x in v]
@@ -234,6 +233,7 @@ def _frame(eng, serial, s_mhz, e_mhz, gain, step_khz=None, points=MAX_POINTS, li
             "step_khz": round(step_khz, 3), "spikes_removed": cleaned, "unit": unit,
             "spikes_kept": mode == "sweep" and step_khz > COARSE_STEP_KHZ and _hops_spike(serial),
             "range_mhz": [s_mhz, e_mhz], "gain_db": gains[0] if len(gains) == 1 else " to ".join(f"{g}" for g in gains),
+            "gain_pieces": [[round(a, 4), round(b, 4), g] for a, b, g in sorted(pieces)],
             "gain_removed": bool(remove_gain and unit == "dBFS")}
 
 
@@ -267,7 +267,8 @@ def _signals(eng, freqs, db, step_khz, floor, hops):
     either side of it, so a spike left beside a station stays part of that station's entry."""
     gap = max(35.0, 1.25 * step_khz)
     bins = dict(zip(freqs, db))
-    if gap > 35.0 and freqs and freqs[0] <= eng.FM_BROADCAST[1] and freqs[-1] >= eng.FM_BROADCAST[0]:
+    fm_lo, fm_hi = eng._fm_band()
+    if gap > 35.0 and freqs and freqs[0] <= fm_hi and freqs[-1] >= fm_lo:
         fm = [i for i, f in enumerate(freqs) if eng._in_fm_band(f)]
         vals = [db[i] for i in fm]
         core = 1.5 * step_khz / 1000.0
@@ -329,7 +330,7 @@ def _peak_list(merged, marks=()):
                         "too_weak": f"Station channel, checked: too weak here to read in the last check ({when})"}.get(chk) or (
                     "FM band, station channel" if p.get("on_standard_fm_channel") else
                     "FM band, weak: the sweep cannot place it on a channel (Decode measures it)" if p.get("fm_weak")
-                    else "FM band (zoom to 88-108 to check the channel)")
+                    else "FM band (zoom in on the FM band to check the channel)")
         else:
             kind, label = "signal", f"{p['frequency_mhz']:.3f}"
             band = str(p.get("probable_allocation") or "").split(" (")[0]
@@ -461,7 +462,7 @@ def frames(eng, serials, s_mhz, e_mhz, gain_arg, cfg, pl=None, remove_gain=True)
         ok[ser] = r
         traces.append({"dongle": ser, "name": name, "antenna": note, "freqs": r["freqs"], "db": r["db"],
                        "floor_db": r["floor_db"], "max_db": r["max_db"], "gain_db": r["gain_db"], "unit": r["unit"],
-                       "range_mhz": r["range_mhz"],
+                       "range_mhz": r["range_mhz"], "gain_pieces": r["gain_pieces"],
                        "peaks": sum(1 for p in r["_raw_peaks"] if p["snr_db"] >= 10)})
     if not ok:
         raise errors[0]
@@ -496,6 +497,12 @@ def _nothing():
             "gain_removed": False, "gain_db": ""}
 
 
+def _region_brief(eng):
+    """Whose band plan labelled the list: {'id', 'name'} (and whether it was guessed from the time zone)."""
+    st = eng._region_state()
+    return {"id": st["id"], "name": st["name"], "guessed": bool(st["guessed"])}
+
+
 def _plan_fields(pl):
     return {k: pl[k] for k in ("covered", "gaps", "gap_note", "left_out", "step_note", "step_raised",
                                "step_lowered", "step_auto")}
@@ -507,18 +514,19 @@ def api_meta():
     try:
         eng = _engine()
         cfg = eng._load_config()
-        labels = {"433-435": "433", "902-928": "915", "88-108": "FM"}
         here = _here(eng, cfg)
         ranges = _ranges(list(eng.DONGLE_NAMES))
         dongles = []
         for ser in eng.DONGLE_NAMES:
-            best = [labels.get(b, b) for b, x in cfg.get("band_dongles", {}).items() if x == ser]
+            best = [eng._band_short(b).replace(" MHz", "") for b, x in cfg.get("band_dongles", {}).items()
+                    if x == ser]
             dongles.append({"serial": ser, "name": eng._short(ser), "best_for": best,
                             "antenna_note": eng._dongle_cfg(ser, cfg).get("antenna_note"),
                             "range_mhz": list(ranges[ser]), "present": ser in here})
-        extra = [p for p in getattr(eng, "PLUGIN_PRESETS", []) if p["id"] not in {q["id"] for q in SPECTRUM_PRESETS}]
+        base = _presets(eng)
+        extra = [p for p in getattr(eng, "PLUGIN_PRESETS", []) if p["id"] not in {q["id"] for q in base}]
         presets = []
-        for p in SPECTRUM_PRESETS + extra:       # every preset is listed; "tuned" says whether a receiver here
+        for p in base + extra:       # every preset is listed; "tuned" says whether a receiver here
             lo, hi = float(p["start"]), float(p["stop"])                       # tunes all of it
             parts = [(max(lo, ranges[s][0]), min(hi, ranges[s][1])) for s in here]
             presets.append(dict(p, tuned=any(a <= lo + 1e-9 and hi <= b + 1e-9 for a, b in parts),
@@ -526,7 +534,8 @@ def api_meta():
         return jsonify({"dongles": dongles, "default": "all", "presets": presets,
                         "live_max_span_mhz": LIVE_MAX_SPAN_MHZ, "view_min_mhz": _sp.VIEW_MIN_MHZ,
                         "view_max_mhz": _sp.VIEW_MAX_MHZ, "min_span_mhz": _sp.MIN_SPAN_MHZ,
-                        "steps_khz": list(_sp.STEP_CHOICES_KHZ), "max_points": MAX_POINTS, "version": version()})
+                        "steps_khz": list(_sp.STEP_CHOICES_KHZ), "max_points": MAX_POINTS, "version": version(),
+                        "region": _region_brief(eng)})
     except Exception as e:
         return jsonify({"error": f"ARIS engine not available: {type(e).__name__}: {e}"}), 500
 
@@ -584,6 +593,7 @@ def api_spectrum():
         return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
     used = [t["dongle"] for t in out["traces"]]
     out.update(_plan_fields(pl))
+    out["region"] = _region_brief(eng)
     out.update({"dongle": "all" if len(used) > 1 else (used[0] if used else pl["dongle"]),
                 "dongle_name": "All dongles" if len(used) > 1 else (eng._short(used[0]) if used else pl["dongle_name"]),
                 "start_mhz": s_mhz, "stop_mhz": e_mhz, "took_ms": int((time.time() - t0) * 1000),

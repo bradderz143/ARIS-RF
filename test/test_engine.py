@@ -3362,7 +3362,8 @@ class DecodeReport(unittest.TestCase):
         text = A._investigation_text(res)
         self._plain(text)
         lines = text.split("\n")
-        self.assertTrue(lines[0].startswith("172.823 MHz, listened 13 s on Dongle 1, Dongle 2 and Dongle 3 with"), lines[0])
+        self.assertTrue(lines[0].startswith("172.8231 MHz, listened 13 s on Dongle 1, Dongle 2 and Dongle 3 with"),
+                        lines[0])                                       # 4 places, as the card: never ':g' (172.823)
         self.assertEqual(lines[1], "In short: Steady carrier on all 3 dongles. What sends it is not known. Source not "
                          "known: an idle transmitter and an equipment clock look the same in a short look.")
         self.assertTrue(lines[2].startswith("Not identified: no decoder recognised it."), lines[2])

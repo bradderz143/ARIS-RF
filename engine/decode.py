@@ -90,11 +90,9 @@ def _wbfm_analyse(y, fsd, center_mhz, snr_db, obw_khz, serial, peak_snr_db=None)
     if not wbfm and present and dev > 8e3 and obw_khz >= 80.0 and (pilot or rds):
         wbfm = True     # a stereo pilot or RDS is a broadcaster's mark, even when the level varies (multipath, an edge)
     carrier = center_mhz + off / 1e6
-    k = int(round(carrier * 10.0))
-    chan_off_khz = (carrier - k / 10.0) * 1000.0
-    # The Americas (ITU Region 2) put FM stations on odd tenths: 88.1, 88.3 ... 107.9 MHz.
-    on_channel = bool(k % 2 == 1 and 881 <= k <= 1079 and abs(chan_off_khz) <= FM_CHECK_TOL_KHZ)
-    clearly_off = k % 2 == 0 or abs(chan_off_khz) >= FM_CHECK_OFF_KHZ
+    # the region's FM plan: odd tenths in the Americas (88.1, 88.3 ... 107.9 MHz), any raster step elsewhere
+    chan_key, chan_off_khz, on_channel, clearly_off = _fm_carrier_check(carrier)
+    k = int(round(chan_key * 10.0))
     named = bool(rds_info.get("rds_station_name")) and not clearly_off   # a name: a station (maybe a ppm error)
     if wbfm and _in_fm_band(carrier) and (on_channel or named or clearly_off):   # the Spectrum list uses this
         _remember_station(k / 10.0, rds_info.get("rds_station_name") if named else None,
@@ -796,8 +794,23 @@ def _devices_from_packets(packets, heard_by=None) -> list:
 # The bands rtl_433's devices use (MHz): 27 / 40 / 49 MHz toys and remotes, 315 / 345 / 390 / 418 / 433 MHz remotes
 # and sensors, 868 and 900-930 MHz sensors and meters. A decode far outside them is almost always noise that
 # happened to pass a decoder's checks (a utility meter "heard" at 28.8 MHz).
-SENSOR_WINDOWS_MHZ = ((26.9, 27.3), (39.5, 41.0), (49.0, 50.0), (300.0, 320.0), (340.0, 350.0), (385.0, 395.0),
-                      (416.0, 420.0), (430.0, 440.0), (860.0, 880.0), (900.0, 930.0))
+# These windows are the same in every region, and every region's and country's sensor bands are added
+# (arislib.regions.all_sensor_bands: 169.4 MHz meters, 426 / 429 MHz telemetry, 920 MHz ...): a decode is doubtful
+# only outside all of them, never because this station's region does not use that band (devices cross borders, and
+# the region may be set wrongly).
+def _sensor_windows() -> tuple:
+    """The windows above plus every region's sensor bands (a region file that cannot be read is left out and logged
+    by arislib.regions; should even that fail, the windows above alone)."""
+    own = {(26.9, 27.3), (39.5, 41.0), (49.0, 50.0), (300.0, 320.0), (340.0, 350.0), (385.0, 395.0), (416.0, 420.0),
+           (430.0, 440.0), (860.0, 880.0), (900.0, 930.0)}
+    try:
+        return tuple(sorted(own | set(regions.all_sensor_bands())))
+    except Exception as e:
+        log.warning("band plan: sensor bands of the regions not read (%s)", e)
+        return tuple(sorted(own))
+
+
+SENSOR_WINDOWS_MHZ = _sensor_windows()
 DOUBT_SNR_DB = 8.0                 # a single packet this weak is as likely to be noise as a device
 
 

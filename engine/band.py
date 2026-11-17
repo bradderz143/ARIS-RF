@@ -47,26 +47,42 @@ def _band_cutoff_hz(width_hz):
     return min(120e3, max(8e3, w / 2.0 + max(6e3, 0.15 * w)))
 
 
-def _band_args(band):
-    """'433' / 'ism' / '915' / '902-928' / (lo, hi) -> (lo MHz, hi MHz, label). A known band keeps its name also when
-    it comes as a range (the chat console hands the GUI the range)."""
+def _capture_bands() -> dict:
+    """Every band a band capture knows by name: arislib.bandwatch's, with this region's own edges and labels for
+    its names ('915' is 915-928 MHz in Australia). A name the region does not plan ('868' in the Americas, where
+    863-870 MHz is trunked radio) is still understood as a word, with a plain label ('band 863-870 MHz'), never
+    another region's wording; a plug-in's band keeps the label the plug-in gave it."""
     from arislib import bandwatch
+    out = {k: tuple(v) for k, v in _region().ism_bands.items()}     # the region's first (a frequency's band)
+    plugged = {key for _rx, key in _EXTRA_BAND_WORDS}
+    for k, (lo, hi, lb) in bandwatch.BANDS.items():
+        if k not in out:
+            out[k] = (lo, hi, lb if k in plugged else f"band {lo:g}-{hi:g} MHz")
+    return out
+
+
+def _band_args(band):
+    """'433' / 'ism' / '915' / '868' / '902-928' / (lo, hi) -> (lo MHz, hi MHz, label). A known band keeps its name
+    also when it comes as a range (the chat console hands the GUI the range). 'The ISM band' is this region's
+    (the 433 MHz band in the Americas and Europe, 920 MHz in Japan)."""
+    bands = _capture_bands()
     if isinstance(band, (list, tuple)) and len(band) == 2:
         band = f"{float(band[0])}-{float(band[1])}"
     s = str(band or "").lower()
     m = re.search(r"(\d{3}(?:\.\d+)?)\s*(?:-|to|\.\.)\s*(\d{3,4}(?:\.\d+)?)", s)
     if m:
         lo, hi = sorted((float(m.group(1)), float(m.group(2))))
-        label = next((lb for a, b, lb in bandwatch.BANDS.values() if abs(a - lo) < 0.01 and abs(b - hi) < 0.01),
+        label = next((lb for a, b, lb in bands.values() if abs(a - lo) < 0.01 and abs(b - hi) < 0.01),
                      f"band {lo:g}-{hi:g} MHz")
     else:
-        key = (s if s in bandwatch.BANDS else _plugin_band_key(s) or
-               ("915" if re.search(r"9(?:15|02|28|00)", s) else "315" if "315" in s else
-                "433" if re.search(r"43[34]|ism", s) else None))
-        if key is None:                       # never the 433 band by default ('1090' must not become one)
-            raise RFError(f"I don't know which band '{band}' is. A band capture covers the 433, 315 or 915 MHz band, "
-                          "or a range such as 902-928.")
-        lo, hi, label = bandwatch.BANDS[key]
+        key = (s if s in bands else _plugin_band_key(s) or
+               ("868" if re.search(r"86[3-9]", s) else "920" if re.search(r"92[0-4]", s) else
+                "915" if re.search(r"9(?:15|02|28|00)", s) else "315" if "315" in s else
+                "433" if re.search(r"43[34]", s) else _region().ism_default if "ism" in s else None))
+        if key is None or key not in bands:   # never the 433 band by default ('1090' must not become one)
+            raise RFError(f"I don't know which band '{band}' is. A band capture covers the "
+                          f"{', '.join(sorted(_region().ism_bands))} MHz band here, or a range such as 902-928.")
+        lo, hi, label = bands[key]
     if not (MIN_MHZ <= lo < hi <= MAX_MHZ):
         raise RFError(f"{lo:g}-{hi:g} MHz is outside the tuner range {MIN_MHZ:g}-{MAX_MHZ:g} MHz.")
     if hi - lo > 60.0:
@@ -715,14 +731,14 @@ def _one_reading(pk):
 
 
 def _band_of_freq(freq_mhz):
-    """The band capture's band ('433' / '315' / '915') a frequency lies in, else None. mode='band' with a frequency
-    outside them (the model copying 'mode: band' to a 1090 capture) is an ordinary capture."""
-    from arislib import bandwatch
+    """The region's band-capture band ('433' / '315' / '915' in the Americas) a frequency lies in, else None.
+    mode='band' with a frequency outside them (the model copying 'mode: band' to a 1090 capture, or to 865 MHz in
+    the Americas, where that is trunked radio) is an ordinary capture; other bands are recorded when named."""
     try:
         f = _to_mhz(freq_mhz)
     except Exception:
         return None
-    return next((k for k, (lo, hi, _lb) in bandwatch.BANDS.items() if lo <= f <= hi), None)
+    return next((k for k, (lo, hi, _lb) in _region().ism_bands.items() if lo <= f <= hi), None)
 
 
 @register(

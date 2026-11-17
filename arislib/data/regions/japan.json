@@ -1,0 +1,368 @@
+{
+ "id": "japan",
+ "name": "Japan",
+ "short": "Japan",
+ "base": "world",
+ "fm": {
+  "lo": 76.0,
+  "hi": 99.0,
+  "first": 76.0,
+  "last": 99.0,
+  "raster_khz": 100,
+  "plan": "any_raster",
+  "label": "FM radio broadcasting (76-99 MHz, 100 kHz raster)"
+ },
+ "sensor_bands": [
+  [
+   312.0,
+   315.25
+  ],
+  [
+   426.025,
+   426.1375
+  ],
+  [
+   429.175,
+   429.7375
+  ],
+  [
+   916.7,
+   928.1
+  ]
+ ],
+ "busy_bands": [
+  [
+   718.0,
+   748.0
+  ],
+  [
+   773.0,
+   803.0
+  ],
+  [
+   815.0,
+   845.0
+  ],
+  [
+   860.0,
+   890.0
+  ],
+  [
+   900.0,
+   915.0
+  ],
+  [
+   945.0,
+   960.0
+  ],
+  [
+   1427.9,
+   1462.9
+  ],
+  [
+   1475.9,
+   1510.9
+  ],
+  [
+   1749.9,
+   1784.9
+  ],
+  [
+   1844.9,
+   1879.9
+  ],
+  [
+   1920.0,
+   1980.0
+  ],
+  [
+   2110.0,
+   2170.0
+  ],
+  [
+   2400.0,
+   2483.5
+  ],
+  [
+   5150.0,
+   5875.0
+  ]
+ ],
+ "hop_bands": [
+  [
+   920.5,
+   928.1,
+   "LoRa, smart meters and other 920 MHz devices that change channel"
+  ],
+  [
+   2400.0,
+   2483.5,
+   "Bluetooth and other frequency-hopping devices"
+  ]
+ ],
+ "ism_bands": {
+  "315": [
+   312.0,
+   315.25,
+   "315 MHz band (312-315.25)"
+  ],
+  "920": [
+   920.5,
+   928.1,
+   "920 MHz low-power band (920.5-928.1)"
+  ]
+ },
+ "ism_default": "920",
+ "setup": {
+  "low": "312-316",
+  "subghz": "916-929",
+  "fm": "76-99"
+ },
+ "gain_band": [
+  880.0,
+  960.0
+ ],
+ "presets": [
+  {
+   "id": "fm",
+   "name": "FM 76-99",
+   "start": 76.0,
+   "stop": 99.0
+  },
+  {
+   "id": "315",
+   "name": "315 MHz",
+   "start": 312.0,
+   "stop": 316.0
+  },
+  {
+   "id": "920",
+   "name": "920 MHz",
+   "start": 916.0,
+   "stop": 929.0
+  },
+  "air",
+  {
+   "id": "2m",
+   "name": "2 m ham",
+   "start": 144.0,
+   "stop": 146.0
+  },
+  {
+   "id": "lp426",
+   "name": "426-430 MHz",
+   "start": 426.0,
+   "stop": 430.0
+  },
+  "adsb",
+  {
+   "id": "live315",
+   "name": "Live 315.0",
+   "start": 314.6,
+   "stop": 315.4
+  },
+  {
+   "id": "live920",
+   "name": "Live 922.4",
+   "start": 922.0,
+   "stop": 922.8
+  },
+  {
+   "id": "phones",
+   "name": "Phones 700-960",
+   "start": 770.0,
+   "stop": 960.0
+  },
+  "gnss",
+  "ism24",
+  "wifi5",
+  "ism58"
+ ],
+ "device_hints": [
+  [
+   312.0,
+   315.25,
+   "ANY",
+   "315 MHz car key fob, tyre sensor or low-power remote"
+  ],
+  [
+   916.7,
+   928.1,
+   "FSK",
+   "920 MHz smart meter (Wi-SUN), LoRa or sensor"
+  ]
+ ],
+ "named": {
+  "2m": [
+   144.0,
+   146.0
+  ]
+ },
+ "allocations": [
+  [
+   426.025,
+   426.1375,
+   "Low-power remote controls, e.g. of construction machines (426 MHz)"
+  ],
+  [
+   26.964,
+   27.148,
+   "Citizens band radio, 8 AM channels (licence-free 0.5 W); 27.12 MHz ISM inside"
+  ],
+  [
+   26.957,
+   27.283,
+   "ISM band 27.12 MHz: industrial heating, models, some remotes"
+  ],
+  [
+   351.0,
+   351.4,
+   "Digital simple radio: business and leisure walkie-talkies (351 MHz)"
+  ],
+  [
+   429.175,
+   429.7375,
+   "Low-power telemeters and data links (429 MHz)"
+  ],
+  [
+   160.6,
+   161.9625,
+   "Marine VHF radio: coast station side of duplex channels"
+  ],
+  [
+   144.0,
+   146.0,
+   "Amateur radio 2 m band (Japan: 144-146 only)"
+  ],
+  [
+   312.0,
+   315.25,
+   "Car key fobs, tyre pressure sensors, low-power remotes and telemeters (315 MHz)"
+  ],
+  [
+   916.7,
+   920.5,
+   "RFID tag readers (920 MHz premises radio)"
+  ],
+  [
+   50.0,
+   54.0,
+   "Amateur radio 6 m band"
+  ],
+  [
+   920.5,
+   928.1,
+   "920 MHz low-power band: smart meters (Wi-SUN), LoRa, sensors; RFID to 920.9"
+  ],
+  [
+   90.0,
+   99.0,
+   "Wide FM: FM relays of AM stations (90-95 MHz since 2014; 95-99 since May 2025)"
+  ],
+  [
+   430.0,
+   440.0,
+   "Amateur radio 70 cm band"
+  ],
+  [
+   76.0,
+   90.0,
+   "FM radio broadcasting (100 kHz raster)"
+  ],
+  [
+   900.0,
+   915.0,
+   "900 MHz mobile phones transmit"
+  ],
+  [
+   945.0,
+   960.0,
+   "900 MHz mobile towers transmit"
+  ],
+  [
+   718.0,
+   748.0,
+   "700 MHz mobile phones transmit"
+  ],
+  [
+   773.0,
+   803.0,
+   "700 MHz mobile towers transmit"
+  ],
+  [
+   815.0,
+   845.0,
+   "800 MHz mobile phones transmit (bands 18/19)"
+  ],
+  [
+   860.0,
+   890.0,
+   "800 MHz mobile towers transmit (bands 18/19)"
+  ],
+  [
+   1427.9,
+   1462.9,
+   "1.5 GHz mobile phones transmit (bands 11/21)"
+  ],
+  [
+   1475.9,
+   1510.9,
+   "1.5 GHz mobile towers transmit (bands 11/21)"
+  ],
+  [
+   1749.9,
+   1784.9,
+   "1.7 GHz mobile phones transmit (band 3/9)"
+  ],
+  [
+   1844.9,
+   1879.9,
+   "1.7 GHz mobile towers transmit (band 3/9)"
+  ],
+  [
+   1920.0,
+   1980.0,
+   "2 GHz mobile phones transmit (band 1)"
+  ],
+  [
+   4500.0,
+   4600.0,
+   "5G mobile (4.5 GHz band)"
+  ],
+  [
+   3400.0,
+   3600.0,
+   "3.5 GHz mobile broadband (TD-LTE / 5G)"
+  ],
+  [
+   3600.0,
+   4100.0,
+   "5G mobile (3.7 GHz band)"
+  ]
+ ],
+ "tv": [
+  {
+   "lo": 470.0,
+   "hi": 710.0,
+   "width_mhz": 6,
+   "first_channel": 13,
+   "standard": "ISDB-T",
+   "skip": [],
+   "countries": [],
+   "centre_offset_mhz": 0.142857,
+   "note": "Signal centre = channel centre + 1/7 MHz (ch 13: 473.142857). No digital TV on VHF."
+  }
+ ],
+ "dab": [],
+ "countries": {},
+ "notes": [
+  "FM 76-90 MHz, plus 90-99 MHz for AM stations' FM relays (Wide FM; 95-99 MHz since 2025)."
+ ],
+ "prompt": [
+  "76-99 MHz FM broadcast radio (100 kHz raster). Cheap FM bugs and wireless mics also use it.",
+  "108-118 aircraft navigation beacons (VOR, ILS: steady AM carriers, no voice); 118-137 aircraft voice (AM); 137-138 weather satellites.",
+  "144-146 2 m amateur radio; marine VHF 156-162; 312-315 car keyfobs and tyre sensors; 426 and 429 low-power telemetry.",
+  "430-440 70 cm amateur; 470-710 digital TV; 700-960 mobile phone bands.",
+  "920.5-928.1 low-power band: smart meters, LoRa, sensors; 1090 aircraft ADS-B."
+ ]
+}

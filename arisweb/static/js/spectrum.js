@@ -12,8 +12,12 @@ const SP = {running: false, busy: false, timer: null, data: null, holdOn: false,
             ref: null,                                           // the Delta reference frequency
             plan: null, plans: {}, planT: null,                  // the server's plan for the view, and the ones asked before
             run: 0, loopId: 0, prog: null,                       // sweep in progress: its number, and where it is
+            autoZoom: true, zoomT: null,                         // a zoomed view is swept by itself (the setting), and its timer
+            pinch: null,                                         // two fingers on the plot: where the gesture started
+            region: null, regionRO: false,                       // the band labels' region (GET /api/region), and whether it is read-only here
             lines: null, drag: null, dragEnd: 0, raf: 0, stale: false};
 const SP_L = 44, SP_R = 10, SP_T = 22, SP_B = 22;
+const SP_EDGE_LABEL_PX = 10;                    // gain lines closer than this on the plot get no label (the lines alone)
 const SP_GAP_TEXT = 'no receiver here tunes this';
 const SP_HINT = 'Tap the spectrum or a signal below to select a frequency.';
 
@@ -23,7 +27,7 @@ function spColor(serial){
 }
 function spSave(){ try { localStorage.setItem('aris_spec', JSON.stringify({p: SP.preset, d: document.getElementById('sp-dongle').value,
   s: String(SP.view.s), e: String(SP.view.e), sc: SP.scale, rbw: SP.rbw, top: SP.top, rng: SP.range, avg: SP.avgN, gain: SP.gain, lvl: SP.lvl,
-  help: SP.helpOpen})); } catch (e) {} }
+  help: SP.helpOpen, az: SP.autoZoom})); } catch (e) {} }
 function spLoad(){ try { return JSON.parse(localStorage.getItem('aris_spec') || 'null'); } catch (e) { return null; } }
 
 // ---- the view: start, stop, centre and span, always inside 0-6000 MHz ----
@@ -44,12 +48,20 @@ function spFields(){
   // a field that already shows the value is left alone (rewriting one that is being typed into loses the caret)
   const v = SP.view, set = (id, x) => { const f = document.getElementById(id); if (parseFloat(f.value) !== spR4(x)) f.value = spR4(x); };
   set('sp-start', v.s); set('sp-stop', v.e); set('sp-centre', (v.s + v.e) / 2); set('sp-span', v.e - v.s);
+  // a chip is on only while the view is its range: after a region change a preset of the same name can cover
+  // another range (FM 88-108 here, 76-99 there), and a pinch moves the view before the gesture ends
+  if (SP.preset && SP.meta && !spOnPreset(SP.meta.presets.find(x => x.id === SP.preset), v)) SP.preset = null;
   if (!SP.preset && SP.meta){                   // a view typed or zoomed onto a preset's range is that preset
-    const m = SP.meta.presets.find(x => Math.abs(x.start - v.s) < 1e-6 && Math.abs(x.stop - v.e) < 1e-6);
+    const m = SP.meta.presets.find(x => spOnPreset(x, v));
     if (m) SP.preset = m.id;
   }
   document.querySelectorAll('#sp-presets .chip').forEach(c => c.classList.toggle('on', c.dataset.id === SP.preset));
   document.getElementById('sp-back').disabled = !SP.hist.length;
+}
+function spOnPreset(p, v){                      // is the view this preset's range (as the view would hold it)?
+  if (!p || !isFinite(p.start) || !isFinite(p.stop)) return false;
+  const f = spFitView(p.start, p.stop);
+  return Math.abs(f[0] - v.s) < 1e-6 && Math.abs(f[1] - v.e) < 1e-6;
 }
 function specSetView(s, e, opt){
   opt = opt || {};
@@ -72,11 +84,47 @@ function specViewChanged(){
   const d = SP.data, v = SP.view;
   if (d && !(d.stop_mhz > v.s && d.start_mhz < v.e)) spForget();
   SP.stale = !!SP.data;
-  if (SP.sel !== null && (SP.sel < v.s || SP.sel > v.e)){ SP.sel = null; document.getElementById('sp-sel').style.display = 'none'; }
+  // the marker's panel goes when the marker leaves the view, but not while a Decode starts or runs: its progress card
+  // and its Stop are in that panel (the next view change after it ends applies the rule again)
+  if (SP.sel !== null && (SP.sel < v.s || SP.sel > v.e) && !SP.job && !SP.decBusy){ SP.sel = null; document.getElementById('sp-sel').style.display = 'none'; }
   document.getElementById('sp-readout').textContent = SP.sel !== null ? readoutAt(SP.sel) : SP_HINT;
   if (SP.ref !== null && (SP.ref < v.s || SP.ref > v.e)) spDeltaOff();
   spSave(); spPlanSoon(); specDraw();
   if (SP.running) spRestartLoop(250); else specStatus(SP.stale ? 'View changed: sweep to measure it' : 'Stopped');
+  spZoomSoon();
+}
+// A zoomed view swept by itself: with the plot stopped, once the view has settled (no change for SP_ZOOM_WAIT_MS),
+// a view narrower than what is on screen is swept once when its plan has a finer step than what was measured and
+// the sweep is quick (a live capture, or at most SP_QUICK_MHZ tuned). Never while a Decode, Name all or a capture
+// start is under way; another view change cancels it (the sweep's run counter); zooming out never starts one.
+const SP_ZOOM_WAIT_MS = 800, SP_QUICK_MHZ = 60;
+function spZoomSoon(){
+  clearTimeout(SP.zoomT); SP.zoomT = null;
+  const d = SP.data, v = SP.view;
+  if (!SP.autoZoom || SP.running || !d || d.mode === 'none' || !(d.step_khz > 0)) return;
+  if (!(v.e - v.s < d.stop_mhz - d.start_mhz - 1e-9)) return;
+  SP.zoomT = setTimeout(spZoomSweep, SP_ZOOM_WAIT_MS);
+}
+function spIdle(){ return !SP.running && !SP.busy && !SP.job && !SP.decBusy && !SP.naming && !SP.capBusy; }
+function spQuick(pl){ return pl.mode === 'live' || (pl.mode === 'sweep' && pl.covered_mhz <= SP_QUICK_MHZ); }
+function spStepOf(pl){ return pl.mode === 'live' ? pl.span_mhz * 1000 / Math.max(1, pl.points) : pl.step_khz; }
+function spKhz(x){ return String(Math.round(x * 1000) / 1000); }
+function spCoveredText(pl){ const c = pl.covered || []; return c.length ? spRangeText(c[0][0], c[c.length - 1][1]) : spRangeText(pl.start_mhz, pl.stop_mhz); }
+async function spZoomSweep(){
+  SP.zoomT = null;
+  const d = SP.data, p = specParams();
+  if (!SP.autoZoom || !spIdle() || !d || !(p.e > p.s)) return;
+  let pl; try { pl = await spPlan(p); } catch (e){ return; }
+  if (specParams().key !== p.key || !spIdle() || !SP.autoZoom) return;      // the view moved on, or other work began
+  const st = spStepOf(pl);
+  if (!spQuick(pl) || !(st > 0) || !(d.step_khz > st * 1.05)) return;       // slow, or nothing finer to see
+  specOnce({auto: true, label: pl.mode === 'live' ? 'Zoomed in: capturing ' + spRangeText(p.s, p.e) + ' live'
+                                                  : 'Zoomed in: sweeping ' + spCoveredText(pl) + ' at ' + spKhz(st) + ' kHz steps'});
+}
+function specAutoZoom(){
+  SP.autoZoom = !!document.getElementById('sp-autozoom').checked;
+  if (!SP.autoZoom){ clearTimeout(SP.zoomT); SP.zoomT = null; }
+  spSave();
 }
 function specPreset(id){
   const p = SP.meta && SP.meta.presets.find(x => x.id === id); if (!p) return;
@@ -138,14 +186,7 @@ async function specInit(){
   const all = el('option', '', 'All dongles (compare)'); all.value = 'all'; ds.appendChild(all);
   m.dongles.forEach(d => { const o = el('option', '', d.name + (d.antenna_note ? ' - ' + d.antenna_note : '') +
       (d.best_for && d.best_for.length ? ' (best for ' + d.best_for.join(', ') + ')' : '')); o.value = d.serial; ds.appendChild(o); });
-  const box = document.getElementById('sp-presets'); box.innerHTML = '';
-  m.presets.forEach(p => {
-    const c = el('div', 'chip', p.name); c.dataset.id = p.id; c.onclick = () => specPreset(p.id);
-    const part = p.tuned_part === undefined ? p.tuned : p.tuned_part;
-    if (part === false){ c.classList.add('untuned'); c.title = 'No receiver here tunes this range. It can still be shown: the plot will say so.'; }
-    else if (p.tuned === false) c.title = 'Only part of this range is tuned by a receiver here.';
-    box.appendChild(c);
-  });
+  spPresetChips(m);
   const rb = document.getElementById('sp-rbw');
   (m.steps_khz || []).forEach(k => { const o = el('option', '', k + ' kHz'); o.value = String(k); rb.appendChild(o); });
   const saved = spLoad() || {};
@@ -161,11 +202,85 @@ async function specInit(){
   if (saved.lvl === 'raw'){ lv.value = 'raw'; SP.lvl = 'raw'; }
   const av = document.getElementById('sp-avg');
   if (saved.avg && [...av.options].some(o => o.value === String(saved.avg))){ av.value = String(saved.avg); SP.avgN = Number(saved.avg); }
+  SP.autoZoom = saved.az !== false; document.getElementById('sp-autozoom').checked = SP.autoZoom;
+  // the view the user left, whatever the presets now cover (a preset of that name may have another range since:
+  // the region changed); spFields marks the chip whose range it is
   const s = parseFloat(saved.s), e = parseFloat(saved.e);
-  if (saved.p && m.presets.some(p => p.id === saved.p)) specPreset(saved.p);
-  else if (isFinite(s) && isFinite(e) && e > s) specSetView(s, e, {force: true, noHist: true});
+  if (isFinite(s) && isFinite(e) && e > s) specSetView(s, e, {force: true, noHist: true});
+  else if (saved.p && m.presets.some(p => p.id === saved.p)) specPreset(saved.p);
   else specPreset('fm');
   SP.hist = []; spFields();
+  spLoadRegion();
+}
+// The preset chips (the server's list follows the region: some bands differ from one region to another).
+function spPresetChips(m){
+  const box = document.getElementById('sp-presets'); box.innerHTML = '';
+  (m.presets || []).forEach(p => {
+    const c = el('div', 'chip', p.name); c.dataset.id = p.id; c.onclick = () => specPreset(p.id);
+    const part = p.tuned_part === undefined ? p.tuned : p.tuned_part;
+    if (part === false){ c.classList.add('untuned'); c.title = 'No receiver here tunes this range. It can still be shown: the plot will say so.'; }
+    else if (p.tuned === false) c.title = 'Only part of this range is tuned by a receiver here.';
+    box.appendChild(c);
+  });
+}
+// ---- band labels: the region (and country) whose band plan names the signals in the list ----
+// GET /api/region; a server without it leaves the line hidden. The admin picks another region here; an extra
+// account reads it (the server refuses a change from it with 403, which also turns the selects into text).
+async function spLoadRegion(){
+  let r; try { r = await apiGet('/api/region'); } catch (e){ return; }
+  if (!r || typeof r !== 'object' || !r.id) return;
+  SP.region = r; spRegionDraw();
+}
+function spRegionName(r){ return String(r.name || r.id) + (r.country_name ? ', ' + r.country_name : ''); }
+function spRegionDraw(msg){
+  const box = document.getElementById('sp-region'), r = SP.region; if (!box) return;
+  box.innerHTML = ''; box.hidden = !r; if (!r) return;
+  const how = r.guessed ? ' (guessed from the time zone)' : (r.source === 'default' ? ' (the default: none chosen)' : '');
+  if (SP.regionRO || document.body.dataset.role === 'viewer'){       // one run of text (the line is a flex row)
+    const t = el('span', '', 'Band labels: '); t.appendChild(el('b', '', spRegionName(r)));
+    t.appendChild(document.createTextNode(how + '. Only the admin account can change it.')); box.appendChild(t);
+  } else {
+    box.appendChild(el('span', 'lab', 'Band labels: '));
+    const sel = el('select', 'sel'); sel.id = 'sp-region-sel'; sel.setAttribute('aria-label', 'Region for the band labels');
+    (Array.isArray(r.choices) ? r.choices : []).forEach(c => { const o = el('option', '', String(c.name)); o.value = String(c.id); sel.appendChild(o); });
+    if (![...sel.options].some(o => o.value === r.id)){ const o = el('option', '', String(r.name || r.id)); o.value = r.id; sel.appendChild(o); }
+    sel.value = r.id; sel.onchange = () => spRegionSet(sel.value, null);    // another region: its own countries
+    box.appendChild(sel);
+    const cs = (Array.isArray(r.countries) ? r.countries : []).filter(c => c && c.region === r.id);
+    if (cs.length){
+      const cy = el('select', 'sel'); cy.id = 'sp-country-sel'; cy.setAttribute('aria-label', 'Country for the band labels');
+      const all = el('option', '', 'Whole region'); all.value = ''; cy.appendChild(all);
+      cs.forEach(c => { const o = el('option', '', String(c.name)); o.value = String(c.id); cy.appendChild(o); });
+      cy.value = r.country || ''; cy.onchange = () => spRegionSet(r.id, cy.value || null);
+      box.appendChild(cy);
+    }
+    if (how) box.appendChild(el('span', 'sub', how));
+  }
+  box.appendChild(el('span', 'sub', ' A label is the band plan there, never an identification.'));
+  if (msg) box.appendChild(el('div', 'sp-region-msg', msg));
+}
+async function spRegionSet(id, country){
+  let r; try { r = await post('/api/region', {id: id, country: country}); }
+  catch (e){
+    if (e.status === 403) SP.regionRO = true;
+    spRegionDraw(e.status === 403 ? '' : 'Not changed: ' + e.message);       // (the text line says who can change it)
+    return;
+  }
+  if (!r || !r.id) return;
+  SP.region = r; spRegionDraw('Band labels now follow ' + spRegionName(r) + '.');
+  await spReloadMeta();
+  // the list's labels came from the old band plan: a quick view is swept again for them, a slow one is left for later
+  if (!SP.data || SP.running) return;
+  const p = specParams(); let pl; try { pl = await spPlan(p); } catch (e){ return; }
+  if (specParams().key === p.key && spIdle() && spQuick(pl)) specOnce({label: 'Band labels changed: sweeping again for the new labels'});
+  else if (!SP.busy) specStatus('Band labels changed: sweep again to see them in the list');
+}
+// The presets again (after a region change): the view stays where it is.
+async function spReloadMeta(){
+  let m; try { m = await apiGet('/api/spectrum/meta'); } catch (e){ return; }
+  if (!m || !Array.isArray(m.presets)) return;
+  SP.meta = m; spPresetChips(m);
+  spFields(); spSave();                         // (a preset id whose range moved with the region is let go, also in what is saved)
 }
 function specScale(v, quiet){
   SP.scale = v; document.querySelectorAll('#sp-scale button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
@@ -234,8 +349,11 @@ async function spFetchPiece(p, pl, c){
   j.failed = !r.ok; return j;
 }
 const spWait = ms => new Promise(r => setTimeout(r, ms));
-async function specOnce(){
+// One whole sweep of the view. opt.label: what the status line says while it runs (a sweep the page started by
+// itself says why); opt.auto: the page started it (a zoomed view).
+async function specOnce(opt){
   if (SP.busy) return;
+  const label = opt && typeof opt.label === 'string' ? opt.label : '', auto = !!(opt && opt.auto === true);
   const p = specParams();
   if (!(p.e > p.s)){ specStatus('Enter a start and stop frequency'); return; }
   SP.key = p.key;
@@ -257,8 +375,8 @@ async function specOnce(){
     for (let i = 0; i < n; i++){
       const c = pl.chunks[i];
       SP.prog = n > 1 ? {i: i, n: n, s: c.start, e: c.stop} : null;
-      specStatus(n > 1 ? 'Sweeping ' + spRangeText(pl.covered[0][0], pl.covered[pl.covered.length - 1][1]) + ': ' + (i + 1) + ' of ' + n
-                       : (pl.mode === 'live' ? 'Capturing...' : 'Sweeping...'));
+      specStatus(n > 1 ? (label || 'Sweeping ' + spRangeText(pl.covered[0][0], pl.covered[pl.covered.length - 1][1])) + ': ' + (i + 1) + ' of ' + n
+                       : (label || (pl.mode === 'live' ? 'Capturing...' : 'Sweeping...')));
       if (n > 1) specDraw();
       let j = null;
       for (let tries = 0; ; tries++){
@@ -283,6 +401,8 @@ async function specOnce(){
     SP.data = spMerge(parts, pl); SP.stale = false; SP.lines = null;
     specUpdateAvg(); specUpdateHold(); specDraw(); specWaterfall(); specPeaks(); specLegend(); specWarnings();
     if (SP.sel !== null) specSelect(SP.sel, true);
+    const rg = SP.data.region;                  // the region was changed elsewhere (another page, the chat): follow it
+    if (rg && rg.id && SP.region && rg.id !== SP.region.id){ spLoadRegion(); spReloadMeta(); }
     const j = SP.data, took = n > 1 ? ((Date.now() - t0) / 1000).toFixed(1) + ' s' : j.took_ms + ' ms';
     let st = (j.mode === 'live' ? 'Live IQ' : 'Sweep') + ' ' + j.time + ' | ' + took + ' | step ' + j.step_khz + ' kHz';
     if (pl.step_raised) st += ' (raised from ' + pl.step_asked_khz + ')';
@@ -291,6 +411,7 @@ async function specOnce(){
     else if (j.spikes_kept) st += ' | receiver spikes not removed at this step';
     if (SP.holdOn && SP.holdSince) st += ' | peak hold since ' + SP.holdSince.toTimeString().slice(0, 5) + ' (' + SP.holdN + (SP.holdN === 1 ? ' sweep)' : ' sweeps)');
     const an = spAvgCount(); if (an) st += ' | average of ' + an;
+    if (auto) st += ' | swept by itself after the zoom';
     specStatus(st);
     document.getElementById('sp-status').title = pl.step_note || '';
   }catch(e){ if (run === SP.run) specStatus('Connection problem'); }
@@ -325,6 +446,7 @@ function spSplice(j){
     segs.push({s: r[0], e: r[1], floor: t.floor_db});
     o.segs = segs; o.floor_db = Math.min.apply(null, segs.map(x => x.floor));
     o.brk = Math.max(o.brk || 0, spBreak(r[0], r[1], n));
+    o.gp = spGpSplice(o.gp, j.start_mhz, j.stop_mhz, spGainPieces(t));
   });
   d.peaks = (d.peaks || []).filter(m => m.mhz < lo || m.mhz > hi).concat(j.peaks || []);
   // the picture's scale follows the lines on it, not the latest piece: a piece only a calibrated receiver measured
@@ -333,6 +455,40 @@ function spSplice(j){
   d.unit = us.size === 1 ? [...us][0] : (us.size ? 'mixed' : j.unit); SP.lines = null;
 }
 function spBreak(lo, hi, n){ return 3 * (hi - lo) / Math.max(1, n - 1); }     // points further apart than this are not joined
+// The gain each part of a trace was measured at (the server's gain_pieces, [[lo MHz, hi MHz, gain dB], ...]): Auto
+// gain cuts a sweep where a band with its own best gain begins. Anything else in that place is ignored: no lines.
+function spGainPieces(t){
+  const q = t && Array.isArray(t.gain_pieces) ? t.gain_pieces : [];
+  const ok = q.filter(x => Array.isArray(x) && x.length >= 3 && [0, 1, 2].every(i => typeof x[i] === 'number' && isFinite(x[i])) && x[0] < x[1]);
+  return ok.length ? ok.map(x => [x[0], x[1], x[2]]).sort((a, b) => a[0] - b[0]) : null;
+}
+// One piece swept again: what lay between lo and hi goes, the new pieces come in.
+function spGpSplice(old, lo, hi, add){
+  const out = [];
+  (old || []).forEach(x => {
+    if (x[1] <= lo + 1e-7 || x[0] >= hi - 1e-7){ out.push(x); return; }
+    if (x[0] < lo) out.push([x[0], lo, x[2]]);
+    if (x[1] > hi) out.push([hi, x[1], x[2]]);
+  });
+  return out.concat(add || []).sort((a, b) => a[0] - b[0]);
+}
+// Where the gain changed along one line: between two pieces that touch and were measured at different gains.
+function spGainEdges(gp){
+  const out = [];
+  for (let i = 1; i < (gp || []).length; i++){
+    const a = gp[i - 1], b = gp[i];
+    if (Math.abs(a[1] - b[0]) <= 1e-4 && Math.abs(a[2] - b[2]) >= 0.05) out.push({f: b[0], a: a[2], b: b[2]});
+  }
+  return out;
+}
+function spGainText(g){ return g.toFixed(1); }
+// The legend's gains in frequency order, as the dotted lines show them ("37.2 to 8.7 to 37.2 to 29.7 to 37.2"): one
+// entry per run of pieces at the same gain. Without pieces, the server's own words for the gain.
+function spGainList(t){
+  const gp = t.gp || spGainPieces(t) || [], out = [];
+  gp.forEach(x => { if (!out.length || Math.abs(out[out.length - 1] - x[2]) >= 0.05) out.push(x[2]); });
+  return out.length ? out.map(spGainText).join(' to ') : String(t.gain_db);
+}
 // The pieces of a whole sweep as one set of lines, signals and warnings.
 function spMerge(parts, pl){
   const first = parts[0], last = parts[parts.length - 1], one = parts.length === 1;
@@ -340,7 +496,8 @@ function spMerge(parts, pl){
              start_mhz: pl.start_mhz, stop_mhz: pl.stop_mhz, time: last.time, took_ms: parts.reduce((a, x) => a + (x.took_ms || 0), 0),
              step_khz: first.step_khz, traces: [], peaks: [], warnings: [], gap_note: pl.gap_note, left_out: pl.left_out || [],
              spikes_removed: parts.reduce((a, x) => a + (x.spikes_removed || 0), 0), spikes_kept: parts.some(x => x.spikes_kept),
-             fm_plan_checked: parts.every(x => x.fm_plan_checked), dongle_name: first.dongle_name};
+             fm_plan_checked: parts.every(x => x.fm_plan_checked), dongle_name: first.dongle_name,
+             region: last.region && typeof last.region === 'object' ? last.region : null};
   const by = {};
   parts.forEach(j => (j.traces || []).forEach(t => {
     let o = by[t.dongle];
@@ -360,6 +517,7 @@ function spMerge(parts, pl){
     o.range_mhz = o.n ? [Math.min(o.range_mhz[0], r[0]), Math.max(o.range_mhz[1], r[1])] : [r[0], r[1]];
     o.brk = Math.max(o.brk, spBreak(r[0], r[1], n));
     o.peaks += t.peaks || 0; o.n += 1; o.unit = t.unit;
+    const gp = spGainPieces(t); if (gp) o.gp = (o.gp || []).concat(gp).sort((a, b) => a[0] - b[0]);
     if (o.gains.indexOf(t.gain_db) < 0) o.gains.push(t.gain_db);
     if (t.health === 'flat') o.flat += 1; else if (t.health === 'quiet') o.quiet += 1;
   }));
@@ -443,7 +601,7 @@ function spLines(){
       .sort((a, b) => a[0] - b[0]).forEach(q => { const k = spans[spans.length - 1]; if (k && q[0] <= k[1] + 1e-6) k[1] = Math.max(k[1], q[1]); else spans.push([q[0], q[1]]); });
     return {key: t.dongle, name: t.name, color: spColor(t.dongle), freqs: t.freqs, raw: raw, vals: vals, max: mx,
             floor: rel ? 0 : t.floor_db, segs: rel ? null : t.segs, fl: rel ? null : (fl || null), health: t.health, unit: t.unit,
-            brk: t.brk || spBreak(t.freqs[0], t.freqs[n - 1], n), spans: spans};
+            brk: t.brk || spBreak(t.freqs[0], t.freqs[n - 1], n), spans: spans, edges: spGainEdges(t.gp || spGainPieces(t))};
   });
   return SP.lines;
 }
@@ -532,7 +690,7 @@ function specLegend(){
     if (t.antenna) row.appendChild(el('span', 'sub', t.antenna));
     if (t.error) row.appendChild(el('span', 'bad', t.health === 'busy' ? 'busy (in use by ARIS)' : 'error: ' + t.error));
     else if (t.health === 'flat') row.appendChild(el('span', 'bad', 'flat line: check antenna'));
-    else row.appendChild(el('span', 'sub', t.peaks + ' signal' + (t.peaks === 1 ? '' : 's') + ' · floor ' + Number(t.floor_db).toFixed(0) + unitOf(t.unit || j.unit) + ' · gain ' + t.gain_db));
+    else row.appendChild(el('span', 'sub', t.peaks + ' signal' + (t.peaks === 1 ? '' : 's') + ' · floor ' + Number(t.floor_db).toFixed(0) + unitOf(t.unit || j.unit) + ' · gain ' + spGainList(t)));
     if (!t.error && !whole(t.range_mhz) && !shared) row.appendChild(el('span', 'sub', '· measured ' + spRangeText(t.range_mhz[0], t.range_mhz[1])));
     if (!t.error && t.failed) row.appendChild(el('span', 'bad', t.failed + (t.failed === 1 ? ' piece' : ' pieces') + ' not measured: ' + t.lastError));
     box.appendChild(row);
@@ -561,7 +719,7 @@ function spHatch(ctx){                          // thin diagonal lines: "nothing
 function spDrawSoon(){ if (SP.raf) return; SP.raf = requestAnimationFrame(() => { SP.raf = 0; specDraw(); }); }
 function specDraw(){
   const g = specCanvas('spec-canvas'), ctx = g.ctx, w = g.w, h = g.h;
-  ctx.fillStyle = '#05070d'; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#05070d'; ctx.fillRect(0, 0, w, h); SP.gainEdges = [];
   const p = specParams(), j = SP.data;
   const L = SP_L, R = SP_R, T = SP_T, B = SP_B, pw = w - L - R, ph = h - T - B;
   if (!(p.e > p.s)) return;
@@ -654,6 +812,19 @@ function specDraw(){
     const l = lines[0]; ctx.strokeStyle = l.color; ctx.lineWidth = 1.25; ctx.fillStyle = 'rgba(16,185,129,0.12)'; path(l, l.vals, T + ph);
   }
   ctx.globalAlpha = 1;
+  // Where Auto gain changed (the sweep was cut there and each side measured at its own best gain): a thin dotted
+  // line, one per frequency, with the gains either side as the label (one row per dongle when several changed there)
+  const gEdges = [];
+  lines.forEach(l => (l.edges || []).forEach(e => {
+    if (e.f <= p.s || e.f >= p.e || spInGap(e.f)) return;
+    let g = gEdges.find(x => Math.abs(x.f - e.f) <= 1e-4); if (!g){ g = {f: e.f, rows: []}; gEdges.push(g); }
+    g.rows.push({a: e.a, b: e.b, color: lines.length > 1 ? l.color : '#cbd5e1'});
+  }));
+  if (gEdges.length){
+    ctx.strokeStyle = '#cbd5e1'; ctx.globalAlpha = 0.75; ctx.lineWidth = 1; ctx.setLineDash([1, 3]);
+    gEdges.forEach(g => { const x = Math.round(X(g.f)) + 0.5; ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, T + ph); ctx.stroke(); });
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+  }
   // Markers: every peak gets a small triangle; only a few get a label, and labels never overlap.
   const order = (j.peaks || []).filter(m => m.mhz >= p.s && m.mhz <= p.e).sort((a, b) => (b.flag - a.flag) || (b.snr_db - a.snr_db));
   // Every marker's triangle is reserved first, so a label never covers another signal's marker.
@@ -678,6 +849,45 @@ function specDraw(){
       return;
     }
   });
+  // the gain labels: at the top of the plot, else at its foot, never over a signal's label or marker, over a line
+  // that was measured (a trace's drawn points) or over another gain line, so each label is plainly its own line's;
+  // lines closer than SP_EDGE_LABEL_PX (a wide view: 87.5 and 108 MHz a few pixels apart) get none. The dotted line
+  // alone then marks the place, and the legend lists the gains in order.
+  ctx.font = '10px system-ui, sans-serif'; ctx.textAlign = 'left';
+  gEdges.sort((a, b) => a.f - b.f).forEach(g => { g.x = X(g.f); });
+  const fAt = x => p.s + (x - L) / pw * (p.e - p.s);
+  const overTrace = bx => lines.some(l => {     // a drawn point inside the box, or a joined stretch through it
+    const fr = l.freqs, vs = l.vals; if (!fr || !fr.length) return false;
+    const a = Math.max(0, spLower(fr, fAt(bx.x0)) - 1), b = Math.min(fr.length - 1, spLower(fr, fAt(bx.x1)));
+    for (let i = a; i <= b; i++){
+      const y = Y(vs[i]), x = X(fr[i]);
+      if (x >= bx.x0 && x <= bx.x1 && y >= bx.y0 - 1 && y <= bx.y1 + 1) return true;
+      if (i > a && fr[i] - fr[i - 1] <= l.brk){
+        const yp = Y(vs[i - 1]);
+        if (Math.min(y, yp) <= bx.y1 + 1 && Math.max(y, yp) >= bx.y0 - 1) return true;
+      }
+    }
+    return false;
+  });
+  gEdges.forEach((g, k) => {
+    if ((k > 0 && g.x - gEdges[k - 1].x < SP_EDGE_LABEL_PX) || (k + 1 < gEdges.length && gEdges[k + 1].x - g.x < SP_EDGE_LABEL_PX)) return;
+    const rows = g.rows.map((r, i) => ({t: (i ? '' : 'gain ') + spGainText(r.a) + ' | ' + spGainText(r.b), c: r.color}));
+    const tw = Math.max.apply(null, rows.map(r => ctx.measureText(r.t).width)) + 6, th = rows.length * 12 + 2;
+    const x0 = Math.min(Math.max(g.x - tw / 2, L + 1), w - R - tw - 1);
+    if (g.x < x0 || g.x > x0 + tw) return;      // (no room for it round its own line)
+    if (gEdges.some(o => o !== g && o.x >= x0 - 2 && o.x <= x0 + tw + 2)) return;
+    for (const y0 of [T + 2, T + ph - th - 2]){
+      const bx = {x0: x0, x1: x0 + tw, y0: y0, y1: y0 + th};
+      if (boxes.some(b => bx.x0 < b.x1 && bx.x1 > b.x0 && bx.y0 < b.y1 && bx.y1 > b.y0) || overTrace(bx)) continue;
+      boxes.push(bx);
+      ctx.fillStyle = 'rgba(5,7,13,0.85)'; ctx.fillRect(bx.x0, bx.y0, tw, th);
+      rows.forEach((r, i) => { ctx.fillStyle = r.c; ctx.fillText(r.t, x0 + 3, y0 + 11 + i * 12); });
+      g.lab = rows.map(r => r.t); g.box = [Math.round(bx.x0), Math.round(bx.y0), Math.round(bx.x1), Math.round(bx.y1)];
+      break;
+    }
+  });
+  // (what is drawn, for the page's checks: each place, its gains, its label and the label's box)
+  SP.gainEdges = gEdges.map(g => ({f: g.f, rows: g.rows.map(r => [r.a, r.b]), lab: g.lab || null, box: g.box || null}));
   ctx.restore();
   spMarkers(ctx, X, T, ph);
 }
@@ -810,7 +1020,8 @@ function specPeaks(){
     const t = el('div', 'sp-help-text');
     ['dB above noise: how far a signal rises over that dongle\'s own noise. Bigger is clearer, not closer.',
      'D1 8 \u00b7 D2 16: the same, per dongle.',
-     'The plot\'s dBFS: 0 is the strongest level an 8-bit dongle can read. Neither is a calibrated strength (a Signal Hound\'s sweeps are: those show in dBm).'
+     'The plot\'s dBFS: 0 is the strongest level an 8-bit dongle can read. Neither is a calibrated strength (a Signal Hound\'s sweeps are: those show in dBm).',
+     'A dotted line marked "gain 37.2 | 29.7": Auto gain measured the two sides at different gains (in dB). The noise floor can step there: at a lower gain a dongle\'s own noise reads higher at the input. With Levels "At input" the signals either side can still be compared.'
     ].forEach(x => t.appendChild(el('div', '', x)));
     box.appendChild(t);
   }
@@ -914,7 +1125,7 @@ function decBox(){ return document.getElementById('sp-result'); }
 function decMhz(v){ const f = (v === null || v === undefined || v === '') ? NaN : Number(v); return isFinite(f) && f > 0 ? f : null; }
 // While a Decode is being started or runs, the panel's buttons and the card's are off: a capture or a second start
 // would wipe its progress or be refused for the dongles it holds.
-function decButtons(off){ document.querySelectorAll('#sp-sel .btns button, #sp-result button').forEach(b => { b.disabled = off; }); }
+function decButtons(off){ document.querySelectorAll('#sp-sel .btns button, #sp-result button:not(.dec-stop)').forEach(b => { b.disabled = off; }); }
 // Is any of this on the screen now (the tab open, not scrolled away)?
 function decSeen(node){
   const r = node.getBoundingClientRect(), v = document.getElementById('view-spectrum').getBoundingClientRect();
@@ -934,25 +1145,76 @@ async function specDecode(secs){
     const m = el('div', 'warnbox', 'Could not start: ' + e.message); box.appendChild(m); m.scrollIntoView({block: 'nearest'});
     return;
   } finally { SP.decBusy = false; }
-  SP.job = j.job;
+  SP.job = j.job; SP.jobF = f; SP.stopErr = null;
   decProgress({freq_mhz: f, seconds: t, elapsed: 0, expected: t, progress: 'Starting...'});
   box.firstChild.scrollIntoView({block: 'nearest'});       // the press may have been made with the box below the screen
   specDecodePoll();
 }
+// The progress card of the running Decode, with its own Stop. It is built once per job and then only updated: a
+// card rebuilt every second would swallow a press that spans a rebuild. Stop sits on the card's first line, where no
+// result card has a button, so a second tap on a card's step that started this Decode cannot land on it.
 function decProgress(j){
-  const box = decBox(); box.innerHTML = '';
-  const c = el('div', 'dec-card');
-  c.appendChild(el('div', 'dec-h', 'Decoding ' + Number(j.freq_mhz).toFixed(4) + ' MHz for ' + j.seconds + ' s on every dongle...'));
-  const bar = el('div', 'bar'); const fill = el('i'); fill.style.width = Math.min(100, Math.round(100 * j.elapsed / Math.max(1, j.expected))) + '%';
-  bar.appendChild(fill); c.appendChild(bar); c.appendChild(el('div', 'act-sub', j.progress || ''));
-  box.appendChild(c);
+  const box = decBox(), job = String(SP.job || '');
+  let c = box.querySelector('.dec-card.dec-prog');
+  if (!c || c.dataset.job !== job){
+    box.innerHTML = '';
+    c = el('div', 'dec-card dec-prog'); c.dataset.job = job;
+    const top = el('div', 'dec-ptop'); top.appendChild(el('div', 'dec-h'));
+    const stop = el('button', 'dec-stop', 'Stop'); stop.title = 'Stop this Decode only: nothing is saved, captures go on.';
+    stop.onclick = decStop; top.appendChild(stop); c.appendChild(top);
+    const bar = el('div', 'bar'); bar.appendChild(el('i')); c.appendChild(bar);
+    c.appendChild(el('div', 'act-sub dec-pmsg'));
+    box.appendChild(c);
+  }
+  const stopping = !!(j.stopping || (SP.stopping && SP.stopping === SP.job));
+  // why a Stop did not work stays readable for a while: the next polls would write the progress over it at once
+  const se = SP.stopErr && SP.stopErr.job === SP.job && Date.now() - SP.stopErr.at < SP_STOP_ERR_MS ? SP.stopErr.msg : '';
+  c.querySelector('.dec-h').textContent = 'Decoding ' + Number(j.freq_mhz).toFixed(4) + ' MHz for ' + j.seconds + ' s on every dongle...';
+  c.querySelector('.bar i').style.width = Math.min(100, Math.round(100 * j.elapsed / Math.max(1, j.expected))) + '%';
+  c.querySelector('.dec-pmsg').textContent = stopping ? 'Stopping: the dongles are let go in a moment.' : (se || j.progress || '');
   decButtons(true);
+  const b = c.querySelector('.dec-stop'); b.disabled = stopping || !SP.job; b.textContent = stopping ? 'Stopping...' : 'Stop';
+}
+// Stop: POST /api/decode/<job>/stop for this one job (Reset Scanner still stops everything). The poll then brings
+// the end: "stopped", or the result when the job had just finished.
+const SP_STOP_ERR_MS = 8000;
+async function decStop(){
+  const job = SP.job; if (!job || SP.stopping === job) return;
+  SP.stopping = job; SP.stopErr = null;
+  const b = document.querySelector('#sp-result .dec-stop'); if (b){ b.disabled = true; b.textContent = 'Stopping...'; }
+  try { await post('/api/decode/' + encodeURIComponent(job) + '/stop', {}); }
+  catch (e){
+    if (SP.job !== job || e.status === 409) return;          // it ended meanwhile: its own end is on the way
+    SP.stopping = null;
+    SP.stopErr = {job: job, msg: 'Could not stop it: ' + e.message, at: Date.now()};
+    const m = document.querySelector('#sp-result .dec-pmsg'); if (m) m.textContent = SP.stopErr.msg;
+    if (b && b.isConnected){ b.disabled = false; b.textContent = 'Stop'; }
+    if (e.status === 404) specDecodePoll();                  // no such job? the poll asks at once, and ends the card if so
+  }
+}
+// A Decode the server no longer knows (404: the GUI restarted, and its jobs with it) ends here: its card would
+// otherwise wait for an answer that never comes, with the panel's buttons off.
+function decGone(job){
+  if (SP.job !== job) return;
+  const f = SP.jobF; SP.job = null;
+  decResult({state: 'gone', freq_mhz: f});
 }
 function decResult(j){
   const box = decBox(), at = decSeen(document.getElementById('sp-sel'));     // still at the panel: the result is brought into view
-  box.innerHTML = ''; box.style.minHeight = ''; decButtons(false);
+  box.innerHTML = ''; box.style.minHeight = ''; decButtons(false); SP.stopping = null; SP.stopErr = null;
   const show = node => { box.appendChild(node); if (at) node.scrollIntoView({block: 'nearest'}); };
   if (j.state === 'error'){ show(el('div', 'warnbox', 'Decode failed: ' + j.error)); return; }
+  if (j.state === 'gone'){
+    const f = decMhz(j.freq_mhz);
+    show(el('div', 'warnbox', 'The Decode' + (f ? ' of ' + f.toFixed(4) + ' MHz' : '') + ' is no longer running: the server does not know it' +
+                              ' any more (the GUI was restarted). If it had finished first, its result is in the Signals list.'));
+    return;
+  }
+  if (j.state === 'stopped'){
+    const f = decMhz(j.freq_mhz);
+    show(el('div', 'infobox', 'Decode' + (f ? ' of ' + f.toFixed(4) + ' MHz' : '') + ' stopped. Nothing was saved, and the dongles are free.'));
+    return;
+  }
   const k = j.card && typeof j.card === 'object' ? j.card : {}; const ev = k.evidence || 'none';
   const doubt = (k.doubtful || []).length > 0;
   // a card in a form this page does not expect is drawn as the plain card, never as an empty panel
@@ -1189,10 +1451,19 @@ async function specNameAll(peaks){
     return;
   }
 }
+// One poll chain per Decode: a poll asked for out of turn (after a Stop the server did not know) takes the place of
+// the one waiting. A connection problem is asked again in 2 s; a JSON 404 means the server no longer knows the job.
 async function specDecodePoll(){
-  if (!SP.job) return;
-  let j; try { j = await apiGet('/api/decode/' + SP.job); } catch (e){ setTimeout(specDecodePoll, 2000); return; }
-  if (j.state === 'running'){ decProgress(j); setTimeout(specDecodePoll, 1000); return; }
+  clearTimeout(SP.pollT); SP.pollT = null;
+  const job = SP.job; if (!job) return;
+  const n = SP.pollN = (SP.pollN || 0) + 1, again = ms => { if (SP.job === job && n === SP.pollN) SP.pollT = setTimeout(specDecodePoll, ms); };
+  let r; try { r = await fetch('/api/decode/' + encodeURIComponent(job)); } catch (e){ again(2000); return; }
+  if (toLogin(r)) return;
+  const j = await r.json().catch(() => null);
+  if (SP.job !== job || n !== SP.pollN) return;
+  if (r.status === 404 && j && typeof j === 'object'){ decGone(job); return; }
+  if (!r.ok || !j || typeof j !== 'object'){ again(2000); return; }
+  if (j.state === 'running'){ decProgress(j); again(1000); return; }
   SP.job = null; decResult(j);
 }
 // A capture's message takes the place of an old result, or (keep) goes below the card whose button started it.
@@ -1212,6 +1483,41 @@ async function specCapture(f, keep, minutes){
   finally { SP.capBusy = false; }
   say('infobox', r.message || 'Capture started.');
 }
+// ---- pinch: two fingers on the plot zoom about their midpoint, within the wheel's limits (the smallest span, the
+// whole 0-6000 MHz). The frequency under the fingers' midpoint stays under it, so moving both fingers also pans.
+// While the fingers move only the picture follows; lifting them is ONE view change (one Back entry, one sweep).
+// The canvas is touch-action: pan-y, so one finger still scrolls the page and taps a marker.
+const SP_PINCH_MIN_PX = 30;                     // fingers closer than this count as this far apart (no jump)
+// Only the fingers on the plot count (targetTouches: the canvas has no children): a thumb resting elsewhere on the
+// screen must not turn a tap into a pinch or a one-finger slide into a zoom.
+function spOnPlot(ev){ return ev.targetTouches || ev.touches || []; }
+function spPinchStart(ev){
+  const t = spOnPlot(ev);
+  if (t.length !== 2 || !SP.geom) return;
+  if (ev.cancelable) ev.preventDefault();
+  const a = t[0].clientX, b = t[1].clientX, g = SP.geom;
+  const left = document.getElementById('spec-canvas').getBoundingClientRect().left;
+  const k = Math.min(Math.max(((a + b) / 2 - left - g.L) / g.pw, 0), 1);
+  SP.pinch = {v0: {s: SP.view.s, e: SP.view.e}, d0: Math.max(SP_PINCH_MIN_PX, Math.abs(a - b)),
+              f0: SP.view.s + k * (SP.view.e - SP.view.s), left: left, last: null};
+}
+function spPinchMove(ev){
+  const P = SP.pinch, t = spOnPlot(ev); if (!P || t.length !== 2 || !SP.geom) return;
+  if (ev.cancelable) ev.preventDefault();
+  const a = t[0].clientX, b = t[1].clientX, g = SP.geom, L = spLim();
+  const span = Math.min(Math.max((P.v0.e - P.v0.s) * P.d0 / Math.max(SP_PINCH_MIN_PX, Math.abs(a - b)), L.min), L.hi - L.lo);
+  const k = Math.min(Math.max(((a + b) / 2 - P.left - g.L) / g.pw, 0), 1);
+  const v = spFitView(P.f0 - k * span, P.f0 - k * span + span);
+  P.last = v; SP.view = {s: v[0], e: v[1]};
+  spFields(); spDrawSoon();
+}
+function spPinchEnd(ev){
+  const P = SP.pinch; if (!P || spOnPlot(ev).length >= 2) return;
+  SP.pinch = null; SP.dragEnd = Date.now();     // (no tap-to-mark from the finger lifted last)
+  if (ev.cancelable) ev.preventDefault();
+  SP.view = {s: P.v0.s, e: P.v0.e};             // Back returns to where the gesture began
+  if (P.last) specSetView(P.last[0], P.last[1]); else { spFields(); specDraw(); }
+}
 function specWatch(){ specCapture(); }
 function specLocate(){ if (SP.sel === null) return; if (SP.running) specToggle(); mapLocateFreq(SP.sel); }
 (function(){
@@ -1219,7 +1525,12 @@ function specLocate(){ if (SP.sel === null) return; if (SP.running) specToggle()
   c.addEventListener('mousemove', specHover); c.addEventListener('click', specClick);
   c.addEventListener('mouseleave', () => { document.getElementById('sp-readout').textContent = SP.sel !== null ? readoutAt(SP.sel) : SP_HINT; });
   // With a mouse: the wheel zooms about the pointer, and dragging sideways zooms into the dragged range. A finger
-  // keeps tap-to-mark and scrolls the page (touch sends no wheel, and its taps do not move far enough to be a drag).
+  // keeps tap-to-mark and scrolls the page (touch sends no wheel, and its taps do not move far enough to be a drag);
+  // two fingers zoom about their midpoint (spPinch*), and only they are taken from the browser.
+  c.addEventListener('touchstart', spPinchStart, {passive: false});
+  c.addEventListener('touchmove', spPinchMove, {passive: false});
+  c.addEventListener('touchend', spPinchEnd, {passive: false});
+  c.addEventListener('touchcancel', spPinchEnd, {passive: false});
   c.addEventListener('wheel', ev => {
     const f = spFreqAtX(ev.clientX, true); if (f === null) return;
     ev.preventDefault();

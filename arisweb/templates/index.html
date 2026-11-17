@@ -4,7 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>ARIS</title>
 <link rel="stylesheet" href="/static/app.css?v={{ asset_v }}">
-</head><body>
+</head><body data-role="{{ role or session.get('role', '') }}">
 <div class="topbar"><div class="brand">ARIS <span class="ver">v{{ version }}</span><span class="upd" id="upd" style="display:none" onclick="showUpdate()" role="button" tabindex="0">update</span></div>
 <div style="display:flex;gap:8px"><button class="btn-stop" onclick="resetAI()">Reset Scanner</button>
 <a href="/logout" style="color:#94a3b8;text-decoration:none;font-size:.85rem;align-self:center">Logout</a></div></div>
@@ -91,6 +91,7 @@
 <label class="field">Levels<select id="sp-lvl" onchange="specGainLvl()" aria-label="Level reading" title="Gain removed: levels at the antenna input, so parts measured at different gains join without a step and dongles can be compared. As read: what the dongle's converter saw."><option value="input">At input</option><option value="raw">As read</option></select></label>
 <label class="field">Average<select id="sp-avg" onchange="specAvg()" aria-label="Average"><option value="0">Off</option><option value="4">4 sweeps</option><option value="16">16 sweeps</option><option value="64">64 sweeps</option></select></label>
 </div>
+<label class="sp-check" title="With the plot stopped, a view you zoom into is swept once by itself when that is quick and shows finer detail than what is on screen."><input type="checkbox" id="sp-autozoom" checked onchange="specAutoZoom()"> Sweep a zoomed view by itself</label>
 <div id="sp-warn"></div>
 <div class="sel-panel" id="sp-sel"><div class="f" id="sp-sel-f"></div><div class="muted" id="sp-sel-sub"></div>
 <div class="dec-row"><span class="lab">Decode for</span><div class="seg" id="sp-dec-t">
@@ -102,9 +103,10 @@
 <div id="sp-result"></div></div>
 <div class="peaks" id="sp-peaks"></div>
 <details class="note"><summary>How this tab works</summary>
-<p>Pick any range from 0 to 6000 MHz. A part no receiver here tunes is hatched and never drawn as a level: nothing was measured there. A wide range is swept in pieces, and the picture fills in as each piece comes back. With a mouse, the wheel zooms about the pointer and dragging across the plot zooms into that range.</p>
+<p class="sp-region" id="sp-region" hidden></p>
+<p>Pick any range from 0 to 6000 MHz. A part no receiver here tunes is hatched and never drawn as a level: nothing was measured there. A wide range is swept in pieces, and the picture fills in as each piece comes back. With a mouse, the wheel zooms about the pointer and dragging across the plot zooms into that range; on a touch screen two fingers zoom about their midpoint. With the plot stopped, a zoomed view is swept once by itself when that is quick (the setting under the plot turns it off).</p>
 <p>Step is the distance between the points of a sweep: Auto picks one that suits the range. Average smooths the line over several sweeps; Peak hold keeps the highest level seen.</p>
-<p>Decode listens on every dongle at once for the time you pick and runs the decoders that suit the band (rtl_433, RDS, pager / APRS, ADS-B); "Identified" means a decoder recognised the device. Capture keeps the dongle that hears it best on the frequency in the background until a packet is decoded or demodulated, then reports in the chat.</p>
+<p>Decode listens on every dongle at once for the time you pick and runs the decoders that suit the band (rtl_433, RDS, pager / APRS, ADS-B); "Identified" means a decoder recognised the device. Stop in its progress card ends that Decode alone, and nothing is saved. Capture keeps the dongle that hears it best on the frequency in the background until a packet is decoded or demodulated, then reports in the chat.</p>
 <p>"All dongles" draws one line per dongle, captured at the same time. The antennas differ, so "Above floor" (each line measured from its own dongle's noise floor) compares what each one hears better than raw dB.</p>
 <p>Ranges up to 0.8 MHz wide refresh several times a second (live IQ); wider ranges are swept every second or two. Amber = FM-band signal off the station channel plan, which is only checked when the range is 30 MHz wide or less (the FM preset).</p>
 </details>

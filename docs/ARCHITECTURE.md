@@ -66,8 +66,15 @@ replies, the AI loop) and `plugins`. Every top-level name is defined in one part
   plans the view: the parts some receiver tunes, cut into pieces to sweep, and the gaps), asks each receiver only
   for its own part, and shows a gap as "no receiver here tunes this", never as a level. Allocation labels, busy bands (Wi-Fi, Bluetooth, phones: bursts score lower) and the
   GPS band (a steady new signal scores higher: a jammer looks like that) cover up to 12.75 GHz.
-- The FM channel-plan check assumes the Americas' plan (stations on odd tenths, 88.1-107.9 MHz) and the threat rules
-  know the Americas' bands (902-928 MHz ISM). Elsewhere these hints are wrong: treat off-plan flags accordingly.
+- Band plans follow the station's region (`arislib/regions.py`, data in `arislib/data/regions/`, see
+  [REGIONS](REGIONS.md)): allocation labels (the narrowest entry across a country's own layout, TV channels and DAB
+  blocks, the region's list and the worldwide list; else "Not in this region's band table"), the FM band and channel
+  plan (odd tenths 88.1-107.9 MHz only in the Americas; any 100 kHz step elsewhere; Japan 76-99 MHz), the sensor and
+  busy bands that score bursts, the bands where frequency hopping folds into one finding, the bands /setup calibrates
+  and patrol watches, the sub-GHz band whose own gain /setup stores (config key `gain_915_db`: "the region's sub-GHz
+  band"), band-capture names and the Spectrum presets. The region is the config's `region` (and `country`), else a
+  guess from the time zone that is never written; `/region`, `/status` and the Spectrum tab say which.
+  `SENSOR_WINDOWS_MHZ` (where a decode is not doubtful) is the union of every region's sensor bands.
 - ADS-B: only checksum-verified squitters count as aircraft.
 - Audio (pagers, APRS, tones) lives in memory only while the decoders read it; nothing is recorded or transcribed.
 

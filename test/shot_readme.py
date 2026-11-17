@@ -7,9 +7,15 @@ pages are opened in UTC too, so the pictures show no local time). From the test 
   python3 shot_readme.py [port] [outdir]   (default outdir: docs/screenshots), then stop serve.py
 The phone page is opened as a touch screen and the desktop page with a mouse: a row of chips is one line that scrolls
 under a finger and wraps onto more lines for a mouse (app.css). Both are measured after the screenshots, and the
-script ends with status 1 when a chip is cut off on the desktop page or the phone's row is no longer one line."""
+script ends with status 1 when a chip is cut off on the desktop page or the phone's row is no longer one line.
+The pages' own clock is set to PAGE_CLOCK (it runs on from there: timers and polls work as usual), so what the page
+works out from its clock shows no real moment. The times the server writes itself (chat messages, Activity, the
+Devices list, a sweep's time) follow the computer's clock, so just before each picture the dates and clock times in
+the page's text are rewritten to PAGE_CLOCK's (SAME_TIME): the pictures never show when they were made."""
 import asyncio
+import datetime
 import os
+import re
 import sys
 
 from playwright.async_api import async_playwright
@@ -19,6 +25,28 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, "docs", "screenshots")
 B = f"http://127.0.0.1:{PORT}"
 PW = os.environ.get("ARIS_TEST_PASSWORD", "test-password-123")
+PAGE_CLOCK = datetime.datetime(2026, 3, 14, 12, 0, 0, tzinfo=datetime.timezone.utc)
+# every date and clock time in the page's text -> PAGE_CLOCK's (the server's own stamps follow the real clock)
+SAME_TIME = r"""() => {
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = w.nextNode(); n; n = w.nextNode()){
+    const t = n.nodeValue
+      .replace(/\b20\d\d-\d\d-\d\d(?:[ T]\d\d:\d\d(?::\d\d)?)?/g, m => '2026-03-14' + (m.length > 16 ? ' 12:00:00' : m.length > 10 ? ' 12:00' : ''))
+      .replace(/\b\d{1,2} (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/g, '14 Mar')
+      .replace(/\b\d\d:\d\d(?::\d\d)?\b/g, m => m.length > 5 ? '12:00:00' : '12:00');
+    if (t !== n.nodeValue) n.nodeValue = t;
+  }
+}"""
+
+
+async def same_time_api(pg):
+    """The server stamps each sweep with its own clock ("time": "HH:MM:SS"); the waterfall draws it on the canvas,
+    where SAME_TIME cannot reach: the answers reach the page with PAGE_CLOCK's time instead."""
+    async def fix(route):
+        r = await route.fetch()
+        body = re.sub(r'"time": ?"\d\d:\d\d:\d\d"', '"time": "12:00:00"', await r.text())
+        await route.fulfill(response=r, body=body)
+    await pg.route(re.compile(r"/api/spectrum(\?|$)"), fix)
 
 
 async def login(pg):
@@ -78,29 +106,38 @@ async def main():
         ph = await br.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=2, has_touch=True,
                                 timezone_id="UTC")
         ph.on("pageerror", lambda e: errors.append(str(e)))
+        await ph.clock.install(time=PAGE_CLOCK)
+        await same_time_api(ph)
         await login(ph)
         await fm_sweep(ph)                                   # every dongle free: the three traces together
+        await ph.evaluate(SAME_TIME)
         await ph.screenshot(path=f"{OUT}/phone-spectrum.png", full_page=False)
         phone = await chip_row(ph)
         await chat(ph, "investigate 433.92 for 30 seconds", "433.92", timeout=300000)
         await chat(ph, "status", "Plug-ins")
+        await ph.evaluate(SAME_TIME)
         await ph.screenshot(path=f"{OUT}/phone-chat.png", full_page=False)
         await chat(ph, "record the 433 band for 1 minute", "433 MHz band")
         await ph.click("#tab-devices")
         await ph.wait_for_selector(".act-row.dev-set", timeout=60000)
         await ph.wait_for_timeout(500)
+        await ph.evaluate(SAME_TIME)
         await ph.screenshot(path=f"{OUT}/phone-devices.png", full_page=False)
         await ph.click("#tab-activity")
         await ph.wait_for_selector(".lvl.RECORDED", timeout=180000)
         await ph.wait_for_timeout(800)
+        await ph.evaluate(SAME_TIME)
         await ph.screenshot(path=f"{OUT}/phone-activity.png", full_page=False)
 
         # 800 high: the presets take a second line at this width, and the plot keeps its place in the picture
         dt = await br.new_page(viewport={"width": 1280, "height": 800}, device_scale_factor=1, timezone_id="UTC")
         dt.on("pageerror", lambda e: errors.append(str(e)))
+        await dt.clock.install(time=PAGE_CLOCK)
+        await same_time_api(dt)
         await login(dt)
         await dt.wait_for_timeout(5000)                      # the band capture's dongle is free again
         await fm_sweep(dt)
+        await dt.evaluate(SAME_TIME)
         await dt.screenshot(path=f"{OUT}/desktop-spectrum.png", full_page=False)
         desk = await chip_row(dt)
         print("page errors:", errors or "none")

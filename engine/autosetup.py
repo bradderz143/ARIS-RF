@@ -118,11 +118,14 @@ FM_CAL_GAINS = [8.7, 14.4, 19.7, 25.4, 29.7, 33.8]
 
 def _calibrate_gain(serial, s_mhz, e_mhz):
     """Try stepped gains on a band and save the best one for this dongle. Returns (gain, reason, trials).
-    FM (88-108) and 915 MHz (880-960) get their own gains; everything else uses the 433 MHz gain."""
+    The FM band and the region's sub-GHz gain band (880-960 MHz in the Americas: _gain_for) get their own gains;
+    everything else uses the sensor-band (433 MHz) gain."""
     cfg = _load_config()
     d = _dongle_cfg(serial, cfg)
-    fm = s_mhz < FM_BROADCAST[1] and e_mhz > FM_BROADCAST[0]
-    b915 = s_mhz >= 880.0 and e_mhz <= 960.0
+    fm_lo, fm_hi = _fm_band()
+    fm = s_mhz < fm_hi and e_mhz > fm_lo
+    gb = _region().gain_band
+    b915 = bool(gb) and s_mhz >= gb[0] and e_mhz <= gb[1]
     step = 25.0 if (e_mhz - s_mhz) > 6.0 else 10.0
     cands = sorted({_snap_gain(x, gains=d.get("gains")) for x in (FM_CAL_GAINS if fm else CAL_GAINS)})
     guard = _guard_mhz(step)
@@ -187,8 +190,9 @@ def _calibrate_gain(serial, s_mhz, e_mhz):
 
 @register(
     "calibrate_gain",
-    "Try stepped tuner gains on a band and save the best gain for that dongle. The FM band (88-108 MHz) and the "
-    "915 MHz band keep their own gains; other bands use the 433 MHz gain. Receiver artifacts are excluded.",
+    "Try stepped tuner gains on a band and save the best gain for that dongle. The FM band and the region's "
+    "sub-GHz band (915 MHz in the Americas, 868 in Europe) keep their own gains; other bands use the 433 MHz gain. "
+    "Receiver artifacts are excluded.",
     {**_BAND_PROPS, **_DONGLE_PROP},
     aliases=("calibrate_lowest_noise_floor",),
 )
@@ -197,11 +201,15 @@ def calibrate_gain(frequency_range=None, start_mhz=None, stop_mhz=None, dongle=N
     s_mhz, e_mhz = _resolve_band(start_mhz, stop_mhz, frequency_range)
     serial = _resolve_dongle_serial(dongle, _best_for_band(s_mhz, e_mhz, cfg))
     gain, reason, trials = _calibrate_gain(serial, s_mhz, e_mhz)
-    fm = s_mhz < FM_BROADCAST[1] and e_mhz > FM_BROADCAST[0]
+    fm_lo, fm_hi = _fm_band()
+    fm = s_mhz < fm_hi and e_mhz > fm_lo
+    gb = _region().gain_band
+    sub = bool(gb) and s_mhz >= gb[0] and e_mhz <= gb[1]
+    gb_txt = f"{gb[0]:g}-{gb[1]:g} MHz" if gb else ""
     return {"message": "Gain calibration complete and applied", "dongle": _short(serial),
             "band_mhz": [s_mhz, e_mhz], "applied_gain_db": gain,
-            "applies_to": ("the FM band (88-108 MHz)" if fm else "880-960 MHz" if s_mhz >= 880 and e_mhz <= 960
-                           else "all bands except FM and 880-960 MHz"),
+            "applies_to": (f"the FM band ({fm_lo:g}-{fm_hi:g} MHz)" if fm else gb_txt if sub
+                           else "all bands except FM" + (f" and {gb_txt}" if gb else "")),
             "reason": reason, "all_gain_trials": trials}
 
 
@@ -227,17 +235,18 @@ def _measure_fm_offset(f_nom_mhz, serial, gain_db, ppm=0, secs=1.5):
 )
 def calibrate_frequency(dongle=None):
     cfg = _load_config()
-    serial = _resolve_dongle_serial(dongle, _best_for_band(88.0, 108.0, cfg))
-    gain = _gain_for(serial, 88.0, 108.0, cfg)
+    fm_lo, fm_hi = _setup_band("fm") or _fm_band()
+    serial = _resolve_dongle_serial(dongle, _best_for_band(fm_lo, fm_hi, cfg))
+    gain = _gain_for(serial, fm_lo, fm_hi, cfg)
     tag = f"[CAL {_short(serial)}]"
     print(f"{tag} Looking for a strong FM station to measure the frequency error...")
-    bins, hops = _sweep(88.0, 108.0, 25.0, gain, serial)
+    bins, hops = _sweep(fm_lo, fm_hi, 25.0, gain, serial)
     g = _guard_mhz(25.0)
     clean = {f: v for f, v in bins.items() if not _near_hop(f, hops, g)} or bins
     floor = _robust_floor(list(clean.values()))
     scores = []
-    for k in range(881, 1080):                                # 88.1 ... 107.9 MHz
-        nom = k / 10.0
+    plan = _fm_plan()      # station centres on the 100 kHz raster at least (50 kHz steps only widen the plan check)
+    for nom in regions.fm_channels(dict(plan, raster_khz=max(100, int(plan["raster_khz"])))):
         vals = [v for f, v in clean.items() if abs(f - nom) <= 0.06]
         if vals:
             scores.append((sum(vals) / len(vals) - floor, nom))
@@ -409,7 +418,7 @@ def _calibrate_dongle(serial):
             r[key] = {"ok": True, "gain_db": g, "reason": why, "trials": trials}
         except RFError as e:
             r[key] = {"ok": False, "error": str(e)}
-    gain_step("fm_gain", (88.0, 108.0))           # first: the ppm step listens to FM stations at this gain
+    gain_step("fm_gain", _setup_band("fm") or _fm_band())   # first: the ppm step listens to FM stations at this gain
     try:
         fr = calibrate_frequency(serial)
         r["frequency"] = {"ok": True, "ppm": fr["ppm_applied"], "station_mhz": fr["reference_station_mhz"],
@@ -417,8 +426,9 @@ def _calibrate_dongle(serial):
                           "cross_check": fr["cross_check"]}
     except RFError as e:
         r["frequency"] = {"ok": False, "error": str(e)}
-    gain_step("gain_433", (433.0, 435.0))
-    gain_step("gain_915", (902.0, 928.0))
+    gain_step("gain_433", _setup_band("low") or (433.0, 435.0))
+    if _setup_band("subghz"):                     # the region's sub-GHz band (902-928 MHz in the Americas)
+        gain_step("gain_915", _setup_band("subghz"))
     return r
 
 
@@ -505,15 +515,16 @@ def auto_setup():
             print(f"[SETUP]     {_short(ser)}: " + ("rtl_433 works with it" if rr.get("ok") else
                                                     f"rtl_433 PROBLEM: {rr.get('detail')}"))
     bsecs = int(_load_config().get("baseline_seconds", 30))
+    setup_bands = _setup_bands()                  # the region's (433-435, 902-928 and 88-108 MHz in the Americas)
     baselines, reception = [], {s: {} for s in working}
     if working:
         print(f"[SETUP] 4/6 Calibrating {len(working)} dongle(s) at the same time: FM gain, frequency correction, "
-              f"433 and 915 MHz gains...")
+              f"{' and '.join(_band_short(b) for b in setup_bands if b != _fm_setup_key())} gains...")
         for s, c in _parallel(_calibrate_dongle, working).items():
             dongles[s].update(c if isinstance(c, dict) else {"calibration_error": str(c)})
         print(f"[SETUP] 5/6 Reception check and baselines: every dongle watches each band for {bsecs} s at the "
               f"same time...")
-        for band in SETUP_BANDS:
+        for band in setup_bands:
             s_mhz, e_mhz = _resolve_band(frequency_range=band + "MHz")
             print(f"[SETUP]     {band} MHz...")
             for ser, rr in _record_baselines(s_mhz, e_mhz, working, bsecs, "auto setup").items():
@@ -528,7 +539,7 @@ def auto_setup():
                                   "signals": summ["signals_present"], "strongest_snr_db": top})
     print("[SETUP] 6/6 Choosing the best dongle for each band...")
     band_dongles = {}
-    for band in SETUP_BANDS:
+    for band in setup_bands:
         cands = [(reception[s][band]["signals"], reception[s][band]["strongest_snr_db"], s)
                  for s in working if band in reception[s] and reception[s][band]["signals"] > 0]
         if cands:
@@ -543,14 +554,14 @@ def auto_setup():
             d = cfg["dongles"].setdefault(s, {})
             d["reception"] = reception[s]
             d["hears_signals"] = any(v.get("signals") for v in reception[s].values())
-        recorded = [b for b in SETUP_BANDS if any(x.get("ok") and x["band"] == b for x in baselines)]
+        recorded = [b for b in setup_bands if any(x.get("ok") and x["band"] == b for x in baselines)]
         if recorded:
             cfg["patrol_bands"] = recorded
         cfg["setup_done"] = _now()
         _save_config(cfg)
     report["routing"] = {"best_dongle_per_band": {b: _short(s) for b, s in band_dongles.items()},
                          "default_dongle": _short(default), "investigators": [_short(s) for s in working],
-                         "bands_no_dongle_heard": [b for b in SETUP_BANDS if b not in band_dongles] if working else []}
+                         "bands_no_dongle_heard": [b for b in setup_bands if b not in band_dongles] if working else []}
     for s in working:
         dongles[s]["reception"] = reception[s]
     problems = list(report["system"]["problems"])
@@ -564,7 +575,8 @@ def auto_setup():
             problems.append(f"{_short(s)} not detected")
         problems += [f"{_short(s)}: {p}" for p in (r.get("usb_test") or {}).get("problems", [])]
         if s in working and not any(v.get("signals") for v in reception[s].values()):
-            notes.append(f"{_short(s)} heard nothing in 433, 915 or FM: its antenna may be loose, missing, or "
+            notes.append(f"{_short(s)} heard nothing in {', '.join(_band_short(b) for b in _setup_bands())}: its "
+                         f"antenna may be loose, missing, or "
                          f"made for other bands")
         fr = r.get("frequency") or {}
         if s in working and fr.get("ok") is False:
@@ -575,7 +587,7 @@ def auto_setup():
     report.update({"dongles": dongles, "baselines": baselines, "notes": notes, "finished": cfg["setup_done"],
                    "took_seconds": round(time.time() - t0),
                    "message": "Setup complete" if not problems else "Setup finished with problems",
-                   "problems": problems, "patrol_bands": cfg["patrol_bands"],
+                   "problems": problems, "patrol_bands": _patrol_bands(cfg),
                    "next": "Run start_patrol (or /patrol start) to watch these bands for new transmitters."})
     try:
         _atomic_write_json(SETUP_REPORT, report)
@@ -644,19 +656,20 @@ def _reception_test(serial) -> dict:
     come from noise or from the receiver itself. Tries the station the dongle was calibrated on, then the
     strongest ones in its FM baseline, else a quick sweep finds one."""
     cfg = _load_config()
-    gain = _gain_for(serial, 88.0, 108.0, cfg)
+    fm_lo, fm_hi = _setup_band("fm") or _fm_band()
+    gain = _gain_for(serial, fm_lo, fm_hi, cfg)
     cands = []
     st = _dongle_cfg(serial, cfg).get("ppm_station_mhz")
     if st:
         cands.append(round(float(st), 1))
-    hit = _find_baseline(88.0, 108.0, serial)
+    hit = _find_baseline(fm_lo, fm_hi, serial)
     if hit:
         cands += [round(float(x["mhz"]), 1) for x in (hit[1].get("summary") or {}).get("strongest", [])[:3]
                   if _in_fm_band(x["mhz"])]
     cands = list(dict.fromkeys(cands))[:2]
     if not cands:
         try:
-            _b, _fl, peaks, _a, _i = _sweep_peaks(88.0, 108.0, 25.0, gain, serial, 10.0, cfg["cluster_gap_khz"],
+            _b, _fl, peaks, _a, _i = _sweep_peaks(fm_lo, fm_hi, 25.0, gain, serial, 10.0, cfg["cluster_gap_khz"],
                                                   lock_timeout=30.0)
         except RFError as e:
             return {"ok": False, "detail": f"could not sweep the FM band: {e}"}
@@ -664,7 +677,7 @@ def _reception_test(serial) -> dict:
         cands = [round(float(p.get("channel_mhz") or p["frequency_mhz"]), 1) for p in peaks
                  if _in_fm_band(p.get("channel_mhz") or p["frequency_mhz"])][:2]
     if not cands:
-        return {"ok": None, "detail": "heard no FM station (normal if its antenna is only for 433 / 915 MHz)"}
+        return {"ok": None, "detail": "heard no FM station (normal if its antenna is only for the sensor bands)"}
     heard = None
     with _use_dongle(serial, timeout=30, holder="reception test"):
         for i, f in enumerate(cands):
@@ -806,11 +819,13 @@ def check_system():
     lines.append("AI model: " + ("ready" if ai.get("reachable") and ai.get("model_installed") else
                                  "installed but not reachable" if ai.get("model_installed") else
                                  "NOT ready (see problems)") + f"; free disk {sysc.get('free_tmp_gb')} GB.")
+    lines.append(_region_line() + ".")              # whose band plan labels the frequencies
     lines += ["Problem: " + x for x in problems] + ["Note: " + x for x in notes]
     rep_ = {"message": "Everything works" if not problems else "Problems found", "dongles": dongles,
             "dongles_found": len(sync["found"]), "new_dongles": [_short(x) for x in sync["added"]],
             "missing_dongles": [_short(x) for x in sync["missing"]], "duplicate_serials": sync["duplicates"],
             "decoders": dec, "system": sysc, "problems": problems, "notes": notes, "summary": "\n".join(lines),
+            "region": regions.describe(_region_state()),
             "took_seconds": round(time.time() - t0)}
     try:
         _atomic_write_json(DATA_DIR / "check_report.json", {**rep_, "time": _now()})

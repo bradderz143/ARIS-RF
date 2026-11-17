@@ -13,12 +13,15 @@ import math
 
 import numpy as np
 
-# name -> (low MHz, high MHz, label). The Americas (ITU Region 2): 902-928 is the ISM band; 433.05-434.79 is the
-# low-power device band most remotes and sensors use.
+# name -> (low MHz, high MHz, label): every band a band capture knows by name, whatever the region (a word such as
+# "868" is always understood). Which ones the page offers, and a region's own edges and label for a name (915-928
+# MHz in Australia), come from the region's band plan (arislib.regions "ism_bands").
 BANDS = {
     "433": (433.05, 434.79, "433 MHz band (433.05-434.79)"),
     "915": (902.0, 928.0, "902-928 MHz ISM band"),
     "315": (314.0, 316.0, "315 MHz band (314-316)"),
+    "868": (863.0, 870.0, "863-870 MHz short-range device band"),
+    "920": (920.5, 928.1, "920 MHz low-power band (920.5-928.1)"),
 }
 
 

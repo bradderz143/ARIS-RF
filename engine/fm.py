@@ -32,7 +32,7 @@ def _fm_check_result(x, ser) -> dict:
          "offset_khz": off, "stereo": bool(x.get("stereo_pilot_19khz")), "pi": x.get("rds_pi_code")}
     if x.get("overloaded_pct"):
         r["overloaded_pct"] = x["overloaded_pct"]
-    clearly_off = car is not None and (int(round(car * 10.0)) % 2 == 0 or abs(off or 0.0) >= FM_CHECK_OFF_KHZ)
+    clearly_off = car is not None and regions.clearly_off(_fm_plan(), car, off or 0.0, FM_CHECK_OFF_KHZ)
     piece = bool(x.get("rds_station_name") and not x.get("rds_name_scrolls") and _fragment_name(x["rds_station_name"]))
     fixed = _known_fixed_name(car if car is not None else x.get("frequency_mhz")) if piece else None
     lone_piece = piece and not fixed
@@ -239,7 +239,7 @@ def name_fm_stations(freqs, max_n=40, best=None, on_result=None, on_plan=None) -
     if not chans:
         raise RFError("No FM-band signals to name.")
     free = _working_serials(cfg)
-    hears = lambda s: ((_dongle_cfg(s, cfg).get("reception") or {}).get("88-108") or {})
+    hears = lambda s: ((_dongle_cfg(s, cfg).get("reception") or {}).get(_fm_setup_key()) or {})
     fm = sorted([s for s in free if hears(s).get("signals")], key=lambda s: -(hears(s).get("strongest_snr_db") or 0))
     serials = fm or free
     if not serials:

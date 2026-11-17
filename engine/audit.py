@@ -333,12 +333,14 @@ def _score_event(ev):
 
 
 def _hopping_hint(lo_mhz, hi_mhz) -> str:
-    if lo_mhz >= 2400.0 and hi_mhz <= 2483.5:
-        return "short bursts hopping across many frequencies: typical of Bluetooth and other frequency-hopping devices"
+    """What frequency hopping across lo-hi MHz is typical of here: the region's hop band (902-928 MHz in the
+    Americas: smart meters and LoRa; 863-870 in Europe; 2.4 GHz everywhere: Bluetooth), else plain words."""
+    hint = _region().hop_hint(float(lo_mhz), float(hi_mhz))
+    if hint:
+        return f"short bursts hopping across many frequencies: typical of {hint}"
     if lo_mhz >= 5150.0:
         return "short bursts across many frequencies: typical of Wi-Fi and other digital links"
-    return ("short bursts hopping across many frequencies: typical of smart electricity or water meters, LoRa and "
-            "other frequency-hopping devices")
+    return "short bursts hopping across many frequencies: typical of frequency-hopping devices"
 
 
 def _collapse_hopping(events, s, e):
@@ -538,7 +540,7 @@ def start_patrol(frequency_range=None, interval_min=None, dongle=None):
     cfg = _load_config()
     if _PATROL and _PATROL.alive():
         return {"message": "Patrol already running", **_PATROL.summary()}
-    bands = _parse_band_list(frequency_range or cfg["patrol_bands"])
+    bands = _parse_band_list(frequency_range or _patrol_bands(cfg))
     serials = _pick_serials(dongle, cfg)
     missing = [f"{s:g}-{e:g}" for s, e in bands if not any(_find_baseline(s, e, x) for x in serials)]
     if missing:

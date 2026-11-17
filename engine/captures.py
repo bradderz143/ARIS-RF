@@ -595,6 +595,10 @@ class Watchdog:
                                         rds_station_name=r.get("rds_station_name"))
                 self._set_status(f"FM signal heard ({present} of 3 looks), waiting for its RDS name")
                 continue
+            if self.kind == "air" and _in_nav_band(f):
+                return self._finish("demodulated", snr_db=snr, verdict=(
+                    f"Signal heard in the aeronautical navigation band ({r.get('physical_waveform_classification')}); "
+                    f"VOR and ILS beacons send there, content not recorded"))
             if self.kind == "air":
                 return self._finish("demodulated", snr_db=snr, verdict=(
                     f"Aviation-band transmission heard ({r.get('physical_waveform_classification')}); AM voice or "

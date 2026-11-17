@@ -1,4 +1,4 @@
-"""Phone-width screenshots and checks of the Decode card (Spectrum tab) and the two collapsed help texts. The eleven
+"""Phone-width screenshots and checks of the Decode card (Spectrum tab) and the two collapsed help texts. The twelve
 example cards are made here, at run time, from the signal report's own rules (make_decode_fixtures.example_cards:
 arislib.sigreport's example cases through build and card_fields), so a rule that renames or reshapes a key shows on
 the page that is tested; the three 'extra' cards and the old card are the hand-written ones of
@@ -6,7 +6,8 @@ fixtures_decode_cards.json. Every card is drawn by the page's own decResult(), s
 card's buttons are pressed against answers this script gives in the server's place, one of them a refusal. Needs
 serve.py running.  python3 shot52.py [port] [outdir]
 Ends with status 1 when the page scrolls sideways, a card is wider than its column or holds more than one
-highlighted button or another link than 'Explain this result', something that is pressed is under 39 px high, a card
+highlighted button or another link than 'Explain this result', something that is pressed (in a card, or the panel's
+'Decode for' buttons) is under 39 px high, a card
 has no tag, the first example's closed card is taller than MAX_1A_PX, a key left out of a card or a card of an
 unexpected form breaks it, a long word breaks the layout, text heard over the air becomes markup, a button does
 something other than its step says, a refused start loses the card, a double tap starts two jobs, or a result or
@@ -446,6 +447,10 @@ async def main():
                     bad(f"{name}: no Details")
         if (sizes.get("1a") or 999) > MAX_1A_PX:
             bad(f"the closed card of case 1a is {sizes.get('1a')} px tall (at most {MAX_1A_PX})")
+        # the panel's "Decode for" buttons are pressed like everything else: about 40 px high
+        hs = await pg.evaluate("[...document.querySelectorAll('#sp-dec-t button')].map(b => Math.round(b.getBoundingClientRect().height * 10) / 10)")
+        if not hs or min(hs) < MIN_TAP_PX:
+            bad(f"the 'Decode for' buttons are {hs} px high")
         if first.get("1a", {}).get("one_row") is False:
             bad("case 1a: the link is not on the step button's row")
         m = await draw(pg, FIX["old_card"], 10)                                            # no report: the card as before

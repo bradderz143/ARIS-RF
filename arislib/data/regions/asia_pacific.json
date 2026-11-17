@@ -1,0 +1,343 @@
+{
+ "id": "asia_pacific",
+ "name": "Asia-Pacific (ITU Region 3, only what is common)",
+ "short": "Asia-Pacific",
+ "base": "world",
+ "fm": {
+  "lo": 87.5,
+  "hi": 108.0,
+  "first": 87.5,
+  "last": 108.0,
+  "raster_khz": 100,
+  "plan": "any_raster",
+  "label": "FM radio broadcasting"
+ },
+ "sensor_bands": [
+  [
+   433.05,
+   434.79
+  ]
+ ],
+ "busy_bands": [
+  [
+   703.0,
+   748.0
+  ],
+  [
+   758.0,
+   803.0
+  ],
+  [
+   825.0,
+   845.0
+  ],
+  [
+   870.0,
+   890.0
+  ],
+  [
+   890.0,
+   915.0
+  ],
+  [
+   935.0,
+   960.0
+  ],
+  [
+   1710.0,
+   1785.0
+  ],
+  [
+   1805.0,
+   1880.0
+  ],
+  [
+   1920.0,
+   1980.0
+  ],
+  [
+   2110.0,
+   2170.0
+  ],
+  [
+   2400.0,
+   2483.5
+  ],
+  [
+   5150.0,
+   5875.0
+  ]
+ ],
+ "hop_bands": [
+  [
+   2400.0,
+   2483.5,
+   "Bluetooth and other frequency-hopping devices"
+  ]
+ ],
+ "ism_bands": {
+  "433": [
+   433.05,
+   434.79,
+   "433 MHz band (433.05-434.79)"
+  ]
+ },
+ "ism_default": "433",
+ "setup": {
+  "low": "433-435",
+  "subghz": null,
+  "fm": "87.5-108"
+ },
+ "gain_band": null,
+ "presets": [
+  {
+   "id": "fm",
+   "name": "FM 87.5-108",
+   "start": 87.5,
+   "stop": 108.0
+  },
+  {
+   "id": "433",
+   "name": "433 MHz",
+   "start": 433.0,
+   "stop": 435.0
+  },
+  "air",
+  {
+   "id": "2m",
+   "name": "2 m ham",
+   "start": 144.0,
+   "stop": 148.0
+  },
+  {
+   "id": "uhf",
+   "name": "UHF 400-470",
+   "start": 400.0,
+   "stop": 470.0
+  },
+  "adsb",
+  {
+   "id": "live433",
+   "name": "Live 433.92",
+   "start": 433.52,
+   "stop": 434.32
+  },
+  {
+   "id": "phones",
+   "name": "Phones 700-960",
+   "start": 760.0,
+   "stop": 960.0
+  },
+  "gnss",
+  {
+   "id": "phones2",
+   "name": "Phones 1.7-2.2 GHz",
+   "start": 1710.0,
+   "stop": 2170.0
+  },
+  "ism24",
+  "wifi5",
+  "ism58"
+ ],
+ "device_hints": [
+  [
+   433.0,
+   434.79,
+   "FSK",
+   "433 MHz FSK telemetry sensor, in countries that allow 433 MHz devices"
+  ],
+  [
+   433.0,
+   434.79,
+   "OOK",
+   "433 MHz OOK remote or sensor, in countries that allow 433 MHz devices"
+  ]
+ ],
+ "named": {
+  "2m": [
+   144.0,
+   146.0
+  ]
+ },
+ "allocations": [
+  [
+   26.957,
+   27.283,
+   "ISM band 27.12 MHz: industrial heating, models, some remotes"
+  ],
+  [
+   160.6,
+   161.9625,
+   "Marine VHF radio: coast station side of duplex channels"
+  ],
+  [
+   433.05,
+   434.79,
+   "Low-power remotes and sensors in many countries (433.92 MHz); amateur 70 cm band"
+  ],
+  [
+   144.0,
+   146.0,
+   "Amateur radio 2 m band (146-148 too in some countries)"
+  ],
+  [
+   50.0,
+   54.0,
+   "Amateur radio 6 m band"
+  ],
+  [
+   430.0,
+   440.0,
+   "Amateur radio 70 cm band"
+  ],
+  [
+   825.0,
+   845.0,
+   "850 MHz mobile phones transmit in most countries"
+  ],
+  [
+   870.0,
+   890.0,
+   "850 MHz mobile towers transmit in most countries"
+  ],
+  [
+   87.5,
+   108.0,
+   "FM radio broadcasting"
+  ],
+  [
+   890.0,
+   915.0,
+   "900 MHz mobile phones transmit (band 8) in most countries"
+  ],
+  [
+   935.0,
+   960.0,
+   "900 MHz mobile towers transmit (band 8) in most countries"
+  ],
+  [
+   703.0,
+   748.0,
+   "700 MHz mobile phones transmit (APT band 28) in most countries"
+  ],
+  [
+   758.0,
+   803.0,
+   "700 MHz mobile towers transmit (APT band 28) in most countries"
+  ],
+  [
+   1920.0,
+   1980.0,
+   "2.1 GHz mobile phones transmit (band 1)"
+  ],
+  [
+   1710.0,
+   1785.0,
+   "1800 MHz mobile phones transmit (band 3)"
+  ],
+  [
+   1805.0,
+   1880.0,
+   "1800 MHz mobile towers transmit (band 3)"
+  ],
+  [
+   3300.0,
+   3800.0,
+   "5G mobile (n78) in most countries; exact range varies"
+  ]
+ ],
+ "tv": [],
+ "dab": [],
+ "countries": {
+  "CN": {
+   "name": "China",
+   "allocations": [
+    [
+     433.05,
+     434.79,
+     "China: low-power remote controls (433.92 MHz)"
+    ],
+    [
+     314.0,
+     316.0,
+     "China: low-power remote controls (315 MHz)"
+    ],
+    [
+     430.0,
+     432.0,
+     "China: low-power remote controls (430-432 MHz)"
+    ],
+    [
+     470.0,
+     510.0,
+     "China: utility meters and LoRa (CN470), wireless microphones; shared with TV"
+    ]
+   ],
+   "sensor_bands": [
+    [
+     314.0,
+     316.0
+    ],
+    [
+     430.0,
+     432.0
+    ],
+    [
+     433.05,
+     434.79
+    ],
+    [
+     470.0,
+     510.0
+    ]
+   ]
+  },
+  "IN": {
+   "name": "India",
+   "allocations": [
+    [
+     865.0,
+     868.0,
+     "India: licence-free short-range devices and RFID (865-868 MHz)"
+    ]
+   ],
+   "sensor_bands": [
+    [
+     433.05,
+     434.79
+    ],
+    [
+     865.0,
+     868.0
+    ]
+   ]
+  },
+  "KR": {
+   "name": "South Korea",
+   "allocations": [
+    [
+     917.0,
+     923.5,
+     "South Korea: RFID, sensor networks and LoRa (KR920)"
+    ]
+   ],
+   "sensor_bands": [
+    [
+     917.0,
+     923.5
+    ]
+   ]
+  }
+ },
+ "notes": [
+  "Generic: the countries of ITU Region 3 differ widely, so only what most share is listed.",
+  "Some countries put FM stations on odd tenths only; others on any tenth: only the 100 kHz raster is checked."
+ ],
+ "prompt": [
+  "87.5-108 MHz FM broadcast radio. Cheap FM bugs and wireless mics also use it.",
+  "108-118 aircraft navigation beacons (VOR, ILS: steady AM carriers, no voice); 118-137 aircraft voice (AM); 137-138 weather satellites.",
+  "144-146 2 m amateur radio (148 in some countries); marine VHF 156-162; 430-440 70 cm amateur.",
+  "433.05-434.79 remotes and sensors in many countries; 700-960 mobile phone bands; 1090 aircraft ADS-B.",
+  "Other band uses differ by country in this region: rely on tool results."
+ ]
+}

@@ -116,8 +116,12 @@ def _est_tokens(messages) -> int:
 
 @functools.lru_cache(maxsize=1)
 def _fixed_tokens() -> int:
-    """System prompt plus the tool list: sent with every request (Ollama caches them while the model is loaded)."""
-    return (len(SYSTEM_PROMPT) + len(json.dumps(TOOL_SPECS))) // 3 + 300
+    """System prompt plus the tool list: sent with every request (Ollama caches them while the model is loaded).
+    Counts the longest region's prompt: the region can change while ARIS runs, and each turn sends its own."""
+    longest = len(SYSTEM_PROMPT)
+    for reg in regions.available():
+        longest = max(longest, len(_prompt_for(reg)))
+    return (longest + len(json.dumps(TOOL_SPECS))) // 3 + 300
 
 
 def _history_budget() -> int:
@@ -174,7 +178,7 @@ _TURN = {"role": "admin"}
 _ADMIN_TOOLS = {"auto_setup", "calibrate_gain", "calibrate_frequency", "forget_dongle", "record_baseline",
                 "start_patrol", "stop_patrol", "assign_dongles", "set_antenna_note", "set_timing_defaults",
                 "perform_system_maintenance"}
-_ADMIN_COMMAND_RX = re.compile(r"^/(?:setup|cleanup|clear-signals)\b|^/patrol\s+(?:start|stop)\b")
+_ADMIN_COMMAND_RX = re.compile(r"^/(?:setup|cleanup|clear-signals)\b|^/patrol\s+(?:start|stop)\b|^/region\s+\S")
 _ROLE_MARK_RX = re.compile(r"^\[role:([a-z]+)\]\s*")
 
 
@@ -456,15 +460,21 @@ def _band_word(t):
     m = re.search(r"(?<![\d.])(\d{3}(?:\.\d+)?)\s*(?:-|to)\s*(\d{3,4}(?:\.\d+)?)(?!\d)", t)
     if m:
         return f"{m.group(1)}-{m.group(2)}"
-    extra = _plugin_band_key(t)                    # a band a plug-in added ('the 868 band')
+    extra = _plugin_band_key(t)                    # a band a plug-in added
     if extra:
         return extra
+    if re.search(r"(?<![\d.])86[3-9](?:\.\d+)?(?!\d)", t):
+        return "868"
+    if re.search(r"(?<![\d.])920(?:\.\d+)?(?!\d)", t):
+        return "920"
     if re.search(r"(?<![\d.])9(?:15|02|28|00)(?:\.\d+)?(?!\d)", t):
         return "915"
     if re.search(r"(?<![\d.])315(?:\.\d+)?(?!\d)", t):
         return "315"
-    if re.search(r"(?<![\d.])43[34](?:\.\d+)?(?!\d)|\bism\b", t):
+    if re.search(r"(?<![\d.])43[34](?:\.\d+)?(?!\d)", t):
         return "433"
+    if re.search(r"\bism\b", t):                   # the region's ISM band (433 in the Americas and Europe)
+        return _region().ism_default
     return None
 
 
@@ -495,11 +505,11 @@ def _scan_band(user_text, t):
     if nb:
         return nb[0]
     if re.search(r"\bbanda\b", t) and re.search(r"\bfm\b", t):               # 'escanea la banda de fm'
-        return (88.0, 108.0)
+        return _region_band("fm")
     # ('investigate 433 MHz' stays one frequency, 433.92; 'scan 433 MHz' is the band)
     if re.search(r"\bbanda?\b|\bism\b", t) or (_BAND_MHZ_RX.search(t) and re.search(r"\b(?:scan\w*|sweep\w*|survey)\b", t)):
         b = _band_word(t)
-        if b in ("433", "915"):
+        if b in ("433", "915", "868", "920"):
             return _named_band(f"the {b} band")[0]
     return None
 
@@ -713,7 +723,7 @@ def _chat(messages, tools=True, **opts):
 def _warm_up() -> None:
     """Load the model and pre-process the system prompt in the background, so the first question is fast."""
     try:
-        _chat([{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": "Reply OK."}], num_predict=1)
+        _chat([{"role": "system", "content": _system_prompt()}, {"role": "user", "content": "Reply OK."}], num_predict=1)
     except Exception:
         pass
 
@@ -1084,7 +1094,7 @@ def _investigation_text(res) -> str:
     said = sigreport.text_lines(report) if report else {}
     f = float(c["freq_mhz"] or 0)
     ev = res.get("evidence")
-    heads = [f"{f:g} MHz, listened {c['listened_seconds'] or 0} s"
+    heads = [f"{sigreport.fmt_mhz(f)} MHz, listened {c['listened_seconds'] or 0} s"    # (4 places, as the card)
              + (f" on {_and_list(res.get('listened_with') or [])}" if res.get("listened_with") else "")
              + _decoders_phrase(res) + "."]
     if c["band"]:
@@ -1326,7 +1336,17 @@ def _coerce(v: str):
         return v
 
 
-_BAND_LABELS = {"433-435": "433 MHz", "902-928": "915 MHz", "88-108": "FM"}
+class _BandLabels:
+    """The region's setup bands in a word ('433-435' -> '433 MHz', '902-928' -> '915 MHz', '88-108' -> 'FM'):
+    _band_short, looked up when used, so a region change shows at once."""
+
+    def get(self, band, default=None):
+        """Like dict.get: a band that is none of the region's setup bands gets the caller's default."""
+        s = _band_short(band)
+        return s if s != str(band) or default is None else default
+
+
+_BAND_LABELS = _BandLabels()
 
 
 def _hears(rec) -> str:
@@ -1347,7 +1367,9 @@ def _dongle_line(serial, r) -> str:
     fr = r.get("frequency") or {}
     bits.append(f"{fr['ppm']} ppm (measured on {fr['station_mhz']} MHz)" if fr.get("ok")
                 else "frequency correction not measured")
-    g = [f"{lab} {r[k]['gain_db']}" for k, lab in (("gain_433", "433"), ("gain_915", "915"), ("fm_gain", "FM"))
+    names = {role: _band_short(_region().setup.get(role) or "").replace(" MHz", "") for role in ("low", "subghz")}
+    g = [f"{lab} {r[k]['gain_db']}" for k, lab in (("gain_433", names["low"] or "433"),
+                                                    ("gain_915", names["subghz"] or "915"), ("fm_gain", "FM"))
          if (r.get(k) or {}).get("ok")]
     if g:
         bits.append("gains " + " / ".join(g) + " dB")
@@ -1442,6 +1464,7 @@ def _status_summary(st: dict) -> str:
             + (f" (missing: {', '.join(st['dongles_missing'])})" if st.get("dongles_missing") else "")
             + f". Setup: {st['setup_done'] or 'not done yet (type /setup)'}."
             + (f" Best dongle per band: {best}." if best else "")
+            + (f"\nRegion: {st['region']['line']}." if (st.get("region") or {}).get("line") else "")
             + "\n" + "\n".join(per)
             + f"\nDecoders: {', '.join(dec) or 'none found'}. Baselines: {st['baselines']}. "
               f"Patrol: {'running' if st['patrol'].get('running') else 'off'}. {ai_txt}."
@@ -1458,6 +1481,7 @@ HELP = """Commands:
   /capture stop | /captures   stop every capture | list running and recent captures
   /devices [text]    the devices decoded so far (a vehicle's tyre sensors grouped), newest first; text filters
   /status            hardware, calibration, decoders and AI model status (no AI needed)
+  /region [id]       the band plan used for labels (Americas, Europe ...); /region <id> [country] changes it
   /selftest          check every decoder (rtl_433, multimon-ng, atest, RDS) with synthetic test signals (seconds)
   /patrol | /patrol start | /patrol stop   background threat-audit patrol on every dongle
   /clear-signals     empty the Saved Signals list (a backup copy is kept)
@@ -1493,6 +1517,9 @@ def _command(low: str, user_input: str, raw: bool):
         summary = _setup_summary(rep) if rep.get("status") == "ok" else "Setup failed: " + rep.get("error", "")
         print("\n[ARIS] > " + summary)
         summary += " (Full details: get_setup_report.)"
+    elif low == "/region" or low.startswith("/region "):
+        summary = _region_reply(user_input.strip()[7:].strip(), admin=_TURN["role"] == "admin")
+        print("\n[ARIS] > " + summary)
     elif low == "/selftest":
         print("[HW] Testing each decoder with synthetic signals...")
         summary = _selftest_line(_decoder_selftest())
@@ -1638,8 +1665,10 @@ def main() -> None:
     for ser in DONGLE_NAMES:
         d = _dongle_cfg(ser, cfg)
         rec = d.get("reception")
-        print(f"  {_short(ser)}    : gains 433 {_gain_for(ser, cfg=cfg)} / 915 {_gain_for(ser, 902.0, 928.0, cfg)} / "
-              f"FM {_gain_for(ser, 88.0, 108.0, cfg)} dB, ppm {_ppm_of(ser, cfg)}"
+        sub = _setup_band("subghz") or (902.0, 928.0)
+        print(f"  {_short(ser)}    : gains {_band_short(_region().setup.get('low'))} {_gain_for(ser, cfg=cfg)} / "
+              f"{_band_short(_region().setup.get('subghz') or '902-928')} {_gain_for(ser, *sub, cfg)} / "
+              f"FM {_gain_for(ser, *_fm_band(), cfg)} dB, ppm {_ppm_of(ser, cfg)}"
               + (f", hears {_hears(rec)}" if rec else ", not set up"))
     best = ", ".join(f"{_BAND_LABELS.get(b, b)} -> {_short(s)}" for b, s in cfg["band_dongles"].items())
     print(f"  Best dongle : {best or 'not chosen yet (type /setup)'}")
@@ -1651,7 +1680,7 @@ def main() -> None:
     print("=" * 74)
     print("Type /help for commands.")
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages = [{"role": "system", "content": _system_prompt()}]
     raw = False
     while True:
         try:
@@ -1672,7 +1701,7 @@ def main() -> None:
                 raw = not raw
                 print(f"Raw output {'ON' if raw else 'OFF'}")
             elif low == "/reset":
-                messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+                messages = [{"role": "system", "content": _system_prompt()}]
                 print("Conversation cleared.")
             elif low.startswith("/") and (summary := _command(low, user_input, raw)) is not None:
                 if summary:                      # so follow-up questions ("details of the setup?") work
@@ -1680,6 +1709,7 @@ def main() -> None:
                     messages.append({"role": "assistant", "content": summary})
                     _trim_history(messages)
             else:
+                messages[0]["content"] = _system_prompt()     # the region's band lines (unchanged: same text)
                 messages.append({"role": "user", "content": user_input})
                 _trim_history(messages)
                 run_turn(messages, raw)

@@ -57,7 +57,9 @@ def setup(aris):
 ```
 
 After that, "scan the 868 band" and "record the 868 band" work in the chat, band captures cover it (in slices, up to
-60 MHz wide), and the Spectrum tab has an "868 MHz" preset. `words` is a regular expression for other ways people
+60 MHz wide), and the Spectrum tab has an "868 MHz" preset (`preset=False` leaves the chip out: the shipped
+`plugins/ism_868.py` does that, because the region data already gives Europe this band and elsewhere 863-870 MHz is
+used for other things). `words` is a regular expression for other ways people
 say it (default: the key followed by "band").
 
 ## A receiver type

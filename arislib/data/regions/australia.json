@@ -1,0 +1,463 @@
+{
+ "id": "australia",
+ "name": "Australia and New Zealand",
+ "short": "Australia / NZ",
+ "base": "world",
+ "fm": {
+  "lo": 87.5,
+  "hi": 108.0,
+  "first": 87.5,
+  "last": 108.0,
+  "raster_khz": 100,
+  "plan": "any_raster",
+  "label": "FM radio broadcasting (Australia: odd tenths; New Zealand: every tenth)"
+ },
+ "sensor_bands": [
+  [
+   433.05,
+   434.79
+  ],
+  [
+   915.0,
+   928.0
+  ]
+ ],
+ "busy_bands": [
+  [
+   703.0,
+   748.0
+  ],
+  [
+   758.0,
+   803.0
+  ],
+  [
+   825.0,
+   845.0
+  ],
+  [
+   870.0,
+   890.0
+  ],
+  [
+   890.0,
+   915.0
+  ],
+  [
+   935.0,
+   960.0
+  ],
+  [
+   1710.0,
+   1785.0
+  ],
+  [
+   1805.0,
+   1880.0
+  ],
+  [
+   1920.0,
+   1980.0
+  ],
+  [
+   2110.0,
+   2170.0
+  ],
+  [
+   2400.0,
+   2483.5
+  ],
+  [
+   5150.0,
+   5875.0
+  ]
+ ],
+ "hop_bands": [
+  [
+   915.0,
+   928.0,
+   "smart meters, LoRa and other frequency-hopping devices"
+  ],
+  [
+   2400.0,
+   2483.5,
+   "Bluetooth and other frequency-hopping devices"
+  ]
+ ],
+ "ism_bands": {
+  "433": [
+   433.05,
+   434.79,
+   "433 MHz band (433.05-434.79)"
+  ],
+  "915": [
+   915.0,
+   928.0,
+   "915-928 MHz licence-free band"
+  ]
+ },
+ "ism_default": "433",
+ "setup": {
+  "low": "433-435",
+  "subghz": "915-928",
+  "fm": "87.5-108"
+ },
+ "gain_band": [
+  880.0,
+  960.0
+ ],
+ "presets": [
+  {
+   "id": "fm",
+   "name": "FM 87.5-108",
+   "start": 87.5,
+   "stop": 108.0
+  },
+  {
+   "id": "433",
+   "name": "433 MHz",
+   "start": 433.0,
+   "stop": 435.0
+  },
+  {
+   "id": "915",
+   "name": "915 MHz",
+   "start": 915.0,
+   "stop": 928.0
+  },
+  "air",
+  {
+   "id": "2m",
+   "name": "2 m ham",
+   "start": 144.0,
+   "stop": 148.0
+  },
+  {
+   "id": "uhfcb",
+   "name": "UHF CB",
+   "start": 476.4,
+   "stop": 477.42
+  },
+  {
+   "id": "dab",
+   "name": "DAB 202-209",
+   "start": 202.0,
+   "stop": 209.0
+  },
+  "adsb",
+  {
+   "id": "live433",
+   "name": "Live 433.92",
+   "start": 433.52,
+   "stop": 434.32
+  },
+  {
+   "id": "live915",
+   "name": "Live 921.4",
+   "start": 921.0,
+   "stop": 921.8
+  },
+  {
+   "id": "phones",
+   "name": "Phones 700-960",
+   "start": 760.0,
+   "stop": 960.0
+  },
+  "gnss",
+  {
+   "id": "phones2",
+   "name": "Phones 1.7-2.2 GHz",
+   "start": 1710.0,
+   "stop": 2170.0
+  },
+  "ism24",
+  "wifi5",
+  "ism58"
+ ],
+ "device_hints": [
+  [
+   433.0,
+   434.79,
+   "FSK",
+   "433 MHz FSK telemetry sensor (weather station / tyre pressure / smart home)"
+  ],
+  [
+   433.0,
+   434.79,
+   "OOK",
+   "433 MHz OOK remote / door-window contact / keyfob"
+  ],
+  [
+   915.0,
+   928.0,
+   "FSK",
+   "915-928 MHz smart meter, LoRa or sensor"
+  ]
+ ],
+ "named": {
+  "2m": [
+   144.0,
+   148.0
+  ]
+ },
+ "allocations": [
+  [
+   26.96,
+   27.41,
+   "HF CB radio, 40 channels (Australia); 27.12 MHz ISM band inside",
+   [
+    "AU"
+   ]
+  ],
+  [
+   87.5,
+   88.0,
+   "Low-power FM (Australia: narrowcast 87.6, 87.8, 88.0; New Zealand: licence-free)"
+  ],
+  [
+   476.41875,
+   477.41875,
+   "UHF CB radio: licence-free walkie-talkies (80 channels)"
+  ],
+  [
+   160.6,
+   161.9625,
+   "Marine VHF radio: coast station side of duplex channels"
+  ],
+  [
+   433.05,
+   434.79,
+   "Remotes, weather stations, tyre sensors (433.92 MHz); low power, licence-free"
+  ],
+  [
+   50.0,
+   54.0,
+   "Amateur radio 6 m band (Australia)",
+   [
+    "AU"
+   ]
+  ],
+  [
+   144.0,
+   148.0,
+   "Amateur radio 2 m band (Australia, New Zealand)"
+  ],
+  [
+   430.0,
+   440.0,
+   "Amateur radio 70 cm band (Australia, New Zealand)"
+  ],
+  [
+   915.0,
+   928.0,
+   "Licence-free band: LoRa (AU915), smart meters, RFID, sensors"
+  ],
+  [
+   88.0,
+   108.0,
+   "FM radio broadcasting (Australia: odd tenths; New Zealand: 100 kHz raster)"
+  ],
+  [
+   890.0,
+   915.0,
+   "900 MHz mobile phones transmit (band 8)"
+  ],
+  [
+   935.0,
+   960.0,
+   "900 MHz mobile towers transmit (band 8)"
+  ],
+  [
+   703.0,
+   748.0,
+   "700 MHz mobile phones transmit (APT band 28)"
+  ],
+  [
+   758.0,
+   803.0,
+   "700 MHz mobile towers transmit (APT band 28)"
+  ],
+  [
+   1920.0,
+   1980.0,
+   "2.1 GHz mobile phones transmit (band 1)"
+  ],
+  [
+   1710.0,
+   1785.0,
+   "1800 MHz mobile phones transmit (band 3)"
+  ],
+  [
+   1805.0,
+   1880.0,
+   "1800 MHz mobile towers transmit (band 3)"
+  ]
+ ],
+ "tv": [
+  {
+   "lo": 174.0,
+   "hi": 230.0,
+   "width_mhz": 7,
+   "first_channel": 6,
+   "channel_names": [
+    "6",
+    "7",
+    "8",
+    "9",
+    "9A",
+    "10",
+    "11",
+    "12"
+   ],
+   "standard": "DVB-T",
+   "skip": [],
+   "countries": [
+    "AU"
+   ],
+   "centre_offset_mhz": 0.0,
+   "note": "Channels in order from 174 MHz, 7 MHz each; 9A (202-209) carries DAB+ digital radio in the capital cities."
+  },
+  {
+   "lo": 526.0,
+   "hi": 694.0,
+   "width_mhz": 7,
+   "first_channel": 28,
+   "standard": "DVB-T",
+   "skip": [],
+   "countries": [
+    "AU"
+   ],
+   "centre_offset_mhz": 0.0,
+   "note": "Channel N lower edge = 330 + 7N MHz (ch 28 = 526-533, vision carrier 527.25). 694-820 cleared for mobile (restack). Channel 27 is not included (ACMA's band edge 520 MHz does not fit a 7 MHz channel 27)."
+  }
+ ],
+ "dab": [
+  {
+   "block": "9A",
+   "lo": 202.16,
+   "hi": 203.696,
+   "label": "DAB / DAB+ digital radio, block 9A (202.928 MHz)",
+   "countries": [
+    "AU"
+   ]
+  },
+  {
+   "block": "9B",
+   "lo": 203.872,
+   "hi": 205.408,
+   "label": "DAB / DAB+ digital radio, block 9B (204.640 MHz)",
+   "countries": [
+    "AU"
+   ]
+  },
+  {
+   "block": "9C",
+   "lo": 205.584,
+   "hi": 207.12,
+   "label": "DAB / DAB+ digital radio, block 9C (206.352 MHz)",
+   "countries": [
+    "AU"
+   ]
+  },
+  {
+   "block": "9D",
+   "lo": 207.296,
+   "hi": 208.832,
+   "label": "DAB / DAB+ digital radio, block 9D (208.064 MHz)",
+   "countries": [
+    "AU"
+   ]
+  }
+ ],
+ "countries": {
+  "AU": {
+   "name": "Australia",
+   "allocations": [
+    [
+     440.0,
+     450.0,
+     "Amateur radio 70 cm band (Australia)"
+    ],
+    [
+     814.0,
+     845.0,
+     "Australia: 850 MHz mobile phones transmit (incl. expansion band 814-825)"
+    ],
+    [
+     859.0,
+     890.0,
+     "Australia: 850 MHz mobile towers transmit (incl. expansion band 859-870)"
+    ],
+    [
+     2500.0,
+     2570.0,
+     "Australia: 2.6 GHz mobile phones transmit (band 7)"
+    ],
+    [
+     2620.0,
+     2690.0,
+     "Australia: 2.6 GHz mobile towers transmit (band 7)"
+    ],
+    [
+     403.0,
+     520.0,
+     "Australia: 400 MHz land mobile band: business, government and emergency radio"
+    ],
+    [
+     3400.0,
+     3700.0,
+     "Australia: 5G mobile (3.4-3.7 GHz)"
+    ]
+   ],
+   "fm": {
+    "lo": 87.5,
+    "hi": 108.0,
+    "first": 88.1,
+    "last": 107.9,
+    "raster_khz": 200,
+    "plan": "odd_tenths",
+    "exceptions_mhz": [
+     87.6,
+     87.8,
+     88.0
+    ],
+    "label": "FM radio broadcasting (odd tenths 88.1-107.9; low-power narrowcast at 87.6, 87.8, 88.0)"
+   }
+  },
+  "NZ": {
+   "name": "New Zealand",
+   "allocations": [
+    [
+     87.6,
+     88.3,
+     "New Zealand: licence-free low-power FM (1 W, every tenth)"
+    ],
+    [
+     106.7,
+     107.7,
+     "New Zealand: licence-free low-power FM (1 W, every tenth)"
+    ]
+   ],
+   "fm": {
+    "lo": 87.5,
+    "hi": 108.0,
+    "first": 87.5,
+    "last": 108.0,
+    "raster_khz": 100,
+    "plan": "any_raster",
+    "label": "FM radio broadcasting (stations on every tenth)"
+   }
+  }
+ },
+ "notes": [
+  "One region for two plans: without the country only the 100 kHz FM raster is checked.",
+  "New Zealand TV channels are left out (the sources disagree)."
+ ],
+ "prompt": [
+  "87.5-108 MHz FM broadcast radio. Cheap FM bugs and wireless mics also use it.",
+  "108-118 aircraft navigation beacons (VOR, ILS: steady AM carriers, no voice); 118-137 aircraft voice (AM); 137-138 weather satellites.",
+  "144-148 2 m amateur radio; marine VHF 156-162; 174-230 TV and DAB+; 526-694 digital TV.",
+  "430-440 70 cm amateur; 433.05-434.79 remotes, weather stations, tyre sensors; 476-477 UHF CB.",
+  "700-960 mobile phone bands; 915-928 licence-free: LoRa, smart meters, sensors; 1090 aircraft ADS-B."
+ ]
+}

@@ -7,3 +7,5 @@ export ARIS_DATA_DIR=$ARIS_TEST_DIR/data
 export ARIS_DB=$ARIS_TEST_DIR/data/sigint.db
 export ARIS_WATCHDOG_LOG=$ARIS_TEST_DIR/data/wd.jsonl
 export FAKE_ARGLOG=$ARIS_TEST_DIR/args.log
+export ARIS_REGION=americas
+export ARIS_COUNTRY=

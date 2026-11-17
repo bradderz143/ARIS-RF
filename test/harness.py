@@ -28,7 +28,9 @@ os.environ.pop("FAKE_ANTENNA", None)
 SIM_DONGLES = ["00017350", "00026410", "00035720"]
 import json as _json
 with open(os.path.join(DATA, "config.json"), "w") as _f:
-    _json.dump({"dongle_order": SIM_DONGLES}, _f)
+    # the band plan: the Americas, no country (deterministic: never the test computer's time zone)
+    _json.dump({"dongle_order": SIM_DONGLES, "region": "americas", "country": None}, _f)
+os.environ.update({"ARIS_REGION": "americas", "ARIS_COUNTRY": ""})   # for tests that write a config of their own
 # The fake rtl_433 / multimon-ng / atest hand recordings to the real decoders (built from source) to decode.
 REAL_BIN = next((d for d in (os.environ.get("REAL_BIN"), os.path.expanduser("~/realbin"),
                              "/usr/local/bin", "/usr/bin")

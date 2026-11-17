@@ -54,6 +54,14 @@ desktop browser: `test/shot_readme.py` makes them again (its first lines say how
   are answered directly; open questions go to a local AI model that can only use ARIS's own tools.
 - **Reset Scanner**: one button stops everything and frees every receiver.
 
+### Regions
+
+Band labels, the FM channel plan, the sensor bands and the Spectrum presets follow the station's region: the
+Americas (ITU Region 2), Europe (CEPT), Asia-Pacific, Japan, Australia / New Zealand, or World (only what is the same
+everywhere). ARIS guesses the region from the computer's time zone until you choose one (Spectrum tab, "How this tab
+works", or `/region europe` in the chat). A label is a band plan, never an identification; a frequency the region's
+table does not cover says so. Sources and how to add a region (one JSON file, no code): [docs/REGIONS.md](docs/REGIONS.md).
+
 ## Receivers
 
 | Kind | How | Status |

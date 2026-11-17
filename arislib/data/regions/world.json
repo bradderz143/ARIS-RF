@@ -1,0 +1,327 @@
+{
+ "id": "world",
+ "name": "World (only what is the same everywhere)",
+ "short": "World",
+ "fallback": "Depends on the country: set your region",
+ "fm": {
+  "lo": 87.5,
+  "hi": 108.0,
+  "first": 87.5,
+  "last": 108.0,
+  "raster_khz": 100,
+  "plan": "any_raster",
+  "label": "FM radio broadcasting in most countries (Japan: 76-99 MHz)"
+ },
+ "sensor_bands": [
+  [
+   433.05,
+   434.79
+  ]
+ ],
+ "busy_bands": [
+  [
+   2400.0,
+   2483.5
+  ],
+  [
+   5150.0,
+   5875.0
+  ]
+ ],
+ "hop_bands": [
+  [
+   2400.0,
+   2483.5,
+   "Bluetooth and other frequency-hopping devices"
+  ]
+ ],
+ "ism_bands": {
+  "433": [
+   433.05,
+   434.79,
+   "433 MHz band (433.05-434.79)"
+  ]
+ },
+ "ism_default": "433",
+ "setup": {
+  "low": "433-435",
+  "subghz": null,
+  "fm": "87.5-108"
+ },
+ "gain_band": null,
+ "presets": [
+  {
+   "id": "fm",
+   "name": "FM 87.5-108",
+   "start": 87.5,
+   "stop": 108.0
+  },
+  {
+   "id": "433",
+   "name": "433 MHz",
+   "start": 433.0,
+   "stop": 435.0
+  },
+  "air",
+  "adsb",
+  {
+   "id": "live433",
+   "name": "Live 433.92",
+   "start": 433.52,
+   "stop": 434.32
+  },
+  "gnss",
+  "ism24",
+  "wifi5",
+  "ism58"
+ ],
+ "device_hints": [
+  [
+   433.0,
+   434.79,
+   "FSK",
+   "433 MHz FSK telemetry sensor (weather station / tyre pressure / smart home)"
+  ],
+  [
+   433.0,
+   434.79,
+   "OOK",
+   "433 MHz OOK remote / door-window contact / keyfob"
+  ]
+ ],
+ "named": {
+  "2m": [
+   144.0,
+   146.0
+  ]
+ },
+ "allocations": [
+  [
+   121.492,
+   121.508,
+   "Aviation emergency frequency (121.5 MHz)"
+  ],
+  [
+   136.9625,
+   136.9875,
+   "Aircraft data link VDL Mode 2, common signalling channel"
+  ],
+  [
+   156.5125,
+   156.5375,
+   "Marine channel 70: digital selective calling (DSC) only"
+  ],
+  [
+   156.7875,
+   156.8125,
+   "Marine channel 16: distress, safety and calling"
+  ],
+  [
+   161.9625,
+   161.9875,
+   "AIS 1: ship position beacons"
+  ],
+  [
+   162.0125,
+   162.0375,
+   "AIS 2: ship position beacons"
+  ],
+  [
+   40.66,
+   40.7,
+   "ISM band 40.68 MHz: some remotes, models and telemetry"
+  ],
+  [
+   161.9625,
+   162.0375,
+   "AIS: ships' automatic position beacons (161.975 and 162.025 MHz)"
+  ],
+  [
+   406.0,
+   406.1,
+   "Emergency distress beacons to satellites (EPIRB, PLB, ELT; Cospas-Sarsat)"
+  ],
+  [
+   137.0,
+   138.0,
+   "Satellite downlinks: weather satellites (Meteor-M images) and Orbcomm messages"
+  ],
+  [
+   1693.5,
+   1694.7,
+   "GOES weather satellite HRIT/EMWIN data"
+  ],
+  [
+   156.0,
+   157.45,
+   "Marine VHF radio: ships, ports, marinas (channel 16 = 156.800 distress/calling)"
+  ],
+  [
+   28.0,
+   29.7,
+   "Amateur radio 10 m band"
+  ],
+  [
+   433.05,
+   434.79,
+   "Low-power remotes and sensors in most countries (433.92 MHz); amateur 70 cm band"
+  ],
+  [
+   1029.0,
+   1031.0,
+   "Radar interrogations of aircraft transponders (1030 MHz)"
+  ],
+  [
+   144.0,
+   146.0,
+   "Amateur radio 2 m band"
+  ],
+  [
+   400.15,
+   406.0,
+   "Weather balloons (radiosondes) and weather-satellite data links"
+  ],
+  [
+   1087.0,
+   1093.0,
+   "Aircraft transponder replies and ADS-B position broadcasts (1090 MHz)"
+  ],
+  [
+   1610.0,
+   1616.0,
+   "Satellite phone uplinks (Globalstar); radio astronomy at 1610.6-1613.8"
+  ],
+  [
+   328.6,
+   335.4,
+   "Aircraft landing aid: ILS glide path (paired with the 108-112 localizers)"
+  ],
+  [
+   108.0,
+   117.975,
+   "Aircraft navigation beacons: VOR, and ILS runway localizers (108-112)"
+  ],
+  [
+   1616.0,
+   1626.5,
+   "Iridium satellite phones and pagers (both directions)"
+  ],
+  [
+   1680.6,
+   1692.6,
+   "GOES weather satellite rebroadcast (GRB)"
+  ],
+  [
+   117.975,
+   137.0,
+   "Aircraft voice radio (AM) and aircraft data (ACARS, VDL); 121.5 = emergency"
+  ],
+  [
+   1240.0,
+   1260.0,
+   "Radar and satellite navigation (GLONASS L2); amateur 23 cm band except Japan"
+  ],
+  [
+   1675.0,
+   1695.0,
+   "Weather satellite downlinks (GOES 1686.6 / 1694.1 MHz) and weather balloons"
+  ],
+  [
+   1215.0,
+   1240.0,
+   "Satellite navigation L2 (GPS L2 1227.6) and long-range radar"
+  ],
+  [
+   1400.0,
+   1427.0,
+   "Radio astronomy (hydrogen line 1420.4 MHz): protected, transmitting forbidden"
+  ],
+  [
+   1525.0,
+   1559.0,
+   "Satellite downlinks: Inmarsat and other satellite phones and data"
+  ],
+  [
+   1260.0,
+   1300.0,
+   "Amateur radio 23 cm band (secondary), radar, Galileo E6 / QZSS L6 (1278.75)"
+  ],
+  [
+   1164.0,
+   1215.0,
+   "Satellite navigation L5/E5 (GPS L5 1176.45, Galileo E5) and aircraft DME"
+  ],
+  [
+   1559.0,
+   1610.0,
+   "Satellite navigation L1 (GPS 1575.42, Galileo, BeiDou, GLONASS): its signals sit below the noise, so a strong signal here may be a GPS jammer"
+  ],
+  [
+   1031.0,
+   1087.0,
+   "Aircraft distance-measuring beacons (DME; military TACAN)"
+  ],
+  [
+   2110.0,
+   2170.0,
+   "Mobile phone towers transmit (2.1 GHz / AWS downlink)"
+  ],
+  [
+   960.0,
+   1029.0,
+   "Aircraft distance-measuring beacons (DME; military TACAN)"
+  ],
+  [
+   1093.0,
+   1164.0,
+   "Aircraft distance-measuring beacons (DME; military TACAN)"
+  ],
+  [
+   5650.0,
+   5725.0,
+   "Radars; 5 GHz Wi-Fi in most countries; amateur 6 cm band (secondary)"
+  ],
+  [
+   2400.0,
+   2483.5,
+   "2.4 GHz ISM band: Wi-Fi, Bluetooth, Zigbee, drones, microwave ovens; amateur 2400-2450"
+  ],
+  [
+   5725.0,
+   5875.0,
+   "5.8 GHz ISM band: Wi-Fi, drone video, wireless links; amateur 6 cm up to 5850"
+  ],
+  [
+   5470.0,
+   5650.0,
+   "5 GHz Wi-Fi (channels 100-128) and weather radars"
+  ],
+  [
+   5150.0,
+   5350.0,
+   "5 GHz Wi-Fi, lower channels (36-64)"
+  ],
+  [
+   8500.0,
+   10500.0,
+   "Radars (X band): marine and weather radar"
+  ],
+  [
+   10700.0,
+   12750.0,
+   "Satellite TV and data downlinks (Ku band)"
+  ]
+ ],
+ "tv": [],
+ "dab": [],
+ "countries": {},
+ "notes": [
+  "Only what the ITU Radio Regulations harmonise worldwide. Set your region for the rest."
+ ],
+ "prompt": [
+  "87.5-108 MHz FM broadcast radio in most countries (Japan 76-99). Cheap FM bugs and wireless mics also use it.",
+  "108-118 aircraft navigation beacons (VOR, ILS: steady AM carriers, no voice); 118-137 aircraft voice (AM); 137-138 weather satellites; marine VHF 156-162.",
+  "433.05-434.79 remotes and sensors in most countries; 1090 aircraft ADS-B.",
+  "No region is set: other band uses depend on the country, so rely on tool results."
+ ]
+}

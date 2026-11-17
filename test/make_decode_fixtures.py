@@ -1,4 +1,4 @@
-"""The eleven example cards of the Decode card in fixtures_decode_cards.json, made from the signal report's own
+"""The twelve example cards of the Decode card in fixtures_decode_cards.json, made from the signal report's own
 rules: the page's screenshots and the tests then show what the rules say today, not what somebody once typed.
 
   python3 test/make_decode_fixtures.py            rewrite the file's "cards" section in place

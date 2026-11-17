@@ -1,0 +1,727 @@
+{
+ "id": "europe",
+ "name": "Europe (ITU Region 1, CEPT)",
+ "short": "Europe",
+ "base": "world",
+ "fm": {
+  "lo": 87.5,
+  "hi": 108.0,
+  "first": 87.5,
+  "last": 108.0,
+  "raster_khz": 50,
+  "plan": "any_raster",
+  "label": "FM radio broadcasting (100 kHz raster; some countries add 50 kHz steps)"
+ },
+ "sensor_bands": [
+  [
+   169.4,
+   169.475
+  ],
+  [
+   433.05,
+   434.79
+  ],
+  [
+   863.0,
+   870.0
+  ]
+ ],
+ "busy_bands": [
+  [
+   703.0,
+   733.0
+  ],
+  [
+   758.0,
+   788.0
+  ],
+  [
+   791.0,
+   821.0
+  ],
+  [
+   832.0,
+   862.0
+  ],
+  [
+   880.0,
+   915.0
+  ],
+  [
+   925.0,
+   960.0
+  ],
+  [
+   1710.0,
+   1785.0
+  ],
+  [
+   1805.0,
+   1880.0
+  ],
+  [
+   1920.0,
+   1980.0
+  ],
+  [
+   2110.0,
+   2170.0
+  ],
+  [
+   2400.0,
+   2483.5
+  ],
+  [
+   2500.0,
+   2690.0
+  ],
+  [
+   5150.0,
+   5875.0
+  ],
+  [
+   5945.0,
+   6425.0
+  ]
+ ],
+ "hop_bands": [
+  [
+   863.0,
+   870.0,
+   "LoRaWAN, smart meters and sensors that change channel"
+  ],
+  [
+   2400.0,
+   2483.5,
+   "Bluetooth and other frequency-hopping devices"
+  ]
+ ],
+ "ism_bands": {
+  "433": [
+   433.05,
+   434.79,
+   "433 MHz ISM band (433.05-434.79)"
+  ],
+  "868": [
+   863.0,
+   870.0,
+   "863-870 MHz short-range device band"
+  ]
+ },
+ "ism_default": "433",
+ "setup": {
+  "low": "433-435",
+  "subghz": "863-870",
+  "fm": "87.5-108"
+ },
+ "gain_band": [
+  860.0,
+  875.0
+ ],
+ "presets": [
+  {
+   "id": "fm",
+   "name": "FM 87.5-108",
+   "start": 87.5,
+   "stop": 108.0
+  },
+  {
+   "id": "433",
+   "name": "433 MHz",
+   "start": 433.0,
+   "stop": 435.0
+  },
+  {
+   "id": "868",
+   "name": "868 MHz",
+   "start": 863.0,
+   "stop": 870.0
+  },
+  "air",
+  {
+   "id": "2m",
+   "name": "2 m ham",
+   "start": 144.0,
+   "stop": 146.0
+  },
+  {
+   "id": "vhf",
+   "name": "VHF 146-174",
+   "start": 146.0,
+   "stop": 174.0
+  },
+  {
+   "id": "tetra",
+   "name": "TETRA 380-395",
+   "start": 380.0,
+   "stop": 395.0
+  },
+  {
+   "id": "pmr",
+   "name": "PMR446",
+   "start": 446.0,
+   "stop": 446.2
+  },
+  {
+   "id": "dab",
+   "name": "DAB 174-240",
+   "start": 174.0,
+   "stop": 240.0
+  },
+  "adsb",
+  {
+   "id": "live433",
+   "name": "Live 433.92",
+   "start": 433.52,
+   "stop": 434.32
+  },
+  {
+   "id": "live868",
+   "name": "Live 868.3",
+   "start": 867.9,
+   "stop": 868.7
+  },
+  {
+   "id": "phones",
+   "name": "Phones 790-960",
+   "start": 790.0,
+   "stop": 960.0
+  },
+  "gnss",
+  {
+   "id": "phones2",
+   "name": "Phones 1.7-2.2 GHz",
+   "start": 1710.0,
+   "stop": 2170.0
+  },
+  "ism24",
+  "wifi5",
+  "ism58"
+ ],
+ "device_hints": [
+  [
+   433.0,
+   434.79,
+   "FSK",
+   "433 MHz FSK telemetry sensor (weather station / tyre pressure / smart home)"
+  ],
+  [
+   433.0,
+   434.79,
+   "OOK",
+   "433 MHz OOK remote / door-window contact / keyfob"
+  ],
+  [
+   868.0,
+   870.0,
+   "FSK",
+   "868 MHz Wireless M-Bus / smart meter / security sensor"
+  ],
+  [
+   863.0,
+   870.0,
+   "OOK",
+   "868 MHz OOK remote or alarm sensor"
+  ],
+  [
+   925.0,
+   960.0,
+   "ANY",
+   "900 MHz mobile phone tower (downlink) carrier"
+  ]
+ ],
+ "named": {
+  "2m": [
+   144.0,
+   146.0
+  ]
+ },
+ "allocations": [
+  [
+   131.5125,
+   131.5375,
+   "ACARS aircraft data (Europe, secondary)"
+  ],
+  [
+   131.7125,
+   131.7375,
+   "ACARS aircraft data (Europe, main channel)"
+  ],
+  [
+   131.8125,
+   131.8375,
+   "ACARS aircraft data (Europe)"
+  ],
+  [
+   869.2,
+   869.25,
+   "Social alarms (personal emergency pendants)"
+  ],
+  [
+   869.65,
+   869.7,
+   "Alarm systems"
+  ],
+  [
+   169.4,
+   169.475,
+   "Smart water and gas meters (Wireless M-Bus mode N), asset tracking"
+  ],
+  [
+   868.6,
+   868.7,
+   "Alarm systems"
+  ],
+  [
+   869.25,
+   869.4,
+   "Alarm systems"
+  ],
+  [
+   417.9,
+   418.1,
+   "UK: low-power remotes and telemetry (418 MHz)"
+  ],
+  [
+   446.0,
+   446.2,
+   "PMR446 licence-free walkie-talkies"
+  ],
+  [
+   869.4,
+   869.65,
+   "Higher-power sensors and LoRaWAN downlink (869.525 MHz)"
+  ],
+  [
+   869.7,
+   870.0,
+   "Low-power short-range devices"
+  ],
+  [
+   27.59625,
+   27.99625,
+   "UK: CB radio, 40 FM channels (27.60125-27.99125 MHz)"
+  ],
+  [
+   26.96,
+   27.41,
+   "CB radio, 40 channels (FM, AM, SSB); 27.12 MHz ISM band inside"
+  ],
+  [
+   458.5,
+   458.95,
+   "UK: industrial remote control and telemetry (458 MHz)"
+  ],
+  [
+   868.7,
+   869.2,
+   "Sensors and smart meters (Wireless M-Bus at 868.95 MHz)"
+  ],
+  [
+   69.9,
+   70.5,
+   "Amateur radio 4 m band in some countries only (e.g. UK 70.0-70.5)"
+  ],
+  [
+   868.0,
+   868.6,
+   "Sensors and remotes; LoRaWAN default channels 868.1, 868.3, 868.5 MHz"
+  ],
+  [
+   160.6,
+   161.9625,
+   "Marine VHF radio: coast station side of duplex channels"
+  ],
+  [
+   433.05,
+   434.79,
+   "Remotes, car keys, weather stations, tyre sensors (433.92); in the 70 cm ham band"
+  ],
+  [
+   50.0,
+   52.0,
+   "Amateur radio 6 m band (secondary; national limits vary)"
+  ],
+  [
+   144.0,
+   146.0,
+   "Amateur radio 2 m band"
+  ],
+  [
+   865.0,
+   868.0,
+   "Short-range devices: RFID readers at higher power (865.6-867.6 MHz), sensors and LoRaWAN (867.1-867.9 MHz)"
+  ],
+  [
+   876.0,
+   880.0,
+   "GSM-R railway radio, train side"
+  ],
+  [
+   921.0,
+   925.0,
+   "GSM-R railway radio, base stations"
+  ],
+  [
+   380.0,
+   385.0,
+   "TETRA digital radio of police, fire and ambulance (handsets)"
+  ],
+  [
+   390.0,
+   395.0,
+   "TETRA digital radio of police, fire and ambulance (base stations)"
+  ],
+  [
+   863.0,
+   870.0,
+   "863-870 MHz short-range devices (SRD 868): sensors, alarms, smart meters, LoRa and Sigfox, RFID"
+  ],
+  [
+   65.8,
+   74.0,
+   "Old OIRT FM band: a few state stations in Russia, Belarus; elsewhere two-way radio"
+  ],
+  [
+   430.0,
+   440.0,
+   "Amateur radio 70 cm band"
+  ],
+  [
+   410.0,
+   430.0,
+   "UHF two-way radio: business, civil TETRA, utilities"
+  ],
+  [
+   450.0,
+   470.0,
+   "UHF two-way radio; utilities' 450 MHz LTE networks"
+  ],
+  [
+   1880.0,
+   1900.0,
+   "DECT cordless phones"
+  ],
+  [
+   87.5,
+   108.0,
+   "FM radio broadcasting (100 kHz raster; some countries add 50 kHz steps)"
+  ],
+  [
+   146.0,
+   174.0,
+   "VHF two-way radio: business, taxis, utilities"
+  ],
+  [
+   703.0,
+   733.0,
+   "700 MHz mobile phones transmit (band 28)"
+  ],
+  [
+   758.0,
+   788.0,
+   "700 MHz mobile towers transmit (band 28)"
+  ],
+  [
+   791.0,
+   821.0,
+   "800 MHz mobile towers transmit (band 20)"
+  ],
+  [
+   832.0,
+   862.0,
+   "800 MHz mobile phones transmit (band 20)"
+  ],
+  [
+   880.0,
+   915.0,
+   "900 MHz mobile phones transmit (band 8)"
+  ],
+  [
+   925.0,
+   960.0,
+   "900 MHz mobile towers transmit (band 8)"
+  ],
+  [
+   2570.0,
+   2620.0,
+   "2.6 GHz TDD mobile broadband (band 38)"
+  ],
+  [
+   1920.0,
+   1980.0,
+   "2.1 GHz mobile phones transmit (band 1)"
+  ],
+  [
+   335.4,
+   399.9,
+   "Military aviation and other military radio (NATO band 225-400 MHz)"
+  ],
+  [
+   2500.0,
+   2570.0,
+   "2.6 GHz mobile phones transmit (band 7)"
+  ],
+  [
+   2620.0,
+   2690.0,
+   "2.6 GHz mobile towers transmit (band 7)"
+  ],
+  [
+   1710.0,
+   1785.0,
+   "1800 MHz mobile phones transmit (band 3)"
+  ],
+  [
+   1805.0,
+   1880.0,
+   "1800 MHz mobile towers transmit (band 3)"
+  ],
+  [
+   230.0,
+   328.6,
+   "Military aviation and other military radio (NATO band 225-400 MHz)"
+  ],
+  [
+   3400.0,
+   3800.0,
+   "5G mobile (3.4-3.8 GHz, TDD)"
+  ],
+  [
+   5945.0,
+   6425.0,
+   "6 GHz Wi-Fi (Wi-Fi 6E / 7, lower part)"
+  ]
+ ],
+ "tv": [
+  {
+   "lo": 174.0,
+   "hi": 230.0,
+   "width_mhz": 7,
+   "first_channel": 5,
+   "standard": "DVB-T / DVB-T2",
+   "skip": [],
+   "countries": [],
+   "centre_offset_mhz": 0.0,
+   "note": "GE06 Band III plan (ch 5-12, 7 MHz). Most countries now use Band III for DAB: check the DAB blocks first. Russia, Belarus and Ukraine number 8 MHz VHF channels (R6-R12), and Italy has an older lettered VHF plan: this table is wrong there."
+  },
+  {
+   "lo": 470.0,
+   "hi": 694.0,
+   "width_mhz": 8,
+   "first_channel": 21,
+   "standard": "DVB-T / DVB-T2",
+   "skip": [],
+   "countries": [],
+   "centre_offset_mhz": 0.0,
+   "note": "Channel N lower edge = 302 + 8N MHz. 694-790 became the 700 MHz mobile band in the EU (Decision (EU) 2017/899); 470-694 kept for TV to 2030. Some transmitters sit about 0.167 MHz off centre."
+  }
+ ],
+ "dab": [
+  {
+   "block": "5A",
+   "lo": 174.16,
+   "hi": 175.696,
+   "label": "DAB / DAB+ digital radio, block 5A (174.928 MHz)"
+  },
+  {
+   "block": "5B",
+   "lo": 175.872,
+   "hi": 177.408,
+   "label": "DAB / DAB+ digital radio, block 5B (176.640 MHz)"
+  },
+  {
+   "block": "5C",
+   "lo": 177.584,
+   "hi": 179.12,
+   "label": "DAB / DAB+ digital radio, block 5C (178.352 MHz)"
+  },
+  {
+   "block": "5D",
+   "lo": 179.296,
+   "hi": 180.832,
+   "label": "DAB / DAB+ digital radio, block 5D (180.064 MHz)"
+  },
+  {
+   "block": "6A",
+   "lo": 181.168,
+   "hi": 182.704,
+   "label": "DAB / DAB+ digital radio, block 6A (181.936 MHz)"
+  },
+  {
+   "block": "6B",
+   "lo": 182.88,
+   "hi": 184.416,
+   "label": "DAB / DAB+ digital radio, block 6B (183.648 MHz)"
+  },
+  {
+   "block": "6C",
+   "lo": 184.592,
+   "hi": 186.128,
+   "label": "DAB / DAB+ digital radio, block 6C (185.360 MHz)"
+  },
+  {
+   "block": "6D",
+   "lo": 186.304,
+   "hi": 187.84,
+   "label": "DAB / DAB+ digital radio, block 6D (187.072 MHz)"
+  },
+  {
+   "block": "7A",
+   "lo": 188.16,
+   "hi": 189.696,
+   "label": "DAB / DAB+ digital radio, block 7A (188.928 MHz)"
+  },
+  {
+   "block": "7B",
+   "lo": 189.872,
+   "hi": 191.408,
+   "label": "DAB / DAB+ digital radio, block 7B (190.640 MHz)"
+  },
+  {
+   "block": "7C",
+   "lo": 191.584,
+   "hi": 193.12,
+   "label": "DAB / DAB+ digital radio, block 7C (192.352 MHz)"
+  },
+  {
+   "block": "7D",
+   "lo": 193.296,
+   "hi": 194.832,
+   "label": "DAB / DAB+ digital radio, block 7D (194.064 MHz)"
+  },
+  {
+   "block": "8A",
+   "lo": 195.168,
+   "hi": 196.704,
+   "label": "DAB / DAB+ digital radio, block 8A (195.936 MHz)"
+  },
+  {
+   "block": "8B",
+   "lo": 196.88,
+   "hi": 198.416,
+   "label": "DAB / DAB+ digital radio, block 8B (197.648 MHz)"
+  },
+  {
+   "block": "8C",
+   "lo": 198.592,
+   "hi": 200.128,
+   "label": "DAB / DAB+ digital radio, block 8C (199.360 MHz)"
+  },
+  {
+   "block": "8D",
+   "lo": 200.304,
+   "hi": 201.84,
+   "label": "DAB / DAB+ digital radio, block 8D (201.072 MHz)"
+  },
+  {
+   "block": "9A",
+   "lo": 202.16,
+   "hi": 203.696,
+   "label": "DAB / DAB+ digital radio, block 9A (202.928 MHz)"
+  },
+  {
+   "block": "9B",
+   "lo": 203.872,
+   "hi": 205.408,
+   "label": "DAB / DAB+ digital radio, block 9B (204.640 MHz)"
+  },
+  {
+   "block": "9C",
+   "lo": 205.584,
+   "hi": 207.12,
+   "label": "DAB / DAB+ digital radio, block 9C (206.352 MHz)"
+  },
+  {
+   "block": "9D",
+   "lo": 207.296,
+   "hi": 208.832,
+   "label": "DAB / DAB+ digital radio, block 9D (208.064 MHz)"
+  },
+  {
+   "block": "10A",
+   "lo": 209.168,
+   "hi": 210.704,
+   "label": "DAB / DAB+ digital radio, block 10A (209.936 MHz)"
+  },
+  {
+   "block": "10B",
+   "lo": 210.88,
+   "hi": 212.416,
+   "label": "DAB / DAB+ digital radio, block 10B (211.648 MHz)"
+  },
+  {
+   "block": "10C",
+   "lo": 212.592,
+   "hi": 214.128,
+   "label": "DAB / DAB+ digital radio, block 10C (213.360 MHz)"
+  },
+  {
+   "block": "10D",
+   "lo": 214.304,
+   "hi": 215.84,
+   "label": "DAB / DAB+ digital radio, block 10D (215.072 MHz)"
+  },
+  {
+   "block": "11A",
+   "lo": 216.16,
+   "hi": 217.696,
+   "label": "DAB / DAB+ digital radio, block 11A (216.928 MHz)"
+  },
+  {
+   "block": "11B",
+   "lo": 217.872,
+   "hi": 219.408,
+   "label": "DAB / DAB+ digital radio, block 11B (218.640 MHz)"
+  },
+  {
+   "block": "11C",
+   "lo": 219.584,
+   "hi": 221.12,
+   "label": "DAB / DAB+ digital radio, block 11C (220.352 MHz)"
+  },
+  {
+   "block": "11D",
+   "lo": 221.296,
+   "hi": 222.832,
+   "label": "DAB / DAB+ digital radio, block 11D (222.064 MHz)"
+  },
+  {
+   "block": "12A",
+   "lo": 223.168,
+   "hi": 224.704,
+   "label": "DAB / DAB+ digital radio, block 12A (223.936 MHz)"
+  },
+  {
+   "block": "12B",
+   "lo": 224.88,
+   "hi": 226.416,
+   "label": "DAB / DAB+ digital radio, block 12B (225.648 MHz)"
+  },
+  {
+   "block": "12C",
+   "lo": 226.592,
+   "hi": 228.128,
+   "label": "DAB / DAB+ digital radio, block 12C (227.360 MHz)"
+  },
+  {
+   "block": "12D",
+   "lo": 228.304,
+   "hi": 229.84,
+   "label": "DAB / DAB+ digital radio, block 12D (229.072 MHz)"
+  }
+ ],
+ "countries": {},
+ "notes": [
+  "GE84 plans FM on a 100 kHz raster; some countries also use 50 kHz offsets, so the check allows 50 kHz.",
+  "Old OIRT band 65.8-74 MHz: a few state stations in some eastern countries."
+ ],
+ "prompt": [
+  "87.5-108 MHz FM broadcast radio (100 kHz raster). Cheap FM bugs, wireless mics and car FM transmitters also use it.",
+  "108-118 aircraft navigation beacons (VOR, ILS: steady AM carriers, no voice); 118-137 aircraft voice (AM); 137-138 weather satellites.",
+  "144-146 2 m amateur radio; 146-174 business radio, marine VHF 156-162; 169.4 smart meters.",
+  "174-240 DAB digital radio (and TV in some countries); 470-694 digital TV; 380-395 TETRA emergency services.",
+  "430-440 70 cm amateur; 433.05-434.79 ISM: weather stations, remotes, sensors; 446 PMR446 walkie-talkies.",
+  "703-960 mobile phone bands; 863-870 short-range devices: sensors, alarms, smart meters, LoRa; 1090 aircraft ADS-B."
+ ]
+}

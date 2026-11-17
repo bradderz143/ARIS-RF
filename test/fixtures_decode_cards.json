@@ -1,5 +1,5 @@
 {
- "about": "Decode cards for the page (arisweb/static/js/spectrum.js, decResult) and for the engine's tests: the eleven example cases of the Decode card design, each a whole card as /api/decode/<job> gives it in job.card (the keys the card has had so far plus the signal report's keys). 'extra' holds three more for what the examples do not reach (every step action, a dongle not used, a level at the noise, a failed decoder). 'old_card' has no report_v: the page draws it as before the signal report. Every new key may be missing or null in a real card. The 'cards' section is written by test/make_decode_fixtures.py from the rules in arislib/sigreport.py (old keys by hand, new keys from the rules: never edit those here); 'extra' and 'old_card' are written by hand. Example words, not measurements: simulation only.",
+ "about": "Decode cards for the page (arisweb/static/js/spectrum.js, decResult) and for the engine's tests: the twelve example cases of the Decode card design, each a whole card as /api/decode/<job> gives it in job.card (the keys the card has had so far plus the signal report's keys). 'extra' holds three more for what the examples do not reach (every step action, a dongle not used, a level at the noise, a failed decoder). 'old_card' has no report_v: the page draws it as before the signal report. Every new key may be missing or null in a real card. The 'cards' section is written by test/make_decode_fixtures.py from the rules in arislib/sigreport.py (old keys by hand, new keys from the rules: never edit those here); 'extra' and 'old_card' are written by hand. Example words, not measurements: simulation only.",
  "new_keys": [
   "report_v",
   "tag",
@@ -28,6 +28,7 @@
   "8": "A keyed carrier whose frequency moves",
   "9": "An airband transmission",
   "10": "ADS-B",
+  "11": "A steady AM carrier on the aircraft navigation band (VOR / ILS beacons)",
   "decoder_failed": "The decoder could not run; one dongle busy, one at the noise level",
   "capture_running": "A capture is already listening on this frequency",
   "locate": "An FM transmitter off the station channels, with the Map ready"
@@ -1494,6 +1495,145 @@
       "Identified: aircraft ADS-B transponders, 2 aircraft (9 checksum-verified position or identity messages, public broadcast).",
       "Band plan: Aircraft transponders (ADS-B / Mode S replies, 1090 MHz).",
       "Heard on Dongle 1, not on Dongle 2. The dongles have different antennas, so this usually means the antenna on Dongle 1 suits this band better; it does not mean the signal is internal.",
+      "Saved to the Signals list."
+     ],
+     "strip": null
+    }
+   ]
+  },
+  "11": {
+   "freq_mhz": 113.35,
+   "measured_mhz": 113.35003,
+   "verdict": "Signal in the aeronautical navigation band (VOR and ILS beacons; content not recorded)",
+   "evidence": "signal_present",
+   "evidence_text": "Heard, but no decoder identified it",
+   "listened_seconds": 30,
+   "band": "Aircraft navigation beacons: VOR, and ILS runway localizers (108-112)",
+   "dongles": [
+    "Dongle 1: heard it, 17 dB above noise (strongest)",
+    "Dongle 2: heard it, 11 dB above noise",
+    "Dongle 3: heard it, 7 dB above noise"
+   ],
+   "antenna_note": "Heard on all 3 dongles. They measured the same frequency: one signal reaches all of them. Whether through the antennas or the wiring is not known from this.",
+   "devices": [],
+   "unknown_signals": [],
+   "saved": true,
+   "decoders": [],
+   "doubtful": [],
+   "station_name": null,
+   "station_channel": 113.4,
+   "report_v": 1,
+   "tag": "HEARD",
+   "tag_kind": "signal_present",
+   "history_tag": "NO EARLIER RECORD",
+   "history_kind": "new",
+   "carrier": {
+    "mhz": 113.35003,
+    "text": "113.350 MHz",
+    "note": null
+   },
+   "headline": "Aeronautical navigation band: a steady AM carrier here is typical of a VOR or ILS beacon.",
+   "sure": "Medium confidence. Rests on: AM measured on Dongle 1; on in all 8 looks; a frequency in the aeronautical navigation band. A pattern, not an identification.",
+   "confidence": "medium",
+   "history_line": "No earlier record here (list from 2 Feb).",
+   "bars": [
+    {
+     "dongle": "Dongle 1",
+     "serial": "00017350",
+     "state": "heard",
+     "db": 17.0,
+     "pct": 42,
+     "best": true,
+     "text": "17 dB"
+    },
+    {
+     "dongle": "Dongle 2",
+     "serial": "00026410",
+     "state": "heard",
+     "db": 11.0,
+     "pct": 28,
+     "best": false,
+     "text": "11 dB"
+    },
+    {
+     "dongle": "Dongle 3",
+     "serial": "00035720",
+     "state": "heard",
+     "db": 7.0,
+     "pct": 18,
+     "best": false,
+     "text": "7 dB"
+    }
+   ],
+   "bars_note": "Above each dongle's own noise. Not a distance.",
+   "step": {
+    "action": "none",
+    "label": "",
+    "reason": "Navigation beacons carry no voice; nothing to do.",
+    "mhz": 113.35,
+    "seconds": null,
+    "minutes": null,
+    "dongle": null
+   },
+   "details": [
+    {
+     "title": "WHAT IT DID",
+     "lines": [
+      "On for the whole 3 s look on all 3 dongles.",
+      "Looked 8 times over 30 s: on every time.",
+      "Held its frequency: moved less than 0.1 kHz in 2.8 s, the same on all 3 dongles.",
+      "About 2.4 kHz wide. Level steady."
+     ],
+     "strip": {
+      "slots": [
+       1,
+       1,
+       1,
+       1,
+       1,
+       1
+      ],
+      "slot_s": 0.5,
+      "label": "The 3 s look on Dongle 1, start to end."
+     }
+    },
+    {
+     "title": "MODULATION",
+     "lines": [
+      "AM, measured on Dongle 1. Nothing is listened to or recorded."
+     ],
+     "strip": null
+    },
+    {
+     "title": "SPUR CHECK",
+     "lines": [
+      "Not the dongles' own clock: 1.8 MHz from 4 x 28.8 MHz.",
+      "All 3 dongles read the same frequency within 0.1 kHz: one signal reaches all of them. Whether through the antennas or the wiring is not known from this."
+     ],
+     "strip": null
+    },
+    {
+     "title": "HISTORY",
+     "lines": [
+      "No saved check within 6 kHz. The saved list goes back to 2 Feb.",
+      "No baseline covers 113.35 MHz, so there is no normal day to compare with."
+     ],
+     "strip": null
+    },
+    {
+     "title": "COULD NOT TELL",
+     "lines": [
+      "Whether it reaches the dongles through the antennas or the wiring.",
+      "What it did between the looks and outside these 30 s."
+     ],
+     "strip": null
+    },
+    {
+     "title": "DECODERS",
+     "lines": [
+      "Signal in the aeronautical navigation band (VOR and ILS beacons; content not recorded).",
+      "Band plan: Aircraft navigation beacons: VOR, and ILS runway localizers (108-112).",
+      "Heard on all 3 dongles. They measured the same frequency: one signal reaches all of them. Whether through the antennas or the wiring is not known from this.",
       "Saved to the Signals list."
      ],
      "strip": null

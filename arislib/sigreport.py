@@ -56,6 +56,8 @@ HIST_RECENT_H = 6
 BASELINE_CLEAR_DB = 6.0          # a baseline "had it": this far above its floor (3 to 6 dB is a weak rise, not clear)
 BASELINE_QUIET_DB = 3.0
 BAR_FULL_DB = 40.0
+NAV_LO_MHZ = 108.0               # aeronautical navigation, the same in every region: VOR and ILS localizer beacons
+NAV_HI_MHZ = 117.975             # (steady AM carriers with low tones and no voice); aircraft voice and data above
 
 CONFIDENCE_TEXT = {"confirmed": "Confirmed by a decoder", "high": "High confidence", "medium": "Medium confidence",
                    "low": "Low confidence", "unknown": "", "check": "Check first"}
@@ -445,6 +447,17 @@ def _watch(v):
     return None
 
 
+def _in_nav(kind, asked, said=None) -> bool:
+    """Is the check on the aeronautical navigation band (VOR and ILS localizer beacons, 108 to 117.975 MHz: the
+    same in every region)? Only on the airband. The frequency picked decides; the engine's own 'nav' flag counts
+    only when the frequency is missing (both follow the same range)."""
+    if kind != "air":
+        return False
+    if asked is not None:
+        return NAV_LO_MHZ <= asked < NAV_HI_MHZ
+    return said is True
+
+
 def _view(facts) -> dict:
     """Everything the rules ask of the facts, worked out once: who listened and heard, the clearest look, the
     on / off pattern, the watch, the modulation, the carrier, the quality of the look."""
@@ -458,6 +471,7 @@ def _view(facts) -> dict:
          "adsb": _dict(f.get("adsb")), "fm": _dict(f.get("fm")), "air": _dict(f.get("air")),
          "history": _dict(f.get("history")), "tune_offset_hz": _num(f.get("tune_offset_hz")),
          "carriers": f.get("carriers")}
+    v["nav"] = _in_nav(v["kind"], v["asked"], f.get("nav"))
     devs = _dicts(f.get("devices"))
     v["devices_ok"] = [d for d in devs if not d.get("doubts")]
     v["devices_bad"] = [d for d in devs if d.get("doubts")]
@@ -1083,6 +1097,9 @@ def _modulation(v):
         bits.append(f"No modulation while it was on in {look}: a bare carrier, switched on and off.")
     elif kind == "none":
         bits.append(f"No modulation during {look}: a bare carrier.")
+        if v["nav"]:                        # (siglook tests AM from 300 to 3400 Hz)
+            bits.append("A beacon's own tones, 30 Hz, 90 and 150 Hz and 9960 Hz, lie outside the 300 to 3400 Hz "
+                        "the look tests for AM.")
     elif kind == "lines":
         bits.append(f"2 or 3 separate lines during {look}, no other modulation seen.")
     elif kind == "tone" and tone and _mains_of(tone):
@@ -1148,9 +1165,41 @@ def _on_channel(v) -> str:
     return f" on {fmt_mhz(ch, 1, True)} MHz" if ch else ""
 
 
+_NAV_LIKE = (None, "none", "am", "lines", "unknown", "untested")     # what a beacon's carrier can read as in a look
+
+
+def _judge_nav(v, seen) -> dict:
+    """A signal heard on the aeronautical navigation band (108 to 117.975 MHz, the same everywhere). VOR and ILS
+    localizer beacons send steady AM carriers whose low tones (30 Hz; 90 and 150 Hz) and 9960 Hz subcarrier carry
+    the bearing or the runway line: no voice. A steady carrier there fits a beacon: a pattern, never an
+    identification. FM, or a signal that comes and goes, is not said to be one; nothing here speaks of voice."""
+    mk, pat, wt = v["modkind"], v["pattern"], v["watch"]
+    if pat == "steady" and mk in _NAV_LIKE:
+        am = mk == "am"
+        on = seen[2:] if seen else f"on for the whole {v['look_txt']} look"
+        return _cat("nav", f"Aeronautical navigation band: a steady {'AM ' if am else ''}carrier here is typical of a "
+                    f"VOR or ILS beacon.", p="B", ceiling=None if am else "low", am=False,
+                    rests=([f"AM measured on {v['mod_dongle']}"] if am else [])
+                    + [on, "a frequency in the aeronautical navigation band"],
+                    rider="A pattern, not an identification.")
+    if mk in ("fm_voice", "tone"):
+        return _cat("air", f"FM signal in the aeronautical navigation band{seen}.", am=False,
+                    sure="Beacons there send AM, not FM, so it does not look like one. What sends it is not known.")
+    if pat == "steady":
+        return _cat("air", f"Modulated signal in the aeronautical navigation band{seen}.", am=False,
+                    sure="Not the plain carrier a beacon sends. What sends it is not known.")
+    what = "AM transmission" if mk == "am" else "A transmission"
+    gone = bool(wt and wt["gone"])
+    return _cat("air", f"{what} in the aeronautical navigation band{seen}.", am=False,
+                sure=("Beacons there stay on, but this was not on in every look (a weak beacon can be missed in a "
+                      "look). " if gone else "Beacons there stay on, but this was not steady during the look. ")
+                + "What sends it is not known.")
+
+
 def _judge(v, sp, h) -> dict:
     """What the check found, as the first rung that fits: the decoders' own results, then a doubtful decode, the
-    receivers' own clock, nothing heard, FM, a tone, data, the airband, drift, bursts, keying, a steady carrier."""
+    receivers' own clock, nothing heard, FM, a tone, data, the airband (on its navigation part, a beacon's pattern),
+    drift, bursts, keying, a steady carrier."""
     kind, pat, mk, w = v["kind"], v["pattern"], v["modkind"], v["where_sp"]
     m, dr, fm, look = v["mod"], v["drift"], v["fm"], f"the {v['look_txt']} look"
     devs, confirmed = v["devices_ok"], v["evidence"] == "confirmed_decode"
@@ -1292,6 +1341,8 @@ def _judge(v, sp, h) -> dict:
             first = len(wt["names"])
             on, of = wt["heard"] + wt.get("first", first), wt["looks"] + first
             seen = f", on in all {wt['per'] + (1 if first else 0)} looks" if on == of else f", on in {on} of {of} looks"
+        if v["nav"]:
+            return _judge_nav(v, seen)
         if mk == "am":
             return _cat("air", f"Aviation-band transmission: AM{seen}.", p="B", am=True,
                         rests=[f"AM measured on {v['mod_dongle']}", "a frequency in the aircraft voice band"])
@@ -1392,7 +1443,7 @@ def _tag(v, j, conf) -> str:
         return "IDENTIFIED"
     if j["category"] == "own_clock":
         return "OWN CLOCK"
-    if j["category"] in ("station_noname", "voice_channel", "air"):
+    if j["category"] in ("station_noname", "voice_channel", "air", "nav"):
         return "HEARD"
     return "NOTHING HEARD" if j["category"] == "nothing" else "NOT IDENTIFIED"
 
@@ -1476,6 +1527,8 @@ def _step(v, j, h) -> dict:
                        "something transmits.", "To wait for the next transmission in the background, say {cmd}.")
     if cat == "voice_channel":
         return step("none", "", "A voice channel. ARIS never records or decodes voice.")
+    if cat == "nav":
+        return step("none", "", "Navigation beacons carry no voice; nothing to do.")
     if cat == "air" and j.get("am"):
         return step("none", "", "Aircraft voice is not decoded and never recorded.")
     if cat == "air" and pat != "steady":
@@ -1763,9 +1816,9 @@ def text_lines(report) -> dict:
 
 
 # ----------------------------------------------------------------------------------------------------------------
-# the example cards: eleven checks as the engine would describe them, for tests and the page's fixtures
+# the example cards: twelve checks as the engine would describe them, for tests and the page's fixtures
 # ----------------------------------------------------------------------------------------------------------------
-EXAMPLE_CASES = ("1a", "1b", "2", "3", "4", "5", "6", "7", "8", "9", "10")
+EXAMPLE_CASES = ("1a", "1b", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11")
 EXAMPLE_NOW = time.mktime((2026, 3, 14, 12, 0, 0, 0, 0, -1))
 
 
@@ -1830,7 +1883,7 @@ def _ex_carrier(asked, lines, ppm=(0.0, -6.0, 2.0)) -> list:
 
 
 def example_facts(case) -> dict:
-    """The facts of one of the eleven example checks ('1a', '1b', '2' to '10'): what the engine would hand to
+    """The facts of one of the twelve example checks ('1a', '1b', '2' to '11'): what the engine would hand to
     build() for it. The rows a card's bars are drawn from are the facts' own 'dongles'."""
     case = str(case)
     land = "VHF High-Band Land Mobile / Public Safety / Pager / SCADA"
@@ -1965,6 +2018,17 @@ def example_facts(case) -> dict:
             "dongles": [_ex_dongle(1, "00017350", True, None, 0.0, "decoder", adsb_messages=14, adsb_verified=9,
                                    aircraft=2),
                         _ex_dongle(2, "00026410", False, None, -6.0, "decoder", adsb_messages=3)]})
+    elif case == "11":                      # a steady AM carrier on the navigation part of the airband
+        am = lambda snr, q, f: _ex_profile(snr, q, f, "on_whole", "am", mod={"am_index": 0.3}, level={"range_db": 1.0},
+                                           width={"hz": 2400.0, "limit": None})
+        base.update({
+            "asked_mhz": 113.35, "band_kind": "air", "nav": True,
+            "band_label": "Aircraft navigation beacons: VOR, and ILS runway localizers (108-112)", "listen_s": 30,
+            "listened_s": 30, "strongest": "Dongle 1", "audio": None, "air": {"looks": 8, "looks_heard": 8},
+            "verdict": "Signal in the aeronautical navigation band (VOR and ILS beacons; content not recorded)",
+            "dongles": [_ex_dongle(1, "00017350", True, 17.0, 0.0, continuous=True, profile=am(17.1, "A", 113.350030)),
+                        _ex_dongle(2, "00026410", True, 11.0, -6.0, continuous=True, profile=am(11.2, "B", 113.350090)),
+                        _ex_dongle(3, "00035720", True, 7.0, 2.0, continuous=True, profile=am(7.1, "B", 113.349990))]})
     else:
         raise ValueError(f"No example case {case!r}: use one of {', '.join(EXAMPLE_CASES)}.")
     return base

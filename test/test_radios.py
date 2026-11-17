@@ -228,7 +228,13 @@ class Plugins(unittest.TestCase):
         A._load_plugins()
         self.assertEqual(A._band_args("the 868 band")[:2], (863.0, 870.0))
         self.assertEqual(A._named_band("scan the 868 band")[0], (863.0, 870.0))
-        self.assertIn("868", [p["id"] for p in A.PLUGIN_PRESETS])
+        # the example adds only the name: Europe's region data has its own chip, elsewhere 863-870 MHz is other use
+        self.assertNotIn("868", [p["id"] for p in A.PLUGIN_PRESETS])
+        A._add_band("t2m", 144.0, 146.0, "2 m test band (144-146)", preset=True)   # what preset=True does
+        try:
+            self.assertIn("t2m", [p["id"] for p in A.PLUGIN_PRESETS])
+        finally:
+            A.PLUGIN_PRESETS[:] = [p for p in A.PLUGIN_PRESETS if p["id"] != "t2m"]
 
     def test_a_broken_plugin_is_listed_and_never_stops_the_others(self):
         d = tempfile.mkdtemp()
@@ -334,7 +340,9 @@ class HighBands(unittest.TestCase):
         self.assertIn("2.4 GHz ISM", A._classify_frequency_allocation(2437.0, 20))
         self.assertIn("GPS jammer", A._classify_frequency_allocation(1575.42, 5))
         self.assertIn("5.8 GHz", A._classify_frequency_allocation(5800.0, 20))
-        self.assertIn("uplink", A._classify_frequency_allocation(1880.0, 200))
+        # (1880 MHz is a phone uplink in the USA but a tower downlink in Brazil: without a country the Americas'
+        # band plan gives the neutral label, with one the country's own layout; test_regions has the rest)
+        self.assertIn("Mobile phone", A._classify_frequency_allocation(1880.0, 200))
 
     def test_scores_bursts_in_busy_bands_down_and_a_steady_gnss_signal_up(self):
         burst = {"surge_delta_db": 20.0, "peak_mhz": 2437.0, "pattern": "intermittent", "new_signal": True}

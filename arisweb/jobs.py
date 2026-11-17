@@ -2,7 +2,7 @@
 
 Decode: POST /api/decode {freq_mhz, seconds} investigates one frequency on every dongle for that long (the same
 investigation as the chat) in a background thread; GET /api/decode/<job> reports progress and, at the end, a
-plain result card. One decode at a time.
+plain result card. One decode at a time. POST /api/decode/<job>/stop stops that one Decode (state "stopped").
 
 Captures: POST /api/capture/start {freq_mhz, minutes} and /api/capture/stop {serial | freq_mhz}. Captures live
 in this process (the GUI runs as a service), so pressing Stop in the chat, which restarts the chat console, does
@@ -44,6 +44,10 @@ def _public(job):
     out = {k: job[k] for k in ("id", "state", "freq_mhz", "seconds", "started", "progress", "error")}
     out["elapsed"] = round(time.time() - job["t0"], 1)
     out["expected"] = job["expected"]
+    if job.get("message"):
+        out["message"] = job["message"]
+    if job.get("stop_asked") and job["state"] == "running":
+        out["stopping"] = True
     if job.get("card"):
         out["card"] = job["card"]
     if job.get("names"):
@@ -62,16 +66,27 @@ def _decode_worker(job):
             job["progress"] = line.replace("[LISTEN]", "").replace("[DECODE]", "").strip()[:160]
     eng._QUIET.sink = sink
     try:
-        with eng.job_scope():                             # Reset Scanner can stop it
+        with eng.job_scope() as ev:                       # Reset Scanner, or this job's own Stop, can stop it
+            with _LOCK:                                   # a Stop pressed before the job got this far still counts
+                job["stop_ev"] = ev
+                if job.get("stop_asked"):
+                    ev.set()
             res = eng.investigate_single_frequency(frequency_mhz=job["freq_mhz"], listen_seconds=job["seconds"],
                                                    dongle=job.get("dongle"))
         job["card"] = eng._investigation_card(res)
         job["state"] = "done"
     except eng.RFError as e:
-        job["error"], job["state"] = str(e), "error"
+        if job.get("stop_asked"):
+            # its own Stop (Stopped, or a step that gave up because of it): no card and nothing saved (the engine
+            # stops before it saves), and every dongle it held is let go once the investigation has unwound to here
+            job["message"] = job["progress"] = "Stopped."
+            job["state"] = "stopped"
+        else:
+            job["error"], job["state"] = str(e), "error"
     except Exception as e:                                # never leave a job "running" forever
         job["error"], job["state"] = f"{type(e).__name__}: {e}", "error"
     finally:
+        job.pop("stop_ev", None)
         eng._QUIET.on, eng._QUIET.sink = False, None
 
 
@@ -166,6 +181,28 @@ def api_decode_status(job_id):
     job = JOBS.get(job_id)
     if not job:
         return jsonify({"error": "no such job (the GUI may have restarted)"}), 404
+    return jsonify(_public(job))
+
+
+@bp.route("/api/decode/<job_id>/stop", methods=["POST"])
+@api_login_required
+def api_decode_stop(job_id):
+    """Stop one Decode (the Stop in its progress card): only this job's stop flag is set, so captures, patrol and any
+    other work go on. The job ends a moment later as "stopped" with the message "Stopped.": no card, nothing saved,
+    its dongles free. Reset Scanner still stops everything."""
+    with _LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            return jsonify({"error": "no such job (the GUI may have restarted)"}), 404
+        if job.get("kind") == "fm_names":
+            return jsonify({"error": "This stops a Decode. Reset Scanner stops Name all FM stations."}), 400
+        if job["state"] != "running":
+            return jsonify({**_public(job), "error": "This Decode has already ended."}), 409
+        job["stop_asked"] = True
+        job["progress"] = "Stopping..."
+        ev = job.get("stop_ev")
+        if ev is not None:
+            ev.set()
     return jsonify(_public(job))
 
 

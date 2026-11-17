@@ -104,6 +104,15 @@ pre{background:#000;color:#34d399;padding:8px;border-radius:6px;overflow-x:auto;
 .spec-legend .lg.sub{color:var(--dim)}
 .spec-legend .lg.out i{background:repeating-linear-gradient(135deg,#475569 0 3px,transparent 3px 6px)}
 #spec-canvas.drag{cursor:ew-resize}
+/* the setting "Sweep a zoomed view by itself": the whole line is the touch target */
+.sp-check{display:flex;align-items:center;gap:8px;min-height:40px;font-size:.82rem;color:#cbd5e1;margin:0 2px 4px;cursor:pointer}
+.sp-check input{width:20px;height:20px;margin:0;accent-color:var(--accent)}
+/* the band labels' region, in the tab's notes: its selects wrap below the words at phone width */
+details.note p.sp-region{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;color:#cbd5e1}
+details.note p.sp-region[hidden]{display:none}
+.sp-region select.sel{min-height:40px;max-width:100%}
+.sp-region .sub{color:var(--muted)}
+.sp-region-msg{flex:1 1 100%;color:#bfdbfe}
 @media (min-width:1024px){
   .sp-bar > .sp-freq{flex:0 0 auto}
   .sp-set{flex-wrap:wrap;gap:8px}
@@ -144,6 +153,12 @@ pre{background:#000;color:#34d399;padding:8px;border-radius:6px;overflow-x:auto;
 /* Decode / capture (Spectrum selection panel) */
 .dec-row{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
 .dec-row .lab{font-size:.78rem;color:var(--muted)}
+.dec-row .seg button{min-height:40px;padding:8px 12px}
+/* the running Decode's progress card: its heading, and Stop on the same first line (a quiet text button) */
+.dec-ptop{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.dec-ptop .dec-h{margin-bottom:0;min-width:0;overflow-wrap:anywhere;padding-top:10px}
+.dec-stop{flex:0 0 auto;min-height:40px;min-width:64px;background:none;border:1px solid var(--line2);border-radius:8px;color:#fca5a5;font-weight:600;font-size:.84rem;padding:0 12px;margin:0 -2px 6px 0;cursor:pointer}
+.dec-stop:disabled{opacity:.6;color:var(--muted)}
 .dec-card{background:#0b1220;border:1px solid var(--line2);border-radius:10px;padding:10px;margin-top:10px;font-size:.86rem;line-height:1.45}
 .dec-card.confirmed_decode{border-color:var(--accent)}
 .dec-card.signal_present{border-color:#b45309}
