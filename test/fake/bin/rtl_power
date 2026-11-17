@@ -84,7 +84,7 @@ for p in range(passes):
         vals.append(vals[-1])                                  # rtl_power prints its last bin twice
         rows.append(f"2026-03-01, 12:00:{p:02d}, {c - hop['bw2']}, {c + hop['bw2']}, {hstep:.2f}, 1000, "
                     + ", ".join(vals))
-time.sleep(0.05)
+time.sleep(float(os.environ.get("FAKE_POWER_SLOW", "0.05")))     # FAKE_POWER_SLOW=<s>: a sweep that takes real time
 text = "\n".join(rows) + "\n"
 if out == "-":                      # real rtl_power writes the CSV to stdout for "-"
     sys.stdout.write(text)

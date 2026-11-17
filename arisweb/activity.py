@@ -78,8 +78,13 @@ def api_activity():
     # today's threat levels and dongle names (rounds from older versions said CRITICAL / MODERATE)
     rounds = eng._patrol_rounds(20)
     caps = read_json(eng.CAPTURES, [])[-10:][::-1]
+    try:
+        from . import roomwatch
+        room = roomwatch.brief(eng)
+    except Exception:
+        room = {"running": False, "unseen": 0, "last": None}
     if request.args.get("brief"):
-        return jsonify({"now": time.time(), "flagged_rounds": [
+        return jsonify({"now": time.time(), "room": room, "flagged_rounds": [
             {"t": r["t"], "top": [{"threat_level": ev.get("threat_level")} for ev in r.get("top") or []]}
             for r in rounds[::-1]], "captures": [{"t": c.get("t"), "outcome": c.get("outcome")} for c in caps]})
     patrol = read_json(eng.PATROL_STATE, {"running": False})
@@ -89,7 +94,7 @@ def api_activity():
     except Exception:
         wd = {}
     checks = read_json(eng.RECENT_CHECKS, [])[-10:][::-1]
-    return jsonify({"now": time.time(), "patrol": patrol, "flagged_rounds": rounds[::-1], "watchdog": wd,
+    return jsonify({"now": time.time(), "room": room, "patrol": patrol, "flagged_rounds": rounds[::-1], "watchdog": wd,
                     "captures": [{k: c.get(k) for k in ("t", "finished", "freq_mhz", "dongle", "serial", "outcome",
                                                        "verdict", "seconds", "decoder", "mode", "band",
                                                        "band_label")} for c in caps],

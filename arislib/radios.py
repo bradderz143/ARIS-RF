@@ -83,6 +83,9 @@ class Backend:
     gains = None                    # gain steps in dB, or None (the engine's RTL-SDR steps)
     tools = {}                      # rtl tool -> the program actually run (None: not available on this receiver)
     max_iq_rate = None              # the fastest IQ it streams, samples a second (None: no limit known)
+    hop_spikes = True               # its sweeps hop like rtl_power's and leave a spike at each hop's centre (a
+                                    # receiver that sweeps through its own helper prints rows, not hops: False)
+    list_error = ""                 # why its devices could not be listed the last time ("" when they could)
     sweep_unit = "dB"               # what its rtl_power-style rows are in: "dBFS" (rtl_power's own arithmetic, which
                                     # the Spectrum tab refers to an 8-bit full-scale sine), "dBm" (calibrated), or
                                     # "dB" (the receiver's own uncalibrated scale: shown as it is)
@@ -217,6 +220,7 @@ class HelperBackend(Backend):
     tools = {"rtl_sdr": "helper", "rtl_power": "helper", "rtl_fm": "helper", "rtl_433": "rtl_433",
              "rtl_adsb": None, "rtl_test": None}
     FM_OVERSAMPLE = 10          # IQ for the Python demodulator: 10 x the audio rate (an exact decimation)
+    hop_spikes = False
 
     def helper_argv(self) -> list:
         raise NotImplementedError
@@ -235,8 +239,14 @@ class HelperBackend(Backend):
     def list_devices(self) -> list:
         try:
             p = subprocess.run(self.helper_argv() + ["list"], capture_output=True, text=True, timeout=15)
-        except (OSError, subprocess.TimeoutExpired, NotImplementedError):
+        except (OSError, subprocess.TimeoutExpired, NotImplementedError) as e:
+            self.list_error = type(e).__name__
             return []
+        # (a helper that cannot load its library says so on stderr: kept, so that a system check can tell the
+        # user why the receiver does not appear)
+        err = [x.strip() for x in (p.stderr or "").splitlines() if x.strip()]
+        self.list_error = (err[-1][:200] if err else f"its helper ended with code {p.returncode}") \
+            if p.returncode else ""
         out = []
         for line in (p.stdout or "").splitlines():
             parts = line.split("\t", 1)
@@ -290,7 +300,9 @@ class HelperBackend(Backend):
             if self.max_iq_rate and rate > self.max_iq_rate:
                 rate = int(self.max_iq_rate)      # rtl_433 decodes at the receiver's own rate (it takes any -s)
             src = self._sdr(dev, _opt(cmd, "-f") or 433920000, rate, _opt(cmd, "-g"), ppm=_opt(cmd, "-p"))
-            sink = ["rtl_433"] + _without(cmd[1:], flags_with_value=("-d", "-g", "-p", "-s")) + \
+            # (rtl_433 reads the stream; it takes its -f as a 32-bit number and refuses one above 4.29 GHz)
+            high = float(_opt(cmd, "-f") or 0) > 4.29e9
+            sink = ["rtl_433"] + _without(cmd[1:], flags_with_value=("-d", "-g", "-p", "-s") + (("-f",) if high else ())) + \
                    ["-s", str(rate), "-r", "cu8:-"]
             return [sys.executable, IQPIPE, "rtl433", "--"] + src + ["---"] + sink
         if tool == "rtl_test":
@@ -474,3 +486,14 @@ def configured() -> dict:
         except (OSError, ValueError, AttributeError):
             _CFG.update(key=key, radios={})
     return dict(_CFG["radios"])
+
+
+def list_problems() -> list:
+    """Receiver types whose devices could not be listed the last time: [(label, why)]. A plug-in whose library is
+    missing loads fine and lists nothing; this is how a system check can say so."""
+    out = []
+    for b in _BACKENDS:
+        why = getattr(b, "list_error", "")
+        if why:
+            out.append((b.label, why))
+    return out

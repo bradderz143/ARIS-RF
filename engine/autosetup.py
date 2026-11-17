@@ -611,6 +611,17 @@ def get_setup_report():
         return json.load(f)
 
 
+def _receiver_at_work(serial) -> bool:
+    """Is this receiver working right now (a capture holds it, or its lock is taken in this or another ARIS
+    process)? A receiver in use is plugged in, whatever a device list says: some receivers do not show up in
+    their own list while a program has them open."""
+    try:
+        wd = _WATCHDOGS.get(serial)
+        return bool(_watchdog_elsewhere(serial) or (wd is not None and wd.alive()) or _dongle_in_use(serial))
+    except Exception:
+        return False
+
+
 def _sync_found_dongles(found) -> dict:
     """Plugged-in dongles vs the known ones: new dongles get the next numbers (config 'dongle_order'), missing ones
     are marked so nothing tries to use them, and dongles sharing a serial number are flagged (the radio tools pick
@@ -629,9 +640,10 @@ def _sync_found_dongles(found) -> dict:
             if x not in order:
                 order.append(x)
                 added.append(x)
+        using = {x for x in order if x not in serials and _receiver_at_work(x)}
         if listed:
             for x in order:
-                cfg["dongles"].setdefault(x, {})["present"] = x in serials
+                cfg["dongles"].setdefault(x, {})["present"] = x in serials or x in using
         if added:
             cfg["dongle_order"] = order
             cfg["investigator_serials"] = list(dict.fromkeys(list(cfg.get("investigator_serials") or []) + added))
@@ -647,7 +659,8 @@ def _sync_found_dongles(found) -> dict:
                      f"serial: rtl_eeprom -d {([d['index'] for d in found if d['serial'] == x and d.get('index') is not None] or [0])[-1]} -s 0000{k}00{k} "
                      f"(answer y), then unplug it and plug it back in, and run /check again.")} for x in dup]
     return {"found": serials, "listed": listed, "added": added,
-            "missing": [x for x in DONGLE_NAMES if listed and x not in serials], "duplicates": dups,
+            "missing": [x for x in DONGLE_NAMES if listed and x not in serials and x not in using],
+            "in_use": sorted(using), "duplicates": dups,
             "names": {x: d["name"] for x in serials for d in found if d["serial"] == x}}
 
 
@@ -656,6 +669,13 @@ def _reception_test(serial) -> dict:
     come from noise or from the receiver itself. Tries the station the dongle was calibrated on, then the
     strongest ones in its FM baseline, else a quick sweep finds one."""
     cfg = _load_config()
+    try:
+        cap = radios.backend_for(serial).max_iq_rate
+    except Exception:
+        cap = None
+    if cap and float(cap) < 1.024e6:             # (the test needs 1.024 MS/s of IQ: not a fault of the receiver)
+        return {"ok": None, "detail": "not tested: this receiver's IQ is too narrow for the FM station test; its "
+                                      "sweeps are what it is used for"}
     fm_lo, fm_hi = _setup_band("fm") or _fm_band()
     gain = _gain_for(serial, fm_lo, fm_hi, cfg)
     cands = []
@@ -810,6 +830,11 @@ def check_system():
     for x in here:                                   # every time, not only when it was just added
         if _generic_serial(x):
             notes.append(_factory_serial_note(x))
+    for label, why in radios.list_problems():        # a receiver type whose devices could not be listed, and why
+        notes.append(f"{label}: cannot be used right now ({why}). If its library is installed, point the plug-in "
+                     f"at it (see docs/DEVICES.md).")
+    for x in sync.get("in_use") or []:
+        notes.append(f"{_short(x)} is in use right now, so it was not tested.")
     problems += [f"decoder {n}: {r['detail']}" for n, r in dec.items() if r.get("ok") is False]
     lines = [f"System check ({round(time.time() - t0)} s): " + (f"{len(problems)} problem(s)." if problems
                                                                   else "everything works.")]

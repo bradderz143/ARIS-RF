@@ -1145,7 +1145,31 @@ def _modulation(v):
                     + ("" if "not an identification" in fp else
                        f" This pattern is used by {hint}. A pattern match, not an identification." if hint else
                        " A pattern, not an identification."))
-    return (_cut(" ".join(bits), 400) if bits else None), cant
+    tried = _tried(m)
+    if tried and bits:
+        bits.append(tried)
+    return (_cut(" ".join(bits), 640) if bits else None), cant
+
+
+_FIT_WORD = {"fits": "fits", "partly": "a little", "no": "no"}
+
+
+def _tried(m):
+    """One sentence: what each demodulator found, from the look's trial rows (numbers only, nothing listened to)."""
+    rows = [r for r in (m.get("trial") or []) if isinstance(r, dict) and r.get("mode") in
+            ("AM", "Narrow FM", "FSK or data", "Sub-audible tone", "Bare carrier", "Mains hum")]
+    if not rows:
+        return ""
+    parts = []
+    for r in rows[:5]:
+        val, unit, fit = r.get("value"), str(r.get("unit") or ""), _FIT_WORD.get(r.get("fit"), "no")
+        if r["mode"] == "Bare carrier":
+            parts.append("bare carrier: fits")
+        elif isinstance(val, (int, float)) and not isinstance(val, bool) and fit != "no":
+            parts.append(f"{r['mode']}: {fit} ({val:g} {unit})")
+        else:
+            parts.append(f"{r['mode']}: {fit}")
+    return "Tried each demodulator on the same stretch, as numbers only: " + "; ".join(parts) + "."
 
 
 # ----------------------------------------------------------------------------------------------------------------

@@ -21,19 +21,29 @@ def _collapse(acc: dict, grid_hz: float) -> dict:
     return res
 
 
-_BASELINE_CACHE: dict = {}          # path -> ((mtime_ns, size), parsed file); patrol reads baselines every round
+_BASELINE_CACHE: dict = {}          # path -> ((mtime_ns, size), parsed file, its cost in bins); the file used last
+                                    # comes last. Patrol and a long watch read their baselines every round.
+_BASELINE_LOCK = threading.Lock()
+BASELINE_CACHE_BINS = 600000        # what the cache holds at most, in bins: about 130 MB (a bin costs about 215
+                                    # bytes once parsed), which is every band from 25 to 1766 MHz on three
+                                    # receivers. Past that the files not used for longest go, one by one; a file
+                                    # that is needed again is parsed again (about 15 ms for 18000 bins).
 
 
 def _read_baseline(p: Path):
+    name = str(p)
     try:
         st = p.stat()
     except OSError:
-        _BASELINE_CACHE.pop(str(p), None)
+        with _BASELINE_LOCK:
+            _BASELINE_CACHE.pop(name, None)
         return None
     key = (st.st_mtime_ns, st.st_size)
-    hit = _BASELINE_CACHE.get(str(p))
-    if hit and hit[0] == key:
-        return hit[1]
+    with _BASELINE_LOCK:
+        hit = _BASELINE_CACHE.get(name)
+        if hit and hit[0] == key:
+            _BASELINE_CACHE[name] = _BASELINE_CACHE.pop(name)          # used last: to the end
+            return hit[1]
     try:
         with open(p) as f:
             d = json.load(f)
@@ -42,16 +52,24 @@ def _read_baseline(p: Path):
         return None
     if not isinstance(d, dict):
         return None
-    if len(_BASELINE_CACHE) > 40:
-        _BASELINE_CACHE.clear()
-    _BASELINE_CACHE[str(p)] = (key, d)
+    bins = d.get("bins")
+    d["_cached"] = True                 # (_baseline_bins keeps only one form of a cached file's bins)
+    with _BASELINE_LOCK:
+        _BASELINE_CACHE.pop(name, None)
+        _BASELINE_CACHE[name] = (key, d, (len(bins) if isinstance(bins, dict) else 0) + 500)
+        total = sum(v[2] for v in _BASELINE_CACHE.values())
+        for old in list(_BASELINE_CACHE):
+            if total <= BASELINE_CACHE_BINS or old == name:
+                break
+            total -= _BASELINE_CACHE.pop(old)[2]
     return d
 
 
 def _baseline_bins(base: dict) -> dict:
     """{grid index: [mean, max, std]} of a baseline (converted once per file, then cached with it). Baselines
     recorded by older versions stored rtl_power's bins up to one bin too high: they are moved to the true frequencies
-    here, so audits do not see every strong signal's edges as new."""
+    here, so audits do not see every strong signal's edges as new. A file held in the cache then gives up the bins
+    as they were stored (nothing else reads them, and two forms of 18000 bins cost a megabyte more)."""
     bm = base.get("_bmap")
     if bm is None:
         shift = 0
@@ -65,8 +83,14 @@ def _baseline_bins(base: dict) -> dict:
                 shift = int(round(bias / float(base["grid_hz"])))
             except (KeyError, TypeError, ValueError, ZeroDivisionError):
                 shift = 0
-        bm = base["_bmap"] = {int(k) - shift: v for k, v in base["bins"].items()}
-        base["_shifted_bins"] = shift
+        with _BASELINE_LOCK:            # (two receivers' threads may ask for one file at the same moment)
+            bm = base.get("_bmap")
+            if bm is None:
+                bm = {int(k) - shift: v for k, v in base["bins"].items()}
+                base["_shifted_bins"] = shift
+                base["_bmap"] = bm
+                if base.get("_cached"):
+                    base.pop("bins", None)
     return bm
 
 
@@ -80,35 +104,92 @@ def _baseline_files(pattern="*.json"):
     return out
 
 
+_BASELINE_NAME_RX = re.compile(r"^([0-9.]+(?:e[+-]?[0-9]+)?)-([0-9.]+(?:e[+-]?[0-9]+)?)MHz_")
+
+
+def _baseline_fits(d, start, stop, serial):
+    """How wide a baseline is when it is this receiver's and covers start-stop MHz, else None."""
+    if not isinstance(d, dict) or str(d.get("serial")) != str(serial):
+        return None
+    b = d.get("band") or {}
+    try:
+        lo, hi = float(b["start_mhz"]), float(b["stop_mhz"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return hi - lo if lo <= start + 1e-9 and hi >= stop - 1e-9 else None
+
+
 def _find_baseline(start, stop, serial):
-    """Baselines are per dongle: each antenna hears a different 'normal'. Files are named <band>MHz_<serial>.json,
-    so only that dongle's files are opened."""
+    """Baselines are per dongle: each antenna hears a different 'normal'. Files are named <band>MHz_<serial>.json:
+    the file of exactly this band is tried first; else, of that dongle's files, only those whose name says they
+    cover the band are opened, and the narrowest one wins."""
+    p = BASELINE_DIR / f"{start:g}-{stop:g}MHz_{serial}.json"
+    d = _read_baseline(p)
+    if d is not None and _baseline_fits(d, start, stop, serial) is not None:
+        return p, d
     best = None
-    for p, d in _baseline_files(f"*_{serial}.json"):
-        if str(d.get("serial")) != str(serial):
-            continue
-        b = d.get("band", {})
-        if b.get("start_mhz", 1e9) <= start + 1e-9 and b.get("stop_mhz", -1) >= stop - 1e-9:
-            span = b["stop_mhz"] - b["start_mhz"]
-            if best is None or span < best[2]:
+    if BASELINE_DIR.exists():
+        for p in sorted(BASELINE_DIR.glob(f"*_{serial}.json")):
+            m = _BASELINE_NAME_RX.match(p.name)
+            if m:
+                try:
+                    lo, hi = float(m.group(1)), float(m.group(2))
+                    tol = 1e-5 * max(abs(hi), 1.0)                  # (a name carries six digits of each edge)
+                    if lo > start + tol or hi < stop - tol:
+                        continue
+                except ValueError:
+                    pass
+            d = _read_baseline(p)
+            span = _baseline_fits(d, start, stop, serial)
+            if span is not None and (best is None or span < best[2]):
                 best = (p, d, span)
     return (best[0], best[1]) if best else None
+
+
+def _hop_cells(hops_mhz, grid_hz, guard_mhz) -> dict:
+    """{hop centre in MHz: the grid cells within the guard of it}. A receiver that hops across a sweep leaves its
+    own spike at each hop's centre."""
+    out, n = {}, int(guard_mhz * 1e6 / grid_hz) + 2
+    for h in hops_mhz:
+        i0 = int(round(h * 1e6 / grid_hz))
+        out[h] = [i for i in range(i0 - n, i0 + n + 1) if abs(round(i * grid_hz / 1e6, 4) - h) <= guard_mhz]
+    return out
 
 
 def _baseline_summary(grid, step_khz, hops_mhz, cfg):
     """What was on the air while the baseline was recorded (strongest level per frequency)."""
     gh = step_khz * 1000.0
-    guard = _guard_mhz(step_khz)
-    held = {round(i * gh / 1e6, 4): v["max"] for i, v in grid.items()}
-    clean = {f: v for f, v in held.items() if not _near_hop(f, hops_mhz, guard)} or held
+    cells = _hop_cells(hops_mhz, gh, _guard_mhz(step_khz))
+    spike = {i for c in cells.values() for i in c}
+    held = {round(i * gh / 1e6, 4): v["max"] for i, v in grid.items() if i not in spike} \
+        or {round(i * gh / 1e6, 4): v["max"] for i, v in grid.items()}
     floor = _robust_floor([v["mean"] for v in grid.values()])
-    _, peaks = _extract_peak_clusters(clean, 6.0, cfg["cluster_gap_khz"], step_khz,
-                                      floor=_robust_floor(list(clean.values())))
+    _, peaks = _extract_peak_clusters(held, 6.0, cfg["cluster_gap_khz"], step_khz,
+                                      floor=_robust_floor(list(held.values())))
     peaks = _group_broadcast(peaks, step_khz)
     top = sorted(peaks, key=lambda p: p["snr_db"], reverse=True)[:10]
+    # what stayed on for the whole recording: the mean level of each frequency, not its strongest moment. A hop
+    # centre holds the receiver's own spike, about as high at every hop: one that stands 8 dB over the others
+    # holds a signal of its own and stays in (a carrier on a hop centre was left out of the list).
+    tops = {h: max(grid[i]["mean"] for i in c if i in grid) for h, c in cells.items() if any(i in grid for i in c)}
+    for h, v in tops.items():
+        rest = [x for k, x in tops.items() if k != h]
+        if rest and v >= statistics.median(rest) + 8.0:
+            spike.difference_update(cells[h])
+    mean = {round(i * gh / 1e6, 4): v["mean"] for i, v in grid.items() if i not in spike} \
+        or {round(i * gh / 1e6, 4): v["mean"] for i, v in grid.items()}
+    try:
+        _, steady = _extract_peak_clusters(mean, 8.0, cfg["cluster_gap_khz"], step_khz,
+                                           floor=_robust_floor(list(mean.values())))
+        steady = sorted(_group_broadcast(steady, step_khz), key=lambda p: p["snr_db"], reverse=True)[:80]
+    except Exception:
+        steady = []
     return ({"signals_present": len(peaks), "noise_floor_db": floor,
              "strongest": [{"mhz": p.get("channel_mhz") or p["frequency_mhz"], "snr_db": p["snr_db"],
-                            "band": p["probable_allocation"]} for p in top]}, floor)
+                            "band": p["probable_allocation"]} for p in top],
+             "steady": [{"mhz": p.get("channel_mhz") or p["frequency_mhz"], "snr_db": p["snr_db"],
+                         "bw_khz": p.get("occupied_bw_khz"), "band": p["probable_allocation"]} for p in steady]},
+            floor)
 
 
 def _record_one_baseline(serial, s, e, step, dur, label, cfg):
@@ -178,8 +259,25 @@ def list_baselines():
     return {"count": len(items), "baselines": items}
 
 
-def _audit(s, e, serial, trig, dur, lock_timeout=60.0):
-    """Watch a band on one dongle and compare it with that dongle's own baseline."""
+AUDIT_LIFT_DB = 4.0     # the quietest quarter of a sweep this far over its baseline: the receiver itself is lifted
+AUDIT_BAND_UP_DB = 6.0  # the same from here on is said in a threat audit's and a patrol round's report
+
+
+def _local_floor(bmap, lo, hi, grid_hz, spike, fallback):
+    """The baseline's noise floor beside a signal that covers the cells lo..hi: from the mean levels within 1 MHz
+    either side, without the signal's own cells and the hop centres. It is their median, or the quietest tenth
+    + 1.5 dB when that is lower (in a crowded band the neighbours are signals, not the floor). The whole sweep's
+    median says little where the floor is uneven. With too few cells beside it, the fallback."""
+    n = max(1, int(round(1e6 / grid_hz)))
+    near = [bmap[i][0] for i in list(range(lo - n, lo)) + list(range(hi + 1, hi + 1 + n))
+            if i in bmap and i not in spike]
+    return _robust_floor(near) if len(near) >= 10 else fallback
+
+
+def _audit(s, e, serial, trig, dur, lock_timeout=60.0, take_lift=False):
+    """Watch a band on one dongle and compare it with that dongle's own baseline. take_lift: a sweep that reads
+    higher than its baseline everywhere has that much taken off before anything is called a surge (a long watch
+    asks for it; patrol and the threat audit do not: a signal as wide as their band would be taken off with it)."""
     found = _find_baseline(s, e, serial)
     if not found:
         raise RFError(f"{_short(serial)} has no baseline covering {s:g}-{e:g} MHz. Run record_baseline first.")
@@ -196,14 +294,22 @@ def _audit(s, e, serial, trig, dur, lock_timeout=60.0):
     if base_floor is None:
         base_floor = base["_floor"] = statistics.median(v[0] for v in bmap.values())
 
+    # How far the whole sweep sits from its baseline. The median is reported with its sign (a band quieter than
+    # at the baseline is that much less sensitive). The lift is read from the quietest quarter, so a signal over
+    # up to three quarters of the band does not count as one: a receiver driven hard by one very strong signal
+    # lifts its whole sweep (its noise floor rises and it makes mixing products of its own).
+    diffs = sorted(live_g[i]["mean"] - b[0] for i, b in bmap.items() if i in live_g)
+    shift = diffs[len(diffs) // 2] if len(diffs) >= 50 else 0.0
+    low = diffs[len(diffs) // 4] if len(diffs) >= 50 else 0.0
+    lift = low if take_lift and low >= AUDIT_LIFT_DB else 0.0
     hits, compared = [], 0
     for idx in sorted(live_g):
         b = bmap.get(idx)
         if b is None:
             continue
         compared += 1
-        delta = live_g[idx]["mean"] - b[0]
-        burst = live_g[idx]["max"] - b[1]       # strongest live reading vs strongest during the baseline
+        delta = live_g[idx]["mean"] - b[0] - lift
+        burst = live_g[idx]["max"] - b[1] - lift   # strongest live reading vs strongest during the baseline
         if delta >= max(trig, SIGMA_K * b[2]):
             hits.append((idx, live_g[idx]["mean"], b[0], delta, "steady"))
         elif burst >= trig:
@@ -221,13 +327,16 @@ def _audit(s, e, serial, trig, dur, lock_timeout=60.0):
         clusters.append(cur)
 
     g = _guard_mhz(step_khz)
+    spike = {i for c in _hop_cells(hops, grid_hz, g).values() for i in c}
     events, rejected = [], 0
     for c in clusters:
         peak = max(c, key=lambda h: h[3])
         peak_mhz = peak[0] * grid_hz / 1e6
+        # new: nothing stood out of the noise here in the baseline, the noise being what it was beside this signal
+        local = _local_floor(bmap, c[0][0], c[-1][0], grid_hz, spike, base_floor)
         ev = {"peak_mhz": round(peak_mhz, 4), "baseline_db": round(peak[2], 2), "detected_db": round(peak[1], 2),
               "surge_delta_db": round(peak[3], 2), "bandwidth_khz": round(len(c) * grid_hz / 1e3, 1),
-              "pattern": peak[4], "new_signal": peak[2] < base_floor + 3.0,
+              "pattern": peak[4], "new_signal": peak[2] < local + 3.0,
               "hint": _classify_frequency_allocation(peak_mhz, len(c) * grid_hz / 1e3)}
         if len(c) <= 6 and _near_hop(peak_mhz, hops, g):
             try:
@@ -241,10 +350,24 @@ def _audit(s, e, serial, trig, dur, lock_timeout=60.0):
             ev["rechecked_off_centre_snr_db"] = snr2
         events.append(ev)
     events.sort(key=lambda x: x["surge_delta_db"], reverse=True)
-    age_h = round((time.time() - base.get("created_epoch", time.time())) / 3600, 1)
+    created = base.get("created_epoch")
+    created = float(created) if isinstance(created, (int, float)) and not isinstance(created, bool) else None
+    age_h = round((time.time() - (created if created is not None else time.time())) / 3600, 1)
+    # the strong signals of the baseline as pilots: how far they are down now (an antenna knocked off leaves the
+    # noise floor almost as it was, so a receiver gone deaf sweeps on and flags nothing). Only what held its
+    # level through the baseline counts (a channel that was in use for a moment is quiet later and says nothing
+    # about the receiver), and never a hop centre (the receiver's own spike stays when the antenna is off).
+    pil = [live_g[i]["mean"] - b[0] for i, b in bmap.items()
+           if b[0] >= base_floor + 15.0 and b[2] <= 2.0 and b[1] - b[0] <= 3.0 and i in live_g and i not in spike]
     rep = {"dongle": _short(serial), "baseline_recorded": base.get("created"), "baseline_age_hours": age_h,
+           "baseline_created_epoch": created, "baseline_file": path.name,
            "gain_db": gain, "bins_compared": compared, "flagged": len(events),
-           "hop_centre_artifacts_rejected": rejected, "events": events[:40]}
+           "hop_centre_artifacts_rejected": rejected, "events": events[:40],
+           "pilots": {"n": len(pil), "median_db": round(statistics.median(pil), 1) if pil else None},
+           "floor_lift_db": round(lift, 1) + 0.0, "floor_shift_db": round(shift, 1) + 0.0}     # (+ 0.0: never -0.0)
+    if low >= AUDIT_BAND_UP_DB:
+        rep["whole_band"] = (f"the whole band reads {low:.0f} dB over its baseline: one signal over the whole band, "
+                             f"or the receiver is overloaded")
     if age_h > 72:
         rep["warning"] = "Baseline is older than 72 h; consider re-recording."
     ppm_now = _ppm_of(serial)
@@ -374,13 +497,21 @@ def _audit_all(s, e, serials, trig, dur, lock_timeout):
     per = {ser: r for ser, r in res.items() if not isinstance(r, Exception)}
     errors = [f"{_short(ser)}: {r}" for ser, r in res.items() if isinstance(r, Exception)]
     errors += [f"{_short(x)}: no baseline for this band" for x in serials if x not in with_base]
+    return per, _audit_finish(s, e, per), errors
+
+
+def _audit_finish(s, e, per, remember=True):
+    """The receivers' own audit reports of one band -> one scored list of events (one entry per frequency with
+    `flagged_by`, hopping collapsed, strongest threat first). remember=False leaves the memory of regulars alone
+    (a long watch that looks at a band hundreds of times would turn everything into a regular)."""
     events = _collapse_hopping(_merge_events(per), s, e)
     fixed = [x for x in events if x["pattern"] != "frequency hopping"]
-    _seen_update(_band_key(s, e), fixed)
+    if remember:
+        _seen_update(_band_key(s, e), fixed)
     for ev in fixed:
         _score_event(ev)
     events.sort(key=lambda x: x["risk_score"], reverse=True)
-    return per, events, errors
+    return events
 
 
 @register(
@@ -403,7 +534,8 @@ def run_automated_threat_audit(frequency_range=None, start_mhz=None, stop_mhz=No
     per, events, errors = _audit_all(s, e, serials, _num(trigger_delta_db, "trigger_delta_db", 10.0), dur, 60.0 + dur)
     report = {"timestamp": _now(), "band_audited": f"{s:g}-{e:g} MHz", "watched_seconds": dur,
               "dongles": {_short(k): {x: v[x] for x in ("flagged", "baseline_age_hours",
-                                                       "hop_centre_artifacts_rejected", "warning") if x in v}
+                                                       "hop_centre_artifacts_rejected", "warning", "whole_band")
+                                      if x in v}
                           for k, v in per.items()},
               "total_threats_flagged": len(events), "threat_manifest": events[:10]}
     if errors:
@@ -491,6 +623,9 @@ class Patrol:
                 rec["serials"] = {_short(x): x for x in self.serials}     # names change when a dongle is forgotten
                 if errors:
                     rec["skipped"] = [x[:120] for x in errors]
+                notes = [f"On {_short(x)} {r['whole_band']}." for x, r in per.items() if r.get("whole_band")]
+                if notes:
+                    rec["notes"] = notes
                 self.flagged_total += rec["flagged"]
                 high = [x for x in events if x["threat_level"] == "HIGH" and x["pattern"] != "frequency hopping"]
                 if high:
@@ -653,7 +788,8 @@ def _patrol_reply(rep) -> str:
              "frequency hopping" else f"{float(ev.get('peak_mhz') or 0):.3f} MHz")
             + f" {ev.get('threat_level', 'LOW')}" + (f" ({', '.join((ev.get('why') or [])[:2])})" if ev.get("why")
                                                      else "") for ev in evs[:3])
-        lines.append(f"- {r.get('time')} ({r.get('age')}), {r.get('band')}: {what or 'nothing listed'}.")
+        lines.append(f"- {r.get('time')} ({r.get('age')}), {r.get('band')}: {what or 'nothing listed'}."
+                     + "".join(f" {n}" for n in (r.get("notes") or [])[:3] if isinstance(n, str)))
     old = rep.get("older_flagged_rounds")
     if old:
         lines.append(f"{'Older' if rounds else 'Nothing flagged in the last day. Older'} rounds: {old['count']}, the "

@@ -479,6 +479,8 @@ def _clear_signals() -> str:
 
 
 def _shutdown() -> None:
+    if _ROOM is not None:            # a room watch is not ended by a restart: it leaves its state as it is and
+        _ROOM.shutting = True        # is carried on when ARIS starts again (resume_room_watch)
     if _PATROL:
         try:
             _PATROL.stop_evt.set()

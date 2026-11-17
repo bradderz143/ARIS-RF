@@ -83,8 +83,10 @@ function showUpdate(){
 function appStart(){
   pollChat(); loadSignals();
   checkUpdate(); setInterval(() => { if (!document.hidden) checkUpdate(); }, 3600000);
-  setInterval(() => { if (!document.hidden) loadActivity(activeTab() === 'activity'); }, 15000); loadActivity(false);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden){ pollChat(); loadActivity(activeTab() === 'activity'); } });
+  // (in the background too while a room watch runs or an alert waits: the title and the sound must still come;
+  // browsers slow a hidden page's timers to about one a minute, which is enough)
+  setInterval(() => { if (!document.hidden || ROOM.live) loadActivity(!document.hidden && activeTab() === 'activity', true); }, 15000); loadActivity(false);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden){ pollChat(); loadActivity(activeTab() === 'activity', true); } });
   let t = null; try { t = localStorage.getItem('aris_tab'); } catch (e) {}
   if (t && TABS.includes(t) && t !== 'chat') switchTab(t);
 }

@@ -47,6 +47,9 @@ SA_MAX_IQ_DECIMATION = 128
 SA_MAX_IQ_BANDWIDTH = 250.0e3
 SA_MAX_REF = 20.0
 SA_MIN_RBW, SA_MAX_RBW = 100.0, 250.0e3
+MIN_PASSES = 3                          # a printed row is the power mean of at least this many sweep passes: one
+                                        # pass is a single look per bin, and its noise jumps about 5 dB from pass
+                                        # to pass, which would read as bursts everywhere
 DEVICE_TYPES = {1: "SA44", 2: "SA44B", 3: "SA124A", 4: "SA124B"}
 
 
@@ -70,11 +73,18 @@ class Lib:
         path = os.environ.get("ARIS_SA_LIB") or "libsa_api.so"
         self.c = ctypes.CDLL(path)
         self.c.saGetErrorString.restype = ctypes.c_char_p
+        self.warned = set()
+        self.swept = {}                 # handle -> the sweep it is set up for (set up once, then only fetched)
 
     def _ok(self, st, what):
         if st < 0:
             msg = self.c.saGetErrorString(st)
             raise SAError(f"{what}: {msg.decode(errors='replace') if msg else st}")
+        if st > 0 and st not in self.warned:          # a warning (compression, no calibration data, ...): said once
+            self.warned.add(st)
+            msg = self.c.saGetErrorString(st)
+            print(f"SA44B / SA124B: note from the device ({what}): {msg.decode(errors='replace') if msg else st}",
+                  file=sys.stderr)
         return st
 
     def serials(self) -> list:
@@ -96,6 +106,7 @@ class Lib:
         return DEVICE_TYPES.get(t.value, "")
 
     def close(self, h):
+        self.swept.pop(h, None)
         self.c.saAbort(h)
         self.c.saCloseDevice(h)
 
@@ -123,13 +134,17 @@ class Lib:
     def sweep(self, h, centre_hz, span_hz, rbw_hz, ref):
         import numpy as np
         c, d = self.c, ctypes.c_double
-        self._ok(c.saConfigCenterSpan(h, d(centre_hz), d(span_hz)), "centre / span")
-        self._level(h, ref)
-        self._ok(c.saConfigSweepCoupling(h, d(rbw_hz), d(rbw_hz), ctypes.c_bool(True)), "sweep coupling")
-        self._ok(c.saConfigAcquisition(h, SA_AVERAGE, SA_LOG_SCALE), "acquisition")
-        self._ok(c.saInitiate(h, SA_SWEEPING, 0), "start sweeping")
-        n, start, bin_hz = ctypes.c_int(0), ctypes.c_double(0), ctypes.c_double(0)
-        self._ok(c.saQuerySweepInfo(h, ctypes.byref(n), ctypes.byref(start), ctypes.byref(bin_hz)), "sweep info")
+        want = (centre_hz, span_hz, rbw_hz, ref)
+        if self.swept.get(h, (None,))[0] != want:     # set up and started once; after that every call is one pass
+            self._ok(c.saConfigCenterSpan(h, d(centre_hz), d(span_hz)), "centre / span")
+            self._level(h, ref)
+            self._ok(c.saConfigSweepCoupling(h, d(rbw_hz), d(rbw_hz), ctypes.c_bool(True)), "sweep coupling")
+            self._ok(c.saConfigAcquisition(h, SA_AVERAGE, SA_LOG_SCALE), "acquisition")
+            self._ok(c.saInitiate(h, SA_SWEEPING, 0), "start sweeping")
+            n, start, bin_hz = ctypes.c_int(0), ctypes.c_double(0), ctypes.c_double(0)
+            self._ok(c.saQuerySweepInfo(h, ctypes.byref(n), ctypes.byref(start), ctypes.byref(bin_hz)), "sweep info")
+            self.swept[h] = (want, n, start, bin_hz)
+        _, n, start, bin_hz = self.swept[h]
         lo, hi = np.zeros(n.value, dtype=np.float32), np.zeros(n.value, dtype=np.float32)
         self._ok(c.saGetSweep_32f(h, lo.ctypes.data_as(ctypes.c_void_p), hi.ctypes.data_as(ctypes.c_void_p)),
                  "fetch sweep")
@@ -138,7 +153,9 @@ class Lib:
 
 class SimLib:
     """A simulated SA124B (ARIS_SA_SIM=1): noise at -105 dBm per bin, carriers from ARIS_SA_SIM_CARRIERS
-    ("MHz:dBm,MHz:dBm"; default an FM-band station, a 433.92 MHz carrier and a 2.437 GHz one)."""
+    ("MHz:dBm,MHz:dBm"; default an FM-band station, a 433.92 MHz carrier and a 2.437 GHz one).
+    ARIS_SA_SIM_LOOKS=1 makes every pass a single look per bin, as the real device's are (the noise of one look is
+    spread like an exponential, about 5 dB), and ARIS_SA_SIM_PASS_S makes a pass take that long."""
     def __init__(self):
         import numpy as np
         self.np = np
@@ -181,7 +198,13 @@ class SimLib:
         n = max(2, int(span_hz / rbw_hz))
         start = centre_hz - span_hz / 2
         f = start + np.arange(n) * rbw_hz
-        p = 10 ** ((-105.0 + self.rng.normal(scale=1.0, size=n)) / 10)
+        if os.environ.get("ARIS_SA_SIM_LOOKS"):
+            p = 10 ** (-105.0 / 10) * self.rng.exponential(size=n)
+        else:
+            p = 10 ** ((-105.0 + self.rng.normal(scale=1.0, size=n)) / 10)
+        wait = float(os.environ.get("ARIS_SA_SIM_PASS_S") or 0)
+        if wait:
+            time.sleep(wait)
         for fc, dbm in self.carriers:
             p += 10 ** (dbm / 10) * np.exp(-0.5 * ((f - fc) / max(rbw_hz, 25e3)) ** 2)
         return start, rbw_hz, (10 * np.log10(p)).astype(np.float32)
@@ -209,7 +232,7 @@ def cmd_list(a) -> int:
         for s in lib().serials():
             print(f"{s}\tSignal Hound SA44B / SA124B ({s})")
     except (OSError, SAError) as e:
-        print(f"SA44B / SA124B: {e}", file=sys.stderr)
+        print(f"SA44B / SA124B: {_plain(e)}", file=sys.stderr)
         return 1
     return 0
 
@@ -262,11 +285,11 @@ def cmd_sdr(a) -> int:
         print(f"SA44B / SA124B {serial}: {rate / 1e6:.3g} MS/s asked; it streams IQ at {SA_IQ_SAMPLE_RATE / 1e3:.0f} "
               "kS/s at most", file=sys.stderr)
         return 1
-    L = lib()
     try:
+        L = lib()
         h = L.open(serial)
     except (OSError, SAError, ValueError) as e:
-        print(f"SA44B / SA124B {serial}: {e}", file=sys.stderr)
+        print(f"SA44B / SA124B {serial}: {_plain(e)}", file=sys.stderr)
         return 1
     stop = {"now": False}
     signal.signal(signal.SIGINT, lambda *_: stop.update(now=True))
@@ -295,34 +318,61 @@ def cmd_sdr(a) -> int:
     return 0
 
 
+def _plain(e) -> str:
+    """An error as one plain line (a library that cannot be loaded says several)."""
+    return " ".join(str(e).split())[:200] or type(e).__name__
+
+
+def cells(grid, step, start, bin_hz, trace):
+    """One pass as power per cell of the grid asked: the mean of the device's own bins that fall into each cell (a
+    cell is `step` wide around its frequency; the device's bins are usually finer, and taking one of them per cell
+    would throw the others away). A cell no bin falls into takes the value between its neighbours."""
+    import numpy as np
+    p = 10 ** (np.asarray(trace, dtype=np.float64) / 10)
+    f = start + np.arange(len(p)) * bin_hz
+    idx = np.floor((f - (grid[0] - step / 2.0)) / step).astype(int)
+    ok = (idx >= 0) & (idx < len(grid))
+    tot = np.bincount(idx[ok], weights=p[ok], minlength=len(grid))
+    cnt = np.bincount(idx[ok], minlength=len(grid))
+    out = tot / np.maximum(cnt, 1)
+    if (cnt == 0).any():
+        out = np.where(cnt > 0, out, 10 ** (np.interp(grid, f, np.asarray(trace, dtype=np.float64)) / 10))
+    return out
+
+
 def cmd_power(a) -> int:
     serial = _opt(a, "-d")
     lo, hi, step = (_hz(x) for x in _opt(a, "-f", "88M:108M:10k").split(":"))
     integ = float(_opt(a, "-i", "1"))
     single = "-1" in a
     dur = _opt(a, "-e")
-    end = time.time() + (float(dur.rstrip("s")) if dur else 0)
-    L = lib()
     try:
+        L = lib()
         h = L.open(serial)
     except (OSError, SAError, ValueError) as e:
-        print(f"SA44B / SA124B {serial}: {e}", file=sys.stderr)
+        print(f"SA44B / SA124B {serial}: {_plain(e)}", file=sys.stderr)
         return 1
+    end = time.time() + (float(dur.rstrip("s")) if dur else 0)     # (the time asked starts once the device is open)
+    stop = {"now": False}
+    signal.signal(signal.SIGINT, lambda *_: stop.update(now=True))
+    signal.signal(signal.SIGTERM, lambda *_: stop.update(now=True))   # ended from outside: the device is closed
     import numpy as np
     grid = lo + np.arange(int((hi - lo) / step)) * step
     per_row = max(1, int(1e6 / step))
     rbw = max(SA_MIN_RBW, min(SA_MAX_RBW, step))
+    ref = ref_level(_opt(a, "-g"))
     try:
-        while True:
+        while not stop["now"]:
             t0, acc, k = time.time(), np.zeros(len(grid)), 0
-            while True:
-                start, bin_hz, trace = L.sweep(h, (lo + hi) / 2, hi - lo, rbw, ref_level(_opt(a, "-g")))
-                f = start + np.arange(len(trace)) * bin_hz
-                acc += 10 ** (np.interp(grid, f, trace) / 10)
+            while not stop["now"]:
+                start, bin_hz, trace = L.sweep(h, (lo + hi) / 2, hi - lo, rbw, ref)
+                acc += cells(grid, step, start, bin_hz, trace)
                 k += 1
-                if time.time() - t0 >= integ:
+                if k >= MIN_PASSES and time.time() - t0 >= integ:
                     break
-            db = 10 * np.log10(acc / max(k, 1))
+            if not k:
+                break
+            db = 10 * np.log10(np.maximum(acc / k, 1e-30))
             now = datetime.datetime.now()
             rows = []
             for i in range(0, len(grid), per_row):
@@ -335,8 +385,10 @@ def cmd_power(a) -> int:
             sys.stdout.flush()
             if single or time.time() >= end:
                 break
+    except BrokenPipeError:
+        pass
     except SAError as e:
-        print(f"SA44B / SA124B {serial}: {e}", file=sys.stderr)
+        print(f"SA44B / SA124B {serial}: {_plain(e)}", file=sys.stderr)
         return 1
     finally:
         L.close(h)

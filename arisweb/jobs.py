@@ -244,10 +244,15 @@ def api_internal_watchdog():
     got = request.headers.get("X-ARIS-Internal", "")
     if not tok or not hmac.compare_digest(got.encode(), tok.encode()):
         return jsonify({"status": "error", "error": "forbidden"}), 403
-    data = request.get_json(force=True, silent=True) or {}
-    args = {k: v for k, v in (data.get("args") or {}).items()
-            if k in ("freq_mhz", "dongle", "mode", "max_minutes", "band")}
-    name = {"start": "start_background_watchdog", "stop": "stop_background_watchdog"}.get(data.get("op"))
+    data = request.get_json(force=True, silent=True)
+    data = data if isinstance(data, dict) else {}
+    args = {k: v for k, v in (data.get("args") if isinstance(data.get("args"), dict) else {}).items()
+            if k in ("freq_mhz", "dongle", "mode", "max_minutes", "band", "hours", "interval_min",
+                                           "trigger_db", "frequency_range", "new_reference", "carry_on",
+                                           "frequency_mhz", "label")}
+    name = {"start": "start_background_watchdog", "stop": "stop_background_watchdog",
+            "room_start": "start_room_watch", "room_stop": "stop_room_watch",
+            "room_accept": "accept_room_watch_signal"}.get(data.get("op"))
     if not name:
         return jsonify({"status": "error", "error": "unknown op"}), 400
     return jsonify(_tool(name, **args))
@@ -273,6 +278,8 @@ def reset_all() -> str:
         msg += f" {_join(r['free'])} {'is' if len(r['free']) == 1 else 'are'} free."
     if r.get("missing"):
         msg += f" {_join(r['missing'])} {'is' if len(r['missing']) == 1 else 'are'} not plugged in."
+    if r.get("room_watch_kept"):
+        msg += " The room watch keeps running: it carries on with its next sweeps (stop it on the Activity tab)."
     RESTART["needed"] = bool(r["stuck_here"])
     LAST_RESET["message"] = None
     for b in r["busy"]:
@@ -339,8 +346,13 @@ def resume():
     eng = _engine()
     eng.GUI_HOST = True
     try:
-        return eng.resume_captures()
+        out = eng.resume_captures()
     except Exception as e:                                # a resume problem must not stop the GUI starting
         print(f"Note: could not resume background captures ({type(e).__name__}: {e})")
-        return []
+        out = []
+    try:
+        eng.resume_room_watch()
+    except Exception as e:
+        print(f"Note: could not resume the room watch ({type(e).__name__}: {e})")
+    return out
 

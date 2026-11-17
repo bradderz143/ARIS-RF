@@ -18,7 +18,7 @@
 `aris.py` runs the parts under `engine/` into one namespace, in order: `core` (configuration, receivers and their
 numbering, the tool registry, locks), `sweep` (rtl_power sweeps, peak clustering, IQ captures), `decode` (IQ analysis,
 wideband FM and RDS, rtl_433, audio decoders, self-tests), `investigate`, `fm` (Name all FM stations), `autosetup`
-(`/check`, `/setup`, calibration), `audit` (baselines, threat scores, patrol), `logs` (the capture log, the device
+(`/check`, `/setup`, calibration), `audit` (baselines, threat scores, patrol), `roomwatch` (the room watch: a quiet reference of its own, then audits for hours or days with one thread per receiver, alerts and a timeline; hosted by the GUI process like captures, state in `roomwatch_state.json`, resumed after a restart; rules in `arislib/roomwatch.py`), `logs` (the capture log, the device
 history), `captures` (background captures across processes), `band` (band capture), `status`, `chat` (routing, plain
 replies, the AI loop) and `plugins`. Every top-level name is defined in one part only (a test checks).
 

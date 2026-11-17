@@ -64,9 +64,20 @@ def _parse_rtl_power_csv(path: str):
         return _parse_rtl_power_lines(f)
 
 
+def _hop_spikes(serial) -> bool:
+    """Does this receiver hop across a sweep and leave a false spike at the centre of every hop? rtl_power and its
+    kin do. A receiver that sweeps through its own helper program says that it does not (hop_spikes = False on
+    its backend): its rows are not hops, and nothing near their centres is re-checked or left out."""
+    try:
+        return getattr(radios.backend_for(serial), "hop_spikes", True) is not False
+    except Exception:                                # noqa: BLE001 - an odd backend: treated as rtl_power
+        return True
+
+
 def _rtl_power(start_mhz, stop_mhz, step_khz=10.0, gain_db=None, serial=None,
                duration_s=None, integration_s=2, lock_timeout=60.0, holder="sweep"):
-    """Run rtl_power. duration_s=None -> single pass (-1). Returns ({hz: [dB]}, {hop_centre_hz})."""
+    """Run rtl_power. duration_s=None -> single pass (-1). Returns ({hz: [dB]}, {hop_centre_hz}); the hop centres
+    are empty for a receiver without hop spikes (_hop_spikes)."""
     serial = serial or _default_serial()
     _validate_band(start_mhz, stop_mhz, step_khz)
     if not _have_tool("rtl_power", serial):
@@ -99,15 +110,17 @@ def _rtl_power(start_mhz, stop_mhz, step_khz=10.0, gain_db=None, serial=None,
                 proc.stdout.close()
             ef.seek(0)
             err = ef.read().strip()
+    rtl = radios.is_rtl(serial)                      # (another receiver's sweep is not rtl_power: say "the sweep")
+    what = "rtl_power" if rtl else "The sweep"
     if timed_out.is_set():
-        raise RFError("rtl_power timed out (dongle hung?). Replug it or use a narrower band.")
+        raise RFError(f"{what} timed out ({'dongle' if rtl else 'receiver'} hung?). Replug it or use a narrower band.")
     if proc.returncode != 0:
         hint = " (device busy, unplugged or serial mismatch?)" if re.search(
             r"usb_claim|busy|No supported|not found|No matching", err, re.I) else ""
-        raise RFError(f"rtl_power failed on {serial} (rc={proc.returncode}){hint}: {err[-300:]}")
+        raise RFError(f"{what} failed on {serial} (rc={proc.returncode}){hint}: {err[-300:]}")
     if not acc:
-        raise RFError(f"rtl_power returned no usable bins on {serial}. Check the USB connection.")
-    return acc, hop_set
+        raise RFError(f"{what} returned no usable bins on {serial}. Check the USB connection.")
+    return acc, (hop_set if _hop_spikes(serial) else set())
 
 
 def _sweep(start_mhz, stop_mhz, step_khz=10.0, gain_db=None, serial=None, lock_timeout=60.0):

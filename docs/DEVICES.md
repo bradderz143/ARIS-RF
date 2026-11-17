@@ -75,7 +75,39 @@ Linux (`libsa_api.so`; set `ARIS_SA_LIB` to its path if it is not on the library
 - **Receive-only:** a Signal Hound tracking generator attached to an SA transmits; the plug-in never uses it.
 - The gain ARIS asks for sets the reference level (`10 dBm - gain`, at most +20 dBm). IQ samples arrive "scaled to
   mW" and are divided by the reference level; if real levels look tens of dB off, that is the first thing to check.
+- Each row of a sweep is the mean of at least three passes of the analyzer: one pass is a single look per
+  frequency, whose noise jumps by several dB from pass to pass and would read as bursts everywhere. A 200 MHz
+  pass at a 10 kHz step takes a second or two on the real device, so a row takes several seconds.
+- While a program has the analyzer open it may not show up in its own device list. ARIS knows a receiver that is
+  in use is plugged in, so a system check during a sweep does not mark it as missing.
 - Tested against the plug-in's simulated device only (`ARIS_SA_SIM=1`); please report results on real hardware.
+
+### Before relying on it: checks by hand
+
+Nothing here has run on a real SA44B or SA124B. Before a long unattended use, go through this once:
+
+1. **The library.** Check that the vendor's current SDK still ships a Linux library for this model and read its
+   release notes: support for a model under Linux can be limited or withdrawn, and the notes say what to expect
+   (for example about USB data loss). Install what it needs (the USB driver library it names), make sure the
+   kernel's USB serial driver does not hold the device, and that the user ARIS runs as may open it (a udev rule).
+   Put `ARIS_SA_LIB` into the service's environment. Use powered USB ports for both of its plugs.
+2. **One sweep by hand**, as the user ARIS runs as:
+   `python3 plugins/signalhound_sa.py list`, then
+   `time python3 plugins/signalhound_sa.py power -d SERIAL -f 400M:600M:10k -i 1 -e 10s -`.
+   Note how many seconds beyond 10 it takes (the time to open the device), how many rows come, and the sixth
+   column (passes per row). Run it twice: the first open may fetch calibration data, which the service's user must
+   be able to store.
+3. **Any note the device prints** on the error output (compression, missing calibration data) means the levels of
+   that sweep cannot be trusted: lower the gain (a higher reference level) or fix the calibration files.
+4. **Levels.** Look at the noise floor and the strongest signals at gain 20, 30 and 40 (reference level -10, -20
+   and -30 dBm) on the antenna you will use, and take the highest gain that stays clean.
+5. **A known transmitter** at 2.4 and 5 GHz (a phone's hotspot) and a handheld radio: the right frequency, a
+   sensible level; then the same from further away.
+6. **Faults.** End the helper in mid-sweep (`kill -9`): does the next sweep open without replugging? Pull one USB
+   plug for a minute. Press Reset Scanner during a sweep.
+7. **Warm-up.** Let it run for half an hour before recording any baseline, and compare one carrier's level and
+   frequency cold and warm.
+8. After `/setup`, look at the gains it chose for this receiver in the status.
 
 ## Other receivers
 

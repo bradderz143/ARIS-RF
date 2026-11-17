@@ -12,7 +12,7 @@ from datetime import timedelta
 
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 
-from . import activity, auth, bluetooth, devices, jobs, mapapi, region, spectrum, update, wifi
+from . import activity, auth, bluetooth, devices, jobs, mapapi, region, roomwatch, spectrum, update, wifi
 from .engine import engine as _engine, version
 
 HOST = os.environ.get("ARIS_GUI_HOST", "0.0.0.0")
@@ -31,6 +31,7 @@ app.register_blueprint(wifi.bp)
 app.register_blueprint(bluetooth.bp)
 app.register_blueprint(update.bp)
 app.register_blueprint(region.bp)
+app.register_blueprint(roomwatch.bp)
 SECRETS = {}
 BRIDGE = {"ai": None}
 
@@ -122,6 +123,8 @@ def chat_send():
 # Chat requests an extra account may not make: the ones that delete or change the set-up. A first line
 # only; the console enforces the role on every tool and command (engine _ADMIN_TOOLS, _ADMIN_COMMANDS).
 _ADMIN_CHAT_RX = re.compile(r"^/(?:cleanup|clear-signals|setup|patrol)\b|^/region\s+\S|"
+                            r"\b(?:start|stop|end|cancel|halt|resume|continue|carry\s+on|restart)\b.{0,24}\broom[ -]?watch\b|"
+                            r"\b\d{2,4}\.\d{1,4}(?:\s*mhz)?\s+is\s+(?:mine|ours|known|my|our)\b|\b(?:accept|ignore)\s+\d{2,4}\.\d|"
                             r"\bclear\s+(?:the\s+)?(?:data|logs|signals)\b|"
                             r"\b(?:run|do|start|redo|re-?run)\s+(?:the\s+|a\s+)?(?:full\s+|auto\s+)?set\s?-?up\b|"
                             r"\bset\s?-?up\s+(?:everything|it\s+all|the\s+(?:whole\s+)?(?:system|dongles|station))\b|"
@@ -196,8 +199,31 @@ def _restart_web_server(note: str) -> None:
         pass
     time.sleep(1.5)                             # let the page fetch the message first
     stop_child(BRIDGE["ai"])
+    try:
+        _engine()._end_radio_children()         # (they would outlive this program and keep their dongles)
+    except Exception:
+        pass
     sys.stdout.flush()
+    _close_inherited()
     os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
+def _close_inherited() -> None:
+    """Close every open file but the standard three before the program starts itself again. The web server's
+    listening socket is inheritable (Werkzeug hands it to its reloader that way), so without this the new program
+    finds its own port taken and exits with "Address already in use"."""
+    os.environ.pop("WERKZEUG_SERVER_FD", None)
+    os.environ.pop("WERKZEUG_RUN_MAIN", None)
+    try:
+        fds = [int(x) for x in os.listdir("/proc/self/fd")]
+    except (OSError, ValueError):
+        fds = list(range(3, 1024))
+    for fd in fds:
+        if fd > 2:
+            try:
+                os.set_inheritable(fd, False)   # (closed by the exec itself: nothing is pulled from under a thread)
+            except OSError:
+                pass
 
 
 def _reset_note() -> str:

@@ -107,7 +107,7 @@ def _blank(seconds, state, why, full):
         out["width"] = {"hz": None, "share": None, "limit": None, "why": why}
         out["level"] = {"range_db": None, "why": why}
         out["mod"] = {"kind": "untested", "tone_hz": None, "rate_baud": None, "levels": None, "am_index": None,
-                      "dev_rms_hz": None, "hum_hz": None, "stretch_s": 0.0, "why": why}
+                      "dev_rms_hz": None, "hum_hz": None, "stretch_s": 0.0, "why": why, "trial": []}
     return out
 
 
@@ -553,7 +553,8 @@ def _modulation(y, fs, runs, nb, blk, hw, snr_on, overloaded, line, aux, spec, c
     count only at 12 dB and 1 s), am, fm_voice, unknown (modulated, kind not determined). untested under 8 dB,
     under 0.3 s, or overloaded."""
     out = {"kind": "untested", "tone_hz": None, "rate_baud": None, "levels": None, "am_index": None,
-           "dev_rms_hz": None, "hum_hz": None, "stretch_s": 0.0, "why": "too_weak" if snr_on < TRUST_DB else "too_short"}
+           "dev_rms_hz": None, "hum_hz": None, "stretch_s": 0.0, "trial": [],
+           "why": "too_weak" if snr_on < TRUST_DB else "too_short"}
     if not runs:
         return out
     a, b = max(runs, key=lambda r: r[1] - r[0])
@@ -712,7 +713,29 @@ def _modulation(y, fs, runs, nb, blk, hw, snr_on, overloaded, line, aux, spec, c
         out["kind"] = "unknown"
     if out["kind"] in ("tone", "unknown"):
         out["hum_hz"] = hum
+    out["trial"] = _trial(out["kind"], am, am_all, two_sided, fm_ratio, out["dev_rms_hz"], rate, tone, hum)
     return out
+
+
+def _trial(kind, am, am_all, two_sided, fm_ratio, dev_hz, rate, tone, hum):
+    """What each demodulator found in the same stretch, as numbers: [{mode, fit, value, unit}]. fit is "fits"
+    (the kind the look settled on), "partly" (something is there, not enough to call it) or "no". Nothing is played
+    or kept: the same measurements the kind came from, set side by side."""
+    rows = [
+        {"mode": "AM", "fit": "fits" if kind == "am" else "partly" if am >= 0.5 * AM_INDEX and two_sided else "no",
+         "value": round(100.0 * am, 1), "unit": "% depth"},
+        {"mode": "Narrow FM", "fit": "fits" if kind in ("fm_voice", "tone") else
+         "partly" if fm_ratio >= QUIET_FM and am_all < FLAT_ENV else "no",
+         "value": dev_hz, "unit": "Hz rms deviation"},
+        {"mode": "FSK or data", "fit": "fits" if kind in ("fsk2", "fsk4", "data") else "partly" if rate else "no",
+         "value": rate, "unit": "symbols a second"},
+        {"mode": "Sub-audible tone", "fit": "fits" if kind == "tone" else "no", "value": tone, "unit": "Hz"},
+    ]
+    if kind == "none":
+        rows.append({"mode": "Bare carrier", "fit": "fits", "value": None, "unit": ""})
+    if hum:
+        rows.append({"mode": "Mains hum", "fit": "partly", "value": hum, "unit": "Hz base"})
+    return rows
 
 
 def _fine_rate(step, fsx, rate, width):

@@ -138,7 +138,7 @@ class Shape(unittest.TestCase):
         self.assertEqual(set(p["width"]), {"hz", "share", "limit", "why"})
         self.assertEqual(set(p["level"]), {"range_db", "why"})
         self.assertEqual(set(p["mod"]), {"kind", "tone_hz", "rate_baud", "levels", "am_index", "dev_rms_hz",
-                                         "hum_hz", "stretch_s", "why"})
+                                         "hum_hz", "stretch_s", "why", "trial"})
         self.assertTrue(_plain(p), p)
         self.assertEqual(json.loads(json.dumps(p, allow_nan=False)), p)
         self.assertEqual((p["seconds"], p["quality"], p["overloaded"], p["strip"], p["strip_slot_s"]),
@@ -659,6 +659,30 @@ class SecondLook(unittest.TestCase):
             m = siglook.profile(y, FS, noise, HW)["mod"]
             self.assertIsNone(m["levels"], m)
             self.assertIn(m["kind"], ("data", "unknown"), m)
+
+
+
+
+class DemodulatorTrial(unittest.TestCase):
+    """The trial rows: each demodulator's numbers side by side, no audio."""
+
+    def test_trial_rows_follow_the_kind(self):
+        from arislib import siglook
+        t = siglook._trial("am", 0.4, 0.4, True, 0.2, 5.0, None, None, None)
+        self.assertEqual({r["mode"]: r["fit"] for r in t}["AM"], "fits")
+        self.assertEqual({r["mode"]: r["fit"] for r in t}["Narrow FM"], "no")
+        t = siglook._trial("fm_voice", 0.02, 0.02, False, 9.0, 1800.0, None, None, None)
+        self.assertEqual({r["mode"]: r["fit"] for r in t}["Narrow FM"], "fits")
+        t = siglook._trial("none", 0.0, 0.0, False, 0.1, 0.0, None, None, None)
+        self.assertIn("Bare carrier", [r["mode"] for r in t])
+
+    def test_report_sentence_says_numbers_only(self):
+        from arislib import sigreport
+        s = sigreport._tried({"trial": [{"mode": "AM", "fit": "no", "value": 1.0, "unit": "% depth"},
+                                         {"mode": "Narrow FM", "fit": "fits", "value": 1800.0, "unit": "Hz rms deviation"}]})
+        self.assertIn("numbers only", s)
+        self.assertIn("Narrow FM: fits (1800 Hz rms deviation)", s)
+        self.assertEqual(sigreport._tried({}), "")
 
 
 if __name__ == "__main__":

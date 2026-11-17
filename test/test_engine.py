@@ -3821,5 +3821,274 @@ class UpdateCheck(unittest.TestCase):
                 A.UPDATE_FILE.unlink()
 
 
+class AuditRules(unittest.TestCase):
+    """The audit that patrol, the threat audit and the room watch share, with the radio replaced by sweeps made
+    here: a flat noise level with a little ripple, and whatever a test adds to it."""
+    SER = "00017350"
+
+    def setUp(self):
+        from pathlib import Path
+        from unittest import mock
+        self.mock = mock
+        self.tmp = Path(tempfile.mkdtemp(prefix="aris_auditrules_"))
+        self.sweep = [None, set()]
+        self.patches = [mock.patch.object(A, "BASELINE_DIR", self.tmp / "baselines"),
+                        mock.patch.object(A, "_rtl_power", lambda *a, **k: (self.sweep[0], set(self.sweep[1]))),
+                        mock.patch.object(A, "_seen_update", lambda *a, **k: None),
+                        mock.patch.object(A, "AUDIT_REPORT", self.tmp / "audit_report.json"),
+                        mock.patch.object(A, "AUDIT_HISTORY", self.tmp / "audit_history.jsonl"),
+                        mock.patch.object(A, "PATROL_STATE", self.tmp / "patrol_state.json"),
+                        mock.patch.object(A, "PATROL_LOG", self.tmp / "patrol_events.jsonl")]
+        for p in self.patches:
+            p.start()
+        (self.tmp / "baselines").mkdir()
+
+    def tearDown(self):
+        for p in self.patches[::-1]:
+            p.stop()
+        for k in [k for k in A._BASELINE_CACHE if k.startswith(str(self.tmp))]:
+            A._BASELINE_CACHE.pop(k, None)
+        shutil.rmtree(str(self.tmp), ignore_errors=True)
+
+    @staticmethod
+    def _acc(lo, hi, add=None, n=4, level=-30.0):
+        """{Hz: [n readings in dB]} from lo to hi MHz every 10 kHz. add(MHz, reading number) -> dB on top."""
+        import math
+        out = {}
+        for i in range(int(round((hi - lo) * 100)) + 1):
+            f = round(lo + i / 100.0, 2)
+            out[int(round(f * 1e6))] = [level + 0.3 * math.sin(1.7 * i + 2.3 * k) + (add(f, k) if add else 0.0)
+                                        for k in range(n)]
+        return out
+
+    def _baseline(self, lo, hi, acc, hops=(), ser=None):
+        self.sweep[:] = [acc, set(hops)]
+        return A._record_one_baseline(ser or self.SER, lo, hi, 10.0, 4, "test", A._load_config())
+
+    def _live(self, lo, hi, acc, hops=(), **kw):
+        self.sweep[:] = [acc, set(hops)]
+        return A._audit(lo, hi, self.SER, 10.0, 4, **kw)
+
+    def test_a_signal_wider_than_half_the_band_is_flagged_and_the_lift_is_only_taken_when_asked(self):
+        self._baseline(433.0, 435.0, self._acc(433.0, 435.0))
+        wide = self._acc(433.0, 435.0, lambda f, k: 25.0 if 433.4 <= f <= 434.6 else 0.0)       # 60 % of the band
+        for kw in ({}, {"take_lift": True}):          # the quietest quarter of the band has not moved: no lift
+            rep = self._live(433.0, 435.0, wide, **kw)
+            self.assertEqual(rep["floor_lift_db"], 0.0, kw)
+            self.assertGreaterEqual(rep["flagged"], 1, kw)
+            self.assertAlmostEqual(rep["events"][0]["surge_delta_db"], 25.0, delta=1.0)
+            self.assertGreaterEqual(rep["events"][0]["bandwidth_khz"], 1000.0)
+            self.assertNotIn("whole_band", rep)
+        up = self._acc(433.0, 435.0, lambda f, k: 7.0 + (18.0 if abs(f - 434.5) < 0.015 else 0.0))
+        rep = self._live(433.0, 435.0, up)             # patrol and the threat audit: nothing is taken off
+        self.assertEqual(rep["floor_lift_db"], 0.0)
+        self.assertAlmostEqual(rep["floor_shift_db"], 7.0, delta=0.5)
+        self.assertAlmostEqual(rep["events"][0]["surge_delta_db"], 25.0, delta=1.0)
+        self.assertIn("the whole band reads 7 dB over its baseline", rep["whole_band"])
+        rep = self._live(433.0, 435.0, up, take_lift=True)
+        self.assertAlmostEqual(rep["floor_lift_db"], 7.0, delta=0.5)
+        self.assertEqual([round(e["peak_mhz"], 1) for e in rep["events"]], [434.5])
+        self.assertAlmostEqual(rep["events"][0]["surge_delta_db"], 18.0, delta=1.0)
+        low = self._acc(433.0, 435.0, lambda f, k: 3.0)                        # under the limit: left alone
+        self.assertEqual(self._live(433.0, 435.0, low, take_lift=True)["floor_lift_db"], 0.0)
+
+    def test_the_threat_audit_and_patrol_say_when_the_whole_band_is_up(self):
+        self._baseline(433.0, 435.0, self._acc(433.0, 435.0))
+        self.sweep[:] = [self._acc(433.0, 435.0, lambda f, k: 25.0), set()]
+        rep = A.run_automated_threat_audit(frequency_range="433-435MHz", dongle="1", duration_s=2)
+        self.assertGreaterEqual(rep["total_threats_flagged"], 1)
+        self.assertEqual(rep["threat_manifest"][0]["threat_level"], "HIGH")
+        line = rep["dongles"]["Dongle 1"]["whole_band"]
+        self.assertEqual(line, "the whole band reads 25 dB over its baseline: one signal over the whole band, or "
+                               "the receiver is overloaded")
+        with self.mock.patch.object(A.Patrol, "_auto_check", lambda self, ev, rec: None):
+            p = A.Patrol([(433.0, 435.0)], 15, [self.SER])
+            p.run_once()
+        run = p.runs[-1]
+        self.assertEqual((run["flagged"], run["levels"]), (1, {"HIGH": 1}), run)
+        self.assertEqual(run["notes"], ["On Dongle 1 " + line + "."])
+        self.assertIn("On Dongle 1 the whole band reads 25 dB", A._patrol_reply(
+            {"running": False, "recent_flagged_rounds": [dict(run, age="1 min ago")]}))
+        self.sweep[:] = [self._acc(433.0, 435.0), set()]                       # a quiet round has no such line
+        p.run_once()
+        self.assertNotIn("notes", p.runs[-1])
+
+    def test_the_report_says_how_far_the_floor_moved_and_which_baseline_it_used(self):
+        made = self._baseline(433.0, 435.0, self._acc(433.0, 435.0, level=-22.0))
+        rep = self._live(433.0, 435.0, self._acc(433.0, 435.0, level=-30.0), take_lift=True)
+        self.assertAlmostEqual(rep["floor_shift_db"], -8.0, delta=0.3)        # quieter than at the baseline
+        self.assertEqual((rep["floor_lift_db"], rep["flagged"]), (0.0, 0))
+        self.assertNotIn("whole_band", rep)
+        self.assertEqual(rep["baseline_file"], "433-435MHz_%s.json" % self.SER)
+        self.assertEqual(rep["baseline_file"], made["file"])
+        with open(str(self.tmp / "baselines" / made["file"])) as f:
+            stored = json.load(f)["created_epoch"]
+        self.assertIsInstance(rep["baseline_created_epoch"], float)
+        self.assertEqual(rep["baseline_created_epoch"], stored)
+        time.sleep(0.02)
+        self._baseline(433.0, 435.0, self._acc(433.0, 435.0))                  # recorded again: another baseline
+        again = self._live(433.0, 435.0, self._acc(433.0, 435.0))
+        self.assertGreater(again["baseline_created_epoch"], stored)
+        self.assertEqual(again["floor_shift_db"], 0.0)
+        few = self._acc(433.0, 433.3)                                          # fewer than 50 bins: no shift said
+        self._baseline(433.0, 433.3, self._acc(433.0, 433.3, level=-22.0))
+        self.assertEqual(self._live(433.0, 433.3, few)["floor_shift_db"], 0.0)
+
+    def test_new_is_judged_against_the_floor_beside_the_signal(self):
+        # the floor is 5 dB higher under 34 MHz (a third of the sweep), and a carrier was on at 38 MHz
+        was = lambda f, k: (5.0 if f < 34.0 else 0.0) + (12.0 if abs(f - 38.0) < 0.015 else 0.0)
+        self._baseline(30.0, 40.0, self._acc(30.0, 40.0, was))
+        now = lambda f, k: was(f, k) + (20.0 if abs(f - 32.0) < 0.015 else 0.0) + (15.0 if abs(f - 38.0) < 0.015 else 0)
+        rep = self._live(30.0, 40.0, self._acc(30.0, 40.0, now))
+        ev = {round(e["peak_mhz"], 1): e for e in rep["events"]}
+        self.assertEqual(sorted(ev), [32.0, 38.0])
+        self.assertTrue(ev[32.0]["new_signal"], ev[32.0])       # nothing was there: only the higher floor
+        self.assertFalse(ev[38.0]["new_signal"], ev[38.0])      # it was there, 12 dB over the floor beside it
+        A._score_event(ev[32.0])
+        self.assertIn("not present in the baseline", ev[32.0]["why"])
+        # in a crowded stretch the neighbours are not taken for the floor: a weak signal between two strong wide
+        # ones was there before
+        crowd = lambda f, k: (25.0 if 36.2 <= f <= 36.9 or 37.1 <= f <= 37.8 else 0.0) + (8.0 if abs(f - 37.0) < 0.015
+                                                                                         else 0.0)
+        self._baseline(30.0, 40.0, self._acc(30.0, 40.0, crowd))
+        rep = self._live(30.0, 40.0, self._acc(30.0, 40.0, lambda f, k: crowd(f, k) + (15.0 if abs(f - 37.0) < 0.015
+                                                                                     else 0.0)))
+        self.assertEqual([(round(e["peak_mhz"], 1), e["new_signal"]) for e in rep["events"]], [(37.0, False)])
+
+    def test_a_baseline_is_found_by_its_file_name_and_the_cache_drops_what_was_used_longest_ago(self):
+        for lo in (100.0, 102.0, 104.0, 106.0, 108.0):
+            self._baseline(lo, lo + 2.0, self._acc(lo, lo + 2.0))
+        self._baseline(100.0, 110.0, self._acc(100.0, 110.0))
+        self._baseline(102.0, 104.0, self._acc(102.0, 104.0), ser="00026410")
+        name = lambda lo, hi: str(self.tmp / "baselines" / ("%g-%gMHz_%s.json" % (lo, hi, self.SER)))
+        opened, real = [], json.load
+
+        def counting(f, *a, **k):
+            opened.append(os.path.basename(getattr(f, "name", "?")))
+            return real(f, *a, **k)
+
+        def forget():
+            for k in [k for k in A._BASELINE_CACHE if k.startswith(str(self.tmp))]:
+                A._BASELINE_CACHE.pop(k)
+            del opened[:]
+
+        with self.mock.patch.object(A.json, "load", counting):
+            forget()
+            path, d = A._find_baseline(104.0, 106.0, self.SER)
+            self.assertEqual((str(path), d["band"]["start_mhz"], d["serial"]), (name(104, 106), 104.0, self.SER))
+            self.assertEqual(opened, ["104-106MHz_%s.json" % self.SER])       # one file of the seven, not all
+            forget()
+            path, d = A._find_baseline(103.0, 103.0, self.SER)                 # a frequency: the narrowest that
+            self.assertEqual(str(path), name(102, 104))                        # covers it, and only those that
+            self.assertEqual(sorted(opened), ["100-110MHz_%s.json" % self.SER,  # can cover it are opened
+                                              "102-104MHz_%s.json" % self.SER])
+            self.assertEqual(str(A._find_baseline(101.0, 105.0, self.SER)[0]), name(100, 110))
+            self.assertIsNone(A._find_baseline(98.0, 101.0, self.SER))
+            self.assertIsNone(A._find_baseline(104.0, 106.0, "00035720"))      # another receiver's are not its own
+            # a file whose name fits and whose content does not is not taken for the band
+            with open(name(106, 108)) as f:
+                other = real(f)
+            other["band"] = {"start_mhz": 200.0, "stop_mhz": 202.0}
+            with open(name(106, 108), "w") as f:
+                json.dump(other, f)
+            self.assertEqual(str(A._find_baseline(106.0, 108.0, self.SER)[0]), name(100, 110))
+
+            # the cache: bounded by what it holds, and the file used longest ago goes first
+            forget()
+            mine = lambda: [os.path.basename(k).split("MHz")[0] for k in A._BASELINE_CACHE
+                            if k.startswith(str(self.tmp))]
+            A._find_baseline(108.0, 110.0, self.SER)
+            cost = A._BASELINE_CACHE[name(108, 110)][2]                                   # what one such file counts
+            self.assertGreaterEqual(cost, 201)
+            A._BASELINE_CACHE.clear()               # (other tests' baselines must not be the ones that go first)
+            with self.mock.patch.object(A, "BASELINE_CACHE_BINS", 2 * cost):
+                a = A._find_baseline(100.0, 102.0, self.SER)[1]
+                A._find_baseline(102.0, 104.0, self.SER)
+                self.assertIs(A._find_baseline(100.0, 102.0, self.SER)[1], a)             # held: not read again
+                A._find_baseline(104.0, 106.0, self.SER)                                  # a third: one must go
+                self.assertEqual(mine(), ["100-102", "104-106"])
+                self.assertEqual(opened.count("100-102MHz_%s.json" % self.SER), 1)
+                self.assertEqual(A._find_baseline(102.0, 104.0, self.SER)[1]["band"]["start_mhz"], 102.0)
+                self.assertEqual(opened.count("102-104MHz_%s.json" % self.SER), 2)        # read again when needed
+                self.assertEqual(mine(), ["104-106", "102-104"])
+            # a held file keeps one form of its bins
+            d = A._find_baseline(104.0, 106.0, self.SER)[1]
+            self.assertIn("bins", d)
+            bm = A._baseline_bins(d)
+            self.assertEqual((len(bm), "bins" in d, A._baseline_bins(d) is bm), (201, False, True))
+            self.assertEqual(A._audit.__defaults__[-1], False)
+
+    def test_a_carrier_on_a_hop_centre_is_in_the_list_of_what_was_on(self):
+        hops = [round(401.1 + 2.2 * k, 1) for k in range(9)]                   # 401.1, 403.3, ... 418.7
+        on = lambda f, k: (10.0 if f in hops else 0.0) + (25.0 if abs(f - 407.7) < 0.015 or abs(f - 412.0) < 0.015
+                                                          else 0.0)
+        grid = A._collapse(self._acc(400.0, 420.0, on), 10000.0)
+        summary, _ = A._baseline_summary(grid, 10.0, hops, A._load_config())
+        self.assertEqual(sorted(round(p["mhz"], 1) for p in summary["steady"]), [407.7, 412.0])   # no hop spike
+        summary, _ = A._baseline_summary(grid, 10.0, [], A._load_config())     # a receiver without hop centres:
+        self.assertEqual(len(summary["steady"]), 10)                           # every point is as it was measured
+
+    def test_pilots_are_strong_signals_that_held_their_level_and_no_hop_centre(self):
+        def was(f, k):
+            if abs(f - 150.5) < 0.015:
+                return 30.0                                    # on through the whole baseline
+            if abs(f - 151.5) < 0.015:
+                return 36.0 if k % 2 else 0.0                  # a channel in use half of the time
+            return 20.0 if f == 151.0 else 0.0                 # the receiver's own spike at the hop centre
+        self._baseline(150.0, 152.0, self._acc(150.0, 152.0, was, n=10), hops=[151.0e6])
+        rep = self._live(150.0, 152.0, self._acc(150.0, 152.0, was, n=10), hops=[151.0e6])
+        self.assertEqual(rep["pilots"], {"n": 3, "median_db": 0.0})
+        gone = lambda f, k: was(f, k) - (20.0 if abs(f - 150.5) < 0.015 else 0.0)
+        rep = self._live(150.0, 152.0, self._acc(150.0, 152.0, gone, n=10), hops=[151.0e6])
+        self.assertEqual(rep["pilots"]["n"], 3)
+        self.assertAlmostEqual(rep["pilots"]["median_db"], -20.0, delta=0.5)
+
+    def test_a_receiver_that_sweeps_through_its_own_helper_has_no_hop_centres(self):
+        for p in self.patches[1:2]:
+            p.stop()                                           # the real sweep, on the simulated dongle
+        try:
+            acc, hops = A._rtl_power(433.0, 435.0, 10.0, None, self.SER)
+            self.assertTrue(acc and hops)
+            self.assertTrue(A._hop_spikes(self.SER))
+            with self.mock.patch.object(type(A.radios.backend_for(self.SER)), "hop_spikes", False, create=True):
+                self.assertFalse(A._hop_spikes(self.SER))
+                acc, hops = A._rtl_power(433.0, 435.0, 10.0, None, self.SER)
+                self.assertTrue(acc)
+                self.assertEqual(hops, set())
+            # with no hop centres nothing is re-checked or dropped; with one at the signal it is
+            self.patches[1].start()
+            self._baseline(433.0, 435.0, self._acc(433.0, 435.0))
+            live = self._acc(433.0, 435.0, lambda f, k: 20.0 if f == 434.0 and k == 1 else 0.0)   # one short burst
+            asked = []
+            with self.mock.patch.object(A, "_confirm_off_center", lambda *a, **k: asked.append(a[0])):
+                rep = self._live(433.0, 435.0, live)
+                self.assertEqual((rep["flagged"], rep["hop_centre_artifacts_rejected"], asked), (1, 0, []))
+                rep = self._live(433.0, 435.0, live, hops=[434.0e6])
+                self.assertEqual((rep["flagged"], rep["hop_centre_artifacts_rejected"], asked), (0, 1, [434.0]))
+        finally:
+            self.patches[1].stop()
+            self.patches[1].start()
+
+    def test_a_failed_sweep_is_called_rtl_power_only_on_an_rtl_sdr(self):
+        import sys
+        for p in self.patches[1:2]:
+            p.stop()
+        fail = [sys.executable, "-c", "import sys; sys.stderr.write('open: device not found'); sys.exit(1)"]
+        try:
+            with self.mock.patch.object(A, "_radio_cmd", lambda cmd: list(fail)):
+                with self.assertRaises(A.RFError) as cm:
+                    A._rtl_power(433.0, 435.0, 10.0, None, self.SER)
+                self.assertTrue(str(cm.exception).startswith("rtl_power failed on " + self.SER), cm.exception)
+                with self.mock.patch.object(A.radios, "is_rtl", lambda dev: False):
+                    with self.assertRaises(A.RFError) as cm:
+                        A._rtl_power(433.0, 435.0, 10.0, None, self.SER)
+                msg = str(cm.exception)
+                self.assertTrue(msg.startswith("The sweep failed on " + self.SER), msg)
+                self.assertIn("device not found", msg)
+                self.assertNotIn("rtl_power", msg)
+        finally:
+            self.patches[1].start()
+
+
 if __name__ == "__main__":
     unittest.main()

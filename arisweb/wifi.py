@@ -95,7 +95,10 @@ def _post(text: str) -> None:
     """A Wi-Fi notice into the chat (the engine's notices file, which the chat bridge reads)."""
     try:
         from .engine import engine
-        engine()._notice(text, kind="wifi")
+        eng = engine()
+        eng._notice(text, kind="wifi")
+        if eng.room_watch_status_dict().get("running"):      # a room watch keeps what the Wi-Fi view saw meanwhile
+            eng._room_log("note", text, what="wifi")
     except Exception as e:
         print(f"wifi: could not post a notice ({type(e).__name__}: {e})", flush=True)
 

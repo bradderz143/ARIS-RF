@@ -21,7 +21,7 @@ os.environ["FAKE_PEAKS"] += ",102.1:22:150"
 pw = os.environ.get("ARIS_TEST_PASSWORD", "test-password-123")
 with open(os.path.join(harness.DATA, "gui_secrets.json"), "w") as f:
     json.dump({"admin_user": "admin", "admin_hash": generate_password_hash(pw), "secret_key": "s" * 32}, f)
-os.environ["ARIS_GUI_PORT"] = sys.argv[1] if len(sys.argv) > 1 else "5097"
+os.environ["ARIS_GUI_PORT"] = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("ARIS_GUI_PORT", "5097")
 os.environ["ARIS_GUI_HOST"] = "127.0.0.1"
 print("data:", harness.DATA, flush=True)
 from arisweb import app  # noqa: E402
@@ -31,5 +31,15 @@ if os.environ.get("ARIS_SEED_DEVICES"):          # the Devices tab with example 
     import seed_devices
     from arisweb.engine import engine
     seed_devices.seed(engine())
+if os.environ.pop("SERVE_STUCK", None):          # a task that never lets go of Dongle 1 (once: not after a restart)
+    import threading
+    import time
+    from arisweb.engine import engine as _engine
+
+    def _hold():
+        lock = _engine()._device_lock("00017350")
+        lock.acquire(5.0, "a stuck test task")
+        time.sleep(3600)
+    threading.Thread(target=_hold, daemon=True).start()
 sys.argv = [sys.argv[0]]
 app.main()

@@ -97,6 +97,22 @@ class Translate(unittest.TestCase):
         with self.assertRaises(radios.Unsupported):
             b.translate(["rtl_adsb", "-d", "boxtest-7"], "boxtest-7")
 
+    def test_rtl_433_reading_a_stream_gets_no_frequency_above_its_own_limit(self):
+        class H(radios.HelperBackend):
+            name, prefix, label = "hx", "hx", "a helper receiver"
+
+            def helper_argv(self):
+                return ["helper"]
+        b = H()
+        low = b.translate(["rtl_433", "-d", ":x", "-f", "433920000", "-s", "250k", "-F", "json"], "hx-1")
+        high = b.translate(["rtl_433", "-d", ":x", "-f", "5800000000", "-s", "250k", "-F", "json"], "hx-1")
+        sink = lambda c: c[c.index("---") + 1:]
+        self.assertIn("-f", sink(low))
+        self.assertNotIn("-f", sink(high))               # rtl_433 refuses a number above 4.29 GHz
+        self.assertIn("5800000000", high[:high.index("---")])    # the receiver itself is still tuned there
+        self.assertFalse(b.hop_spikes)                   # it prints rows, not hops: no hop-centre spikes
+        self.assertTrue(radios.backend_for("00017350").hop_spikes)
+
     def test_a_backend_needs_a_safe_prefix(self):
         class Bad(radios.Backend):
             name, prefix = "bad", "a-b"
@@ -205,6 +221,43 @@ class SASim(unittest.TestCase):
         best = max(bins, key=lambda f: max(bins[f]))
         self.assertAlmostEqual(best / 1e6, 2437.0, delta=0.2)
         self.assertLess(max(max(v) for v in bins.values()), -40)            # calibrated dBm, not a dBFS-like scale
+
+    def test_a_row_is_the_mean_of_several_passes_when_each_pass_is_a_single_look(self):
+        # the real device gives one look per bin and pass (noise spread about 5 dB); a printed row must be calmer
+        import numpy as np
+        env = dict(self.env, ARIS_SA_SIM_LOOKS="1", ARIS_SA_SIM_CARRIERS="2437:-93")
+        p = subprocess.run([sys.executable, SA, "power", "-d", "19184001", "-f", "2400M:2500M:10k", "-i", "0.1", "-1",
+                            "-"], capture_output=True, text=True, env=env, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        rows = [r.split(", ") for r in p.stdout.strip().splitlines()]
+        self.assertTrue(all(int(r[5]) >= 3 for r in rows), rows[0][:7])       # passes that went into the row
+        vals = np.array([float(v) for r in rows for v in r[6:-1]])
+        noise = vals[vals < -100.0]
+        self.assertLess(noise.std(), 3.6)                                      # one look alone: about 5.6 dB
+        self.assertGreater(vals.max(), -97.0)                                  # a carrier 12 dB over the noise shows
+
+    def test_ended_from_outside_it_closes_the_device_and_exits_cleanly(self):
+        import signal
+        p = subprocess.Popen([sys.executable, SA, "power", "-d", "19184001", "-f", "2400M:2500M:10k", "-i", "1",
+                              "-e", "60s", "-"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env)
+        try:
+            p.stdout.readline()                                                # it is sweeping
+            p.send_signal(signal.SIGTERM)
+            self.assertEqual(p.wait(timeout=10), 0)                            # its own exit, after closing
+        finally:
+            if p.poll() is None:
+                p.kill()
+            p.stdout.close()
+            p.stderr.close()
+
+    def test_a_missing_library_is_one_plain_line(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("ARIS_SA_")}
+        env["ARIS_SA_LIB"] = "/nonexistent/libsa_api.so"
+        for cmd in (["list"], ["power", "-d", "1", "-f", "100M:101M:10k", "-1", "-"], ["sdr", "-d", "1", "-n", "10", "-"]):
+            p = subprocess.run([sys.executable, SA] + cmd, capture_output=True, text=True, env=env, timeout=20)
+            self.assertEqual(p.returncode, 1, cmd)
+            self.assertEqual(len(p.stderr.strip().splitlines()), 1, p.stderr)
+            self.assertNotIn("Traceback", p.stderr)
 
     def test_never_touches_the_tracking_generator(self):
         # a tracking generator attached to an SA transmits: the plug-in never calls its functions or sweep mode
@@ -331,6 +384,24 @@ class SAEndToEnd(unittest.TestCase):
         with self.assertRaises(A.RFError) as e:
             A._capture_iq(self.dev, 96850000, 2048000, 65536, 20, timeout=10)
         self.assertIn("486 kS/s", str(e.exception))
+
+
+    def test_a_receiver_in_use_is_never_marked_as_unplugged_and_its_fm_test_is_skipped(self):
+        found = A._list_devices()
+        A._sync_found_dongles(found)
+        rest = [d for d in found if d["serial"] != self.dev]     # its own list while a program has it open
+        with A._use_dongle(self.dev, timeout=5, holder="sweep"):
+            sync = A._sync_found_dongles(rest)
+        self.assertIn(self.dev, sync["in_use"])
+        self.assertNotIn(self.dev, sync["missing"])
+        self.assertIsNot(A._dongle_cfg(self.dev).get("present"), False)
+        self.assertIn(self.dev, A._working_serials())
+        sync = A._sync_found_dongles(rest)                       # not listed and not in use: it is gone
+        self.assertIn(self.dev, sync["missing"])
+        A._sync_found_dongles(found)
+        r = A._reception_test(self.dev)                          # no "problem" for a receiver that only sweeps
+        self.assertIsNone(r["ok"])
+        self.assertIn("not tested", r["detail"])
 
 
 class HighBands(unittest.TestCase):

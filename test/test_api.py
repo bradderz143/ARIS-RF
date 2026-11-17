@@ -7,6 +7,7 @@ import os
 import threading
 import time
 import unittest
+from unittest import mock
 
 import harness
 from werkzeug.security import generate_password_hash
@@ -1191,6 +1192,97 @@ class Engine(unittest.TestCase):
             js = f.read()
         self.assertIn("c.evidence_text", js)
         self.assertNotIn("(c.evidence ||", js)
+
+
+class RoomWatchApi(unittest.TestCase):
+    """The Activity tab's room watch: state, both ways to start (admin), notes, "seen", "mine", the alert
+    address, the report to read and to download, and what every tab is told for the alarm bar."""
+
+    def test_start_mark_seen_accept_report_stop_and_what_a_viewer_may_do(self):
+        from arisweb import auth
+        eng = webapp._engine()
+        for f in (eng.ROOM_STATE, eng.ROOM_STATE_BAK, eng.ROOM_LOG):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+        c = client()
+        try:
+            r = c.get("/api/roomwatch").get_json()
+            self.assertFalse(r["running"])
+            self.assertFalse(r["previous"])
+            self.assertIn("No room watch", r["line"])
+            self.assertEqual(c.get("/api/activity?brief=1").get_json()["room"]["unseen"], 0)
+            r = c.post("/api/roomwatch/start", json={"hours": 0.1, "interval_min": 1, "frequency_range": "433-435",
+                                                     "new_reference": True}, headers=H)
+            self.assertEqual(r.status_code, 200, r.get_json())
+            self.assertEqual(c.post("/api/roomwatch/start", json={"hours": 1}).status_code, 403)     # no X-ARIS
+            a = c.get("/api/roomwatch").get_json()
+            self.assertTrue(a["running"])
+            self.assertTrue(a["bands"])
+            self.assertEqual([x["name"] for x in a["receivers"]], ["Dongle 1", "Dongle 2", "Dongle 3"])
+            self.assertEqual((a["gaps_s"], a["late_refs"]), (0, 0))
+            self.assertEqual(c.post("/api/roomwatch/mark", json={"label": "break"}, headers=H).status_code, 200)
+            self.assertEqual(c.post("/api/roomwatch/mark", json={"label": ""}, headers=H).status_code, 409)
+            rows = c.get("/api/roomwatch").get_json()["rows"]
+            self.assertTrue(any(x["kind"] == "mark" and x["text"] == "break" for x in rows), rows)
+            # an alert rings on every tab until someone marks it as seen
+            eng._room_log("alert", "New steady signal at 434.4 MHz. Worth a look.", mhz=434.4, what="new")
+            room = c.get("/api/activity?brief=1").get_json()["room"]
+            self.assertEqual((room["unseen"], room["running"], room["last"]["mhz"]), (1, True, 434.4))
+            self.assertEqual(c.get("/api/activity").get_json()["room"]["unseen"], 1)
+            self.assertEqual(c.post("/api/roomwatch/ack", headers=H).get_json()["acknowledged"], 1)
+            self.assertEqual(c.get("/api/activity?brief=1").get_json()["room"]["unseen"], 0)
+            r = c.post("/api/roomwatch/accept", json={"frequency_mhz": 434.4, "label": "our <b>mic</b>"}, headers=H)
+            self.assertEqual(r.status_code, 200, r.get_json())
+            self.assertEqual(c.get("/api/roomwatch").get_json()["accepted"], [{"mhz": 434.4, "label": "our <b>mic</b>"}])
+            rep = c.get("/api/roomwatch/report").get_json()["text"]
+            self.assertIn("MARK: break", rep)
+            self.assertIn("seen: 1 alert seen by the admin account.", rep)
+            self.assertEqual(c.post("/api/roomwatch/mark", data="[1, 2]", headers={**H, "Content-Type": "application/json"}).status_code, 409)
+            self.assertEqual(c.post("/api/roomwatch/start", data='"x"', headers={**H, "Content-Type": "application/json"}).status_code, 200)
+            self.assertIn("Accepted as known by you: 434.4 MHz", rep)
+            d = c.get("/api/roomwatch/report?download=1")
+            self.assertEqual(d.mimetype, "text/plain")
+            self.assertIn("attachment", d.headers["Content-Disposition"])
+            self.assertIn("Room watch report", d.get_data(as_text=True))
+            # the alert address: admin only, never given back in full
+            self.assertEqual(c.post("/api/roomwatch/push", json={"url": "not an address"}, headers=H).status_code, 400)
+            self.assertEqual(c.post("/api/roomwatch/push_test", headers=H).status_code, 409)
+            p = c.post("/api/roomwatch/push", json={"url": "http://127.0.0.1:9/topic-secret"}, headers=H).get_json()
+            self.assertEqual((p["set"], p["host"]), (True, "127.0.0.1"))
+            self.assertNotIn("topic-secret", json.dumps(c.get("/api/roomwatch").get_json()))
+            t = c.post("/api/roomwatch/push_test", headers=H)
+            self.assertEqual(t.status_code, 502)                                   # nothing listens there
+            self.assertNotIn("topic-secret", json.dumps(t.get_json()))
+            self.assertTrue(c.post("/api/roomwatch/push", json={"detail": True}, headers=H).get_json()["set"])
+            self.assertFalse(c.post("/api/roomwatch/push", json={"url": ""}, headers=H).get_json()["set"])
+            with mock.patch.object(auth, "role", lambda: "viewer"):
+                for path in ("start", "stop", "accept", "push", "push_test"):
+                    self.assertEqual(c.post("/api/roomwatch/" + path, json={}, headers=H).status_code, 403, path)
+                self.assertEqual(c.post("/api/roomwatch/mark", json={"label": "x"}, headers=H).status_code, 200)
+                self.assertEqual(c.post("/api/roomwatch/ack", headers=H).status_code, 200)
+                self.assertEqual(c.get("/api/roomwatch").get_json()["push"], {"set": False})   # no error text, no host
+                self.assertEqual(c.get("/api/roomwatch").status_code, 200)
+            for msg in ("stop the room watch", "start a room watch for 3 days", "cancel the room watch",
+                        "carry on the room watch", "446.1 is mine", "accept 446.1 as the mic"):
+                self.assertTrue(webapp._ADMIN_CHAT_RX.search(msg), msg)
+            t0 = time.time()
+            while c.get("/api/roomwatch").get_json()["phase"] != "watching" and time.time() - t0 < 90:
+                time.sleep(0.5)                                              # (the reference is being recorded)
+            self.assertEqual(c.post("/api/roomwatch/stop", headers=H).status_code, 200)
+            # starting again: the page must say which way (a plain start is refused with the choice in words)
+            a = c.get("/api/roomwatch").get_json()
+            self.assertTrue(a["previous"])
+            r = c.post("/api/roomwatch/start", json={"hours": 0.1, "frequency_range": "433-435"}, headers=H)
+            self.assertEqual(r.status_code, 409)
+            self.assertIn("carry on the room watch", r.get_json()["message"])
+            r = c.post("/api/roomwatch/start", json={"hours": 0.1, "carry_on": True}, headers=H)
+            self.assertEqual(r.status_code, 200, r.get_json())
+            self.assertEqual(c.get("/api/roomwatch").get_json()["accepted"][0]["mhz"], 434.4)
+        finally:
+            c.post("/api/roomwatch/stop", headers=H)
+            c.post("/api/roomwatch/push", json={"url": ""}, headers=H)
 
 
 class Wifi(unittest.TestCase):

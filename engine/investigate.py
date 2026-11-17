@@ -248,8 +248,9 @@ def _carry_ctx(fn):
 _STOPS: set = set()
 _STOPS_LOCK = threading.Lock()
 RADIO_TOOLS = ("rtl_sdr", "rtl_power", "rtl_fm", "rtl_433", "rtl_test", "rtl_adsb", "rtl_tcp", "rx_sdr", "rx_power",
-               "rx_fm", "aris-iqpipe", "aris-bb60", "multimon-ng",
+               "rx_fm", "aris-iqpipe", "aris-bb60", "aris-sa", "multimon-ng",
                "direwolf", "atest")
+RADIO_HELPER_PREFIX = "aris-"      # a plug-in's own helper program names itself aris-<something>: ended like the rest
 
 
 class Stopped(RFError):
@@ -307,7 +308,7 @@ def _radio_children(root=None) -> list:
         p, seen = parent.get(pid), 0
         while p and p != root and seen < 64:
             p, seen = parent.get(p), seen + 1
-        if p == root and name.get(pid) in RADIO_TOOLS:
+        if p == root and (name.get(pid) in RADIO_TOOLS or str(name.get(pid) or "").startswith(RADIO_HELPER_PREFIX)):
             out.append((pid, name[pid]))
     return out
 
@@ -342,6 +343,8 @@ def clear_data(baselines: bool = False) -> dict:
     from arislib import config as _acfg
     if _running_watchdogs():
         raise RFError("A capture is still running: press Reset Scanner first.")
+    if _room_here():                                 # (Reset Scanner leaves a room watch running; clearing ends it)
+        _ROOM.stop()
     out = {}
 
     def wipe_db(path):
@@ -362,7 +365,7 @@ def clear_data(baselines: bool = False) -> dict:
         out["signals"] = wipe_db(DB_PATH)
     out["locate_readings"] = wipe_db(str(_acfg.LOCATE_DB))
     lines = 0
-    for f in (WATCHDOG_LOG, NOTICES, PATROL_LOG, AUDIT_HISTORY):
+    for f in (WATCHDOG_LOG, NOTICES, PATROL_LOG, AUDIT_HISTORY, ROOM_LOG):
         try:
             with open(f, "rb") as fh:
                 lines += sum(1 for _ in fh)
@@ -381,9 +384,14 @@ def clear_data(baselines: bool = False) -> dict:
         store = _devices_read()
         out["devices"] = len((store or {}).get("devices") or {})
     for f in (WATCHDOG_LOG, NOTICES, PATROL_LOG, PATROL_SEEN, PATROL_STATE, AUDIT_HISTORY, AUDIT_REPORT, LAST_REPORT,
-              RECENT_CHECKS, CAPTURES, FM_STATIONS, WATCHDOG_RESUME, DEVICES_FILE, DATA_DIR / "check_report.json"):
+              ROOM_LOG, ROOM_STATE, ROOM_STATE_BAK, RECENT_CHECKS, CAPTURES, FM_STATIONS, WATCHDOG_RESUME, DEVICES_FILE, DATA_DIR / "check_report.json"):
         try:
             Path(f).unlink()
+        except OSError:
+            pass
+    for f in (ROOM_REPORTS.glob("roomwatch_*.txt") if ROOM_REPORTS.exists() else []):
+        try:
+            f.unlink()
         except OSError:
             pass
     try:
@@ -409,14 +417,16 @@ KEPT_BY_CLEAR_LOGS = ("signals.db", "locate.db", "fm_stations.json", "devices.js
                       "gui_secrets.json", "node_secrets.json", "label_secret", "nodes.json", "floorplans/",
                       "setup_report.json",
                       "backups/", "last_investigation.json", "watchdogs.json", "watchdogs_resume.json",
-                      "patrol_state.json", "patrol_seen.json", "update_check.json")
+                      "patrol_state.json", "patrol_seen.json", "update_check.json", "roomwatch_state.json",
+                      "reports/")
 
 
 def _log_files() -> list:
     """Every file Clear logs removes (those that exist): the event logs with any rotated copies, the result lists, the
     chat notices, the audit and check reports and the text log with its rotations. Nothing else."""
     out = []
-    for p in (WATCHDOG_LOG, PATROL_LOG, AUDIT_HISTORY, AUDIT_REPORT, CAPTURES, NOTICES, RECENT_CHECKS,
+    room = [] if _room_state_read().get("running") else [ROOM_LOG]     # a watch in progress keeps its timeline
+    for p in (WATCHDOG_LOG, PATROL_LOG, AUDIT_HISTORY, AUDIT_REPORT, CAPTURES, NOTICES, RECENT_CHECKS, *room,
               DATA_DIR / "check_report.json", LOG_FILE):
         out.append(p)
         out.extend(sorted(p.parent.glob(p.name + ".*")))      # aris.log.1, ism_events.jsonl.bak, captures.json.tmp
@@ -555,7 +565,13 @@ def stop_everything(wait_s: float = 10.0) -> dict:
     if _PATROL and _PATROL.alive():
         _PATROL.stop()
         stopped.append("patrol")
+    room = _room_here()
+    if room:                                         # a long watch is not ended by a reset: its sweeps in flight
+        room.hold()                                  # are (below), and it carries on with the next ones
     ended = _end_radio_children()
+    if room and not room.parked(2.5):                # a sweep that slipped in between the hold and the end of the
+        ended += _end_radio_children()               # programs: ended too, so no dongle looks stuck because of it
+        room.parked(2.5)
     _write_watchdog_state()                          # nothing stale left for the chat console to trip over
     end = time.time() + max(0.0, wait_s)
     while time.time() < end:
@@ -589,7 +605,7 @@ def stop_everything(wait_s: float = 10.0) -> dict:
     with _STOPS_LOCK:
         still = sum(1 for ev in evs if ev in _STOPS)
     return {"jobs_stopped": len(evs), "jobs_still_running": still, "stopped": stopped, "radio_programs_ended": ended,
-            "free": free, "busy": busy, "stuck_here": stuck, "missing": missing}
+            "free": free, "busy": busy, "stuck_here": stuck, "missing": missing, "room_watch_kept": bool(room)}
 
 
 def _earlier_checks(freq, within_mhz=0.06, hours=6.0):
@@ -723,7 +739,7 @@ def _freq_history(f_mhz, kind, serials, cfg=None) -> dict:
                 band, step = base["band"], float(base.get("step_khz") or float(base["grid_hz"]) / 1000.0)
                 hops = _rp.plan(float(band["start_mhz"]) * 1e6, float(band["stop_mhz"]) * 1e6, step * 1e3,
                                 _rp.parse_crop(cfg.get("crop_percent", "20%"), 0.2))
-                spike = _near_hop(f, [x["freq"] / 1e6 for x in hops], _guard_mhz(step))
+                spike = _hop_spikes(ser) and _near_hop(f, [x["freq"] / 1e6 for x in hops], _guard_mhz(step))
                 moved = abs(float(base.get("ppm") or 0) - _ppm_of(ser, cfg)) * f >= 5000.0
                 state = sigreport.baseline_state(max(c[0] for c in cells) - floor, max(c[1] for c in cells) - floor,
                                                  spike, moved)

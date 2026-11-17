@@ -48,6 +48,15 @@ desktop browser: `test/shot_readme.py` makes them again (its first lines say how
   (with an Ubertooth One) list what access points and advertisers announce.
 - **Patrol and threat levels**: scheduled sweeps against each receiver's own baseline; a new continuous transmitter
   is investigated automatically.
+- **Room watch**: a long watch (hours or days) of the bands where small transmitters are commonly found, from VHF
+  to 5.9 GHz where the receivers tune them. It records a quiet-room reference, then audits against it every few
+  minutes and tells you when a new carrier appears or one grows: in the chat, as a red bar on every tab with a
+  sound, and optionally through a push service to a locked phone. Every receiver sweeps at its own pace, so one
+  that is slow or stuck never holds the others. It says when it is itself in trouble (a receiver unplugged, deaf,
+  stuck or busy; the computer asleep; the page out of contact), carries on after a restart, and ends with a report
+  per day. Bands no receiver here
+  tunes are listed as not covered, and a clear watch is never called proof that a room is clean. See
+  [docs/ROOMWATCH.md](docs/ROOMWATCH.md).
 - **Locate**: signal-strength readings from several receivers (local dongles or remote nodes on the network) give a
   heat map of where a transmitter probably is, on your own floorplan.
 - **Chat**: ask in plain words ("scan the 433 band", "what devices have you seen", "capture 1090"). Common requests

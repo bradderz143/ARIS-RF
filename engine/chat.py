@@ -37,7 +37,7 @@ _LIST_LIMITS = {"decoded_packets": 2, "validated_frames": 4, "aprs_frames": 3, "
                 "rejected_artifacts": 2, "all_gain_trials": 8, "recent_runs": 6, "investigated_peaks": 8,
                 "top_signals": 12, "unknown_signal_fingerprints": 3, "baselines": 12, "strongest": 5,
                 "earlier_checks_of_this_frequency": 2, "behaviour": 2}
-_STR_LIMITS = {"device_identification_and_decode": 500, "verdict": 120, "sure": 240, "modulation": 400}
+_STR_LIMITS = {"device_identification_and_decode": 500, "verdict": 120, "sure": 240, "modulation": 640}
 
 
 def _slim(obj, key=None, tight=False):
@@ -177,7 +177,8 @@ def _fit_turn(messages: list) -> None:
 _TURN = {"role": "admin"}
 _ADMIN_TOOLS = {"auto_setup", "calibrate_gain", "calibrate_frequency", "forget_dongle", "record_baseline",
                 "start_patrol", "stop_patrol", "assign_dongles", "set_antenna_note", "set_timing_defaults",
-                "perform_system_maintenance"}
+                "perform_system_maintenance", "start_room_watch", "stop_room_watch",
+                "accept_room_watch_signal"}
 _ADMIN_COMMAND_RX = re.compile(r"^/(?:setup|cleanup|clear-signals)\b|^/patrol\s+(?:start|stop)\b|^/region\s+\S")
 _ROLE_MARK_RX = re.compile(r"^\[role:([a-z]+)\]\s*")
 
@@ -562,6 +563,62 @@ def _capture_minutes(t):
     return None
 
 
+_ROOM_RX = re.compile(r"\broom[ -]?watch\b|"
+                      r"\b(?:watch|monitor|sweep|guard)\b.{0,30}\b(?:the\s+|my\s+|this\s+)?room\b")
+_ROOM_REPORT_RX = re.compile(r"\b(?:report|timeline|summary|history)\b")
+_ROOM_START_RX = re.compile(
+    r"\b(?:start|begin|launch|run|set\s+up|resume|continue|carry\s+on|restart)\b.{0,30}\broom[ -]?watch\b|"
+    r"^\W*(?:please\s+)?(?:watch|monitor|guard|sweep)\s+(?:the|my|this|our)\s+room\b|"
+    r"^\W*room[ -]?watch\s+(?:for\s+)?\d")
+_ROOM_FOR_RX = re.compile(r"\b(\d+(?:\.\d+)?)\s*(days?|d|hours?|hrs?|h)\b")
+# '446.1 is mine', '446.1 MHz is our radio mic', 'accept 446.1 as the radio mic', 'ignore 446.1'
+_ROOM_MINE_RX = re.compile(r"\b(\d{2,4}\.\d{1,4})(?:\s*mhz)?\s+is\s+(?:mine|ours|known|my\s+own|(?:my|our)\s+([^.?!]{2,50}))|"
+                           r"\b(?:accept|ignore)\s+(\d{2,4}\.\d{1,4})(?:\s*mhz)?(?:\s+as\s+([^.?!]{2,50}))?")
+
+
+def _room_route(t):
+    """Room watch requests ('start a room watch for 3 days', 'watch the room', 'room watch report', 'stop the room
+    watch', 'mark the break'): the tool and its arguments, or None. Before the capture words, which would otherwise
+    take 'watch' and 'monitor' and 'stop'."""
+    running = None
+    m = re.match(r"^\W*(?:mark|note)\b\s*:?\s*(?:the\s+)?(.+)$", t)
+    if m and not _QUESTION_RX.search(t):
+        try:
+            running = bool(room_watch_status_dict().get("running"))
+        except Exception:
+            running = False
+        if running:
+            return "mark_room_watch", {"label": m.group(1).strip()}
+    m = _ROOM_MINE_RX.search(t)
+    if m and not _QUESTION_RX.search(t) and not _NEGATED_RX.search(t) and "?" not in t:
+        f = m.group(1) or m.group(3)
+        label = (m.group(2) or m.group(4) or "").strip(" .:")
+        return "accept_room_watch_signal", {"frequency_mhz": float(f), **({"label": label} if label else {})}
+    if not _ROOM_RX.search(t) or _NEGATED_RX.search(t):
+        return None
+    if _typed_freqs(t) and re.search(r"\b(?:investigat|decod|locat|captur|where|analy[sz]|identif|what\s+is)", t):
+        return None                                    # 'investigate 433.92 that the room watch flagged'
+    asked = bool(_ASKED_QUESTION_RX.search(t.replace("report", ""))) or "?" in t
+    watch = r"room[ -]?watch"
+    if re.search(r"\b(?:stop|end|cancel|halt|turn\s+off|switch\s+off)\b.{0,30}\b" + watch, t) and not asked:
+        return "stop_room_watch", {}
+    if _ROOM_REPORT_RX.search(t):
+        return "room_watch_report", {}
+    if _ROOM_START_RX.search(t) and not asked:
+        # only an explicit start phrase starts one: a new reference takes whatever transmits now as normal, so
+        # 'what happened to the room watch' must never begin a watch
+        args = {}
+        if re.search(r"\b(?:resume|continue|carry\s+on|restart)\b", t):
+            args["carry_on"] = True
+        elif re.search(r"\bnew\b|\bfresh\b|\bfrom\s+scratch\b|\bstart\s+over\b", t):
+            args["new_reference"] = True
+        f = _ROOM_FOR_RX.search(t)
+        if f:
+            args["hours"] = float(f.group(1)) * (24.0 if f.group(2).startswith("d") else 1.0)
+        return "start_room_watch", args
+    return "room_watch_status", {}
+
+
 def _route_intent(user_text):
     """Clear requests go straight to the right tool: 'investigate / analyse / find out <frequency or it>',
     'capture / monitor <frequency or it>', 'stop the capture', 'where is <frequency or it>', 'check the logs',
@@ -571,6 +628,10 @@ def _route_intent(user_text):
     t = _user_words(user_text)
     dm = re.search(r"\bdongle\s*([1-9])\b", t)
     dg = {"dongle": dm.group(1)} if dm else {}
+    room = _room_route(t)
+    if room:
+        return room
+    t = re.sub(r"\broom[ -]?watch\b", "room check", t)             # (its "watch" is not a capture word)
     if _STOPCAP_RX.search(t) and not _QUESTION_RX.search(t):
         if not dg and re.search(r"\bband\b|\bism\b|\brecord\w*|\d\s*-\s*\d", t):
             return "stop_background_watchdog", {"band": _band_word(t) or "any"}
@@ -865,6 +926,10 @@ _STATE_TOOLS = {
     "locate_signal": re.compile(r"\blocat|\bwhere\s+(?:is|are|does|do|was|did)\b|\bwhich\s+room|\bfind\b.{0,40}"
                                 r"\b(?:source|transmitter|where|it|position|location)"),
     "run_automated_threat_audit": re.compile(r"\baudit|\bthreat|\bcompare|\bbaseline|\bnew\s+signals?|\banything\s+new"),
+    "start_room_watch": re.compile(r"\broom[ -]?watch|\broom\b"),
+    "stop_room_watch": re.compile(r"\b(?:stop|end|cancel|halt|turn\s+off|switch\s+off)\b"),
+    "mark_room_watch": re.compile(r"\bmark\b|\bnote\b"),
+    "accept_room_watch_signal": re.compile(r"\b(?:mine|ours|known|accept|ignore|my\s+own)\b"),
 }
 # Tools that change the set-up never run on a question ('what does setup do?') or a negated request ('don't run
 # setup'); captures, locating and audits are asked for as questions too ('can you capture 433.92?'), so they get
@@ -893,7 +958,8 @@ def _user_asked(name, user_text) -> bool:
 _TEXT_CALL_OK = {"system_status", "patrol_status", "read_background_watchdog", "list_saved_signals",
                  "get_last_investigation", "get_setup_report", "list_baselines", "list_nodes", "check_system",
                  "run_decoder_selftest", "investigate_single_frequency", "sweep_spectrum",
-                 "check_and_investigate_band", "locate_signal", "run_automated_threat_audit", "list_old_files"}
+                 "check_and_investigate_band", "locate_signal", "run_automated_threat_audit", "list_old_files",
+                 "room_watch_status", "room_watch_report"}
 _SIMULATED_RX = re.compile(r"\bsimulat\w*\s+(?:a\s+|the\s+|its\s+)?(?:response|output|result|data|status|reply)|"
                            r"#+\s*simulated\b|\bhypothetical\s+(?:response|output|result)|"
                            r"\b(?:here\s+is|this\s+is)\s+(?:an?\s+)?(?:example|sample)\s+(?:response|output)\b", re.I)
@@ -1218,6 +1284,10 @@ _DIRECT = {     # routed requests whose result is already plain English: answere
     "forget_dongle": lambda r: r.get("message"),
     "system_status": lambda r: _status_reply(r),
     "patrol_status": lambda r: _patrol_reply(r),
+    "start_room_watch": lambda r: r.get("message"), "stop_room_watch": lambda r: r.get("message"),
+    "room_watch_status": lambda r: r.get("message"),
+    "room_watch_report": lambda r: r.get("short") or r.get("text") or r.get("message"),
+    "mark_room_watch": lambda r: r.get("message"), "accept_room_watch_signal": lambda r: r.get("message"),
     "read_background_watchdog": lambda r: _logs_reply(r),
     "list_devices": lambda r: _devices_reply(r),
     "wifi_networks": lambda r: r.get("answer"),                          # (from the Wi-Fi list)
@@ -1239,7 +1309,9 @@ _TOOL_WORDS = {   # what to type instead of a tool name the small model sometime
     "sweep_spectrum": 'a sweep (e.g. "sweep 88-108 MHz")', "check_system": "/check", "auto_setup": "/setup",
     "get_setup_report": '"show the setup report"', "record_baseline": '"record a baseline"',
     "run_automated_threat_audit": '"run a threat audit"', "start_patrol": "/patrol start",
-    "stop_patrol": "/patrol stop", "patrol_status": "/patrol", "locate_signal": '"where is" and the frequency',
+    "stop_patrol": "/patrol stop", "patrol_status": "/patrol", "start_room_watch": '"start a room watch"',
+    "stop_room_watch": '"stop the room watch"', "room_watch_status": '"room watch status"',
+    "room_watch_report": '"room watch report"', "locate_signal": '"where is" and the frequency',
     "list_saved_signals": "the Signals tab", "list_devices": "the Devices tab",
     "wifi_networks": "the Devices tab (Wi-Fi)", "system_status": "/status",
     "run_decoder_selftest": "/selftest",

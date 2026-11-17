@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ARIS v4.22.0 - passive (receive-only) multi-receiver RF monitoring station.
+ARIS v4.23.0 - passive (receive-only) multi-receiver RF monitoring station.
 
 Run:      python3 aris.py                     (first time: type /check, then /setup)
 Tidy up:  python3 aris.py --cleanup           (lists old files from earlier versions, asks before deleting)
@@ -19,6 +19,7 @@ import binascii
 import copy
 import fcntl
 import functools
+import hashlib
 import hmac
 import inspect
 import json
@@ -31,6 +32,7 @@ import secrets
 import shlex
 import shutil
 import signal
+import socket
 import sqlite3
 import statistics
 import subprocess
@@ -54,8 +56,9 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 from arislib import radioproc      # noqa: E402  (stopping radio programs: see _end_radio)
 from arislib import radios         # noqa: E402  (receivers of every kind: see _radio_cmd)
+from arislib import roomwatch      # noqa: E402  (room watch rules: see engine/roomwatch.py)
 
-VERSION = "4.22.0"
+VERSION = "4.23.0"
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -66,7 +69,7 @@ VERSION = "4.22.0"
 # A part never redefines a name another part defined (test_engine checks).
 # ---------------------------------------------------------------------------------------------------------------
 ENGINE_DIR = os.path.join(_HERE, "engine")
-ENGINE_PARTS = ("core", "sweep", "decode", "investigate", "fm", "autosetup", "audit", "logs", "captures", "band", "status", "chat", "plugins")
+ENGINE_PARTS = ("core", "sweep", "decode", "investigate", "fm", "autosetup", "audit", "logs", "captures", "band", "roomwatch", "status", "chat", "plugins")
 
 
 def _include(part):
@@ -98,6 +101,8 @@ _include("logs")
 _include("captures")
 
 _include("band")
+
+_include("roomwatch")
 
 _include("status")
 
